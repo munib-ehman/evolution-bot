@@ -111,6 +111,13 @@ export function Login() {
           </>
         )}
       </div>
+
+      <nav className="login-links" aria-label="Site pages">
+        <a href="pricing.html">Pricing</a>
+        <a href="terms.html">Terms</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="refund.html">Refunds</a>
+      </nav>
     </div>
   );
 }

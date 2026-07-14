@@ -1032,3 +1032,14 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.login-links {
+  margin-top: 18px;
+  font-size: 13.5px;
+}
+.login-links a {
+  color: var(--ink2);
+  text-decoration: none;
+  margin: 0 9px;
+}
+.login-links a:hover { text-decoration: underline; }
