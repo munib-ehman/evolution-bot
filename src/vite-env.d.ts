@@ -7,6 +7,12 @@ interface ImportMetaEnv {
   readonly VITE_LLM_API_KEY?: string;
   /** Model id to request from the provider. */
   readonly VITE_LLM_MODEL?: string;
+  /** Supabase project URL — set together with the anon key to enable the magic-link login gate. */
+  readonly VITE_SUPABASE_URL?: string;
+  /** Supabase publishable key (sb_publishable_…) — the current name for the browser-safe key. */
+  readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
+  /** Supabase anon (public) key — legacy name for the same browser-safe key. Either works. */
+  readonly VITE_SUPABASE_ANON_KEY?: string;
 }
 
 interface ImportMeta {

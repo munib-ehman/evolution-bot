@@ -5,6 +5,8 @@ import { Composer } from "./components/Composer";
 import { Splash } from "./components/Splash";
 import { ButterflyIcon, MicIcon, StopIcon, CloseIcon, KeyboardIcon } from "./components/icons";
 import { useAssistant } from "./hooks/useAssistant";
+import { useAuthEmail } from "./components/AuthGate";
+import { signOut } from "./lib/auth";
 import { looksLowPowered } from "./lib/capabilities";
 import { loadJSON, saveJSON } from "./lib/storage";
 import { speechEngine } from "./audio/speechEngine";
@@ -26,6 +28,7 @@ const STARTERS = [
 
 export default function App() {
   const a = useAssistant();
+  const authEmail = useAuthEmail();
   const warmedRef = useRef(false);
 
   // Two experiences: an immersive voice stage (default) and a classic chat.
@@ -153,6 +156,15 @@ export default function App() {
             <p className="tagline">AI copilot for ecommerce founders</p>
           </div>
         </div>
+
+        {authEmail && (
+          <div className="header-right">
+            <span className="badge user" title="Signed in">{authEmail}</span>
+            <button type="button" className="link" onClick={() => void signOut()}>
+              Sign out
+            </button>
+          </div>
+        )}
       </header>
 
       <main className={`layout ${voiceView ? "solo" : ""}`}>

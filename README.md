@@ -142,6 +142,35 @@ the retrieval context both read from it — no rebuild of logic needed, no datab
 
 ---
 
+## 🔑 Optional login gate (magic link → lead capture)
+
+Want to know who's using the app? Turn on the built-in magic-link login: visitors
+enter their email, get a one-click sign-in link, and every email lands in your
+Supabase dashboard as a lead. No passwords, no signup form, still $0.
+
+1. Create a free project at [supabase.com](https://supabase.com/dashboard).
+2. In **Project Settings → API**, copy the **Project URL** and **anon public key**
+   into `.env`:
+   ```bash
+   VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+   VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key_here
+   ```
+
+   (Older projects call the same key the "anon" key — `VITE_SUPABASE_ANON_KEY`
+   works too.)
+3. In **Authentication → URL Configuration**, set the **Site URL** to wherever the
+   app is hosted (`http://localhost:5173` while developing) so the emailed link
+   lands back on the app.
+
+Leave the vars unset and the gate disappears entirely — the app stays a wide-open
+demo. Signed-in users appear under **Authentication → Users** in Supabase.
+
+> Supabase's built-in mailer is fine for testing but rate-limited (~a few emails
+> per hour). For production lead capture, plug a free SMTP sender (e.g. Resend,
+> Brevo) into **Authentication → SMTP Settings**.
+
+---
+
 ## ☁️ Deploy free (static site)
 
 Build once: `npm run build` → outputs to `dist/`. `base: "./"` is already set so it

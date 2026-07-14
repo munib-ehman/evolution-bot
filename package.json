@@ -15,6 +15,7 @@
     "@huggingface/transformers": "^3.5.2",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
+    "@supabase/supabase-js": "^2.110.5",
     "kokoro-js": "^1.2.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

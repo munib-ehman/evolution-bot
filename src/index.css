@@ -923,3 +923,112 @@ code {
 @media (max-width: 400px) {
   .tagline { display: none; }
 }
+
+/* ── Magic-link login gate (only shown when Supabase auth is configured) ── */
+.login {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(820px 540px at 50% 32%, #ffe9cf 0%, rgba(255, 233, 207, 0) 62%),
+    radial-gradient(720px 520px at 74% 72%, #ffd9e0 0%, rgba(255, 217, 224, 0) 60%),
+    var(--cream);
+}
+.login-card {
+  width: min(420px, 100%);
+  padding: 36px 32px 32px;
+  text-align: center;
+  animation: splash-in 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.login-logo {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--line);
+}
+.login-word {
+  margin: 16px 0 0;
+  font-family: "Segoe Script", "Snell Roundhand", "Brush Script MT", cursive;
+  font-size: 40px;
+  line-height: 1.1;
+  font-weight: 600;
+  color: var(--ink);
+}
+.login-title {
+  margin: 4px 0 0;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.login-sub {
+  margin: 12px 0 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink2);
+}
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 22px;
+}
+.login-form input {
+  padding: 13px 16px;
+  font-size: 15px;
+  color: var(--ink);
+  background: #fffdf9;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.login-form input:focus {
+  border-color: var(--g2);
+  box-shadow: 0 0 0 3px rgba(255, 138, 61, 0.18);
+}
+.login-btn {
+  padding: 13px 16px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--grad);
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(255, 90, 80, 0.32);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+.login-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(255, 90, 80, 0.38);
+}
+.login-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+  box-shadow: none;
+}
+.login-error {
+  margin: 14px 0 0;
+  font-size: 13.5px;
+  color: #c73b3b;
+}
+.login-sent .link {
+  margin-top: 16px;
+}
+
+.badge.user {
+  color: var(--ink2);
+  background: #fff;
+  border: 1px solid var(--line);
+  font-weight: 600;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
