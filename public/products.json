@@ -1,0 +1,58 @@
+[
+  {
+    "id": "aurora-headphones",
+    "name": "Aurora Wireless Headphones",
+    "price": 129.0,
+    "description": "Over-ear Bluetooth headphones with active noise cancelling and 40-hour battery life. Cozy for long listening sessions.",
+    "tags": ["audio", "headphones", "wireless", "noise-cancelling", "electronics", "music", "travel"]
+  },
+  {
+    "id": "pulse-earbuds",
+    "name": "Pulse Sport Earbuds",
+    "price": 59.0,
+    "description": "Sweat-proof in-ear buds that stay put during workouts. IPX5 water resistance and a compact charging case.",
+    "tags": ["audio", "earbuds", "wireless", "sport", "fitness", "workout", "running", "electronics"]
+  },
+  {
+    "id": "nimbus-keyboard",
+    "name": "Nimbus Mechanical Keyboard",
+    "price": 89.0,
+    "description": "Hot-swappable 75% mechanical keyboard with quiet tactile switches and warm backlighting. Great for work and play.",
+    "tags": ["keyboard", "mechanical", "desk", "office", "gaming", "typing", "electronics", "productivity"]
+  },
+  {
+    "id": "glide-mouse",
+    "name": "Glide Ergonomic Mouse",
+    "price": 45.0,
+    "description": "Lightweight wireless mouse shaped to reduce wrist strain. Silent clicks and a precise sensor.",
+    "tags": ["mouse", "ergonomic", "desk", "office", "productivity", "wireless", "electronics"]
+  },
+  {
+    "id": "beacon-lamp",
+    "name": "Beacon Smart Desk Lamp",
+    "price": 39.0,
+    "description": "Dimmable LED desk lamp with adjustable warm-to-cool light and a USB charging port. Easy on the eyes at night.",
+    "tags": ["lamp", "desk", "home", "office", "lighting", "smart-home", "study"]
+  },
+  {
+    "id": "terra-bottle",
+    "name": "Terra Insulated Bottle",
+    "price": 28.0,
+    "description": "Double-walled stainless steel bottle that keeps drinks cold 24h or hot 12h. Leak-proof and 750ml.",
+    "tags": ["bottle", "hydration", "outdoors", "fitness", "travel", "eco", "gym", "everyday"]
+  },
+  {
+    "id": "drift-backpack",
+    "name": "Drift Everyday Backpack",
+    "price": 79.0,
+    "description": "Water-resistant 20L backpack with a padded 15-inch laptop sleeve and hidden anti-theft pocket. Commute-ready.",
+    "tags": ["backpack", "bag", "travel", "commute", "laptop", "school", "everyday", "work"]
+  },
+  {
+    "id": "cove-charger",
+    "name": "Cove 3-in-1 Charging Stand",
+    "price": 49.0,
+    "description": "Wireless charging stand that powers a phone, earbuds, and watch at once. Tidies up your nightstand.",
+    "tags": ["charger", "wireless", "accessory", "phone", "watch", "desk", "home", "electronics"]
+  }
+]
