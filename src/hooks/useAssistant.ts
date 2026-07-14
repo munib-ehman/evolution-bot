@@ -22,6 +22,7 @@ import { LocalRecorder } from "../stt/transformersStt";
 import { DEFAULT_AVATAR_URL } from "../avatar/constants";
 import { loadJSON, saveJSON } from "../lib/storage";
 import { hasWebSpeech, hasMicrophone } from "../lib/capabilities";
+import { logChat } from "../lib/chatLog";
 
 export type AssistantStatus = "idle" | "thinking" | "speaking";
 export type MicState = "idle" | "listening" | "transcribing";
@@ -137,6 +138,7 @@ export function useAssistant() {
       setError(null);
       const userMsg: Message = { id: newId(), role: "user", content: text };
       appendMessage(userMsg);
+      logChat("user", text);
       setStatus("thinking");
 
       const cfg = settingsRef.current;
@@ -156,6 +158,7 @@ export function useAssistant() {
 
         const assistantMsg: Message = { id: newId(), role: "assistant", content: reply, pending: true };
         appendMessage(assistantMsg);
+        logChat("assistant", reply);
 
         const speakable = !cfg.textOnly && cfg.ttsEngine !== "off";
         if (speakable) {

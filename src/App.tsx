@@ -76,14 +76,21 @@ export default function App() {
     }
   }, [a.settings.ttsEngine, a.settings.textOnly]);
 
-  // Warm up the (heavy) Kokoro model on the first real interaction — not on load,
-  // so visitors who bounce never trigger a download.
   const ensureWarm = () => {
     if (!warmedRef.current) {
       warmedRef.current = true;
       a.warmUp();
     }
   };
+
+  // Pre-warm the (heavy) Kokoro voice as soon as the app reveals. Behind the
+  // login gate every visitor is a committed lead, so the model download starts
+  // while they read the greeting instead of stalling their first reply.
+  // (After the splash, so it never competes with the avatar for bandwidth.)
+  useEffect(() => {
+    if (reveal) ensureWarm();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal]);
 
   const handleSend = (text: string) => {
     // Unlock audio during the actual user gesture (before any await) so the

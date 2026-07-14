@@ -169,6 +169,13 @@ demo. Signed-in users appear under **Authentication → Users** in Supabase.
 > per hour). For production lead capture, plug a free SMTP sender (e.g. Resend,
 > Brevo) into **Authentication → SMTP Settings**.
 
+**Chat logging:** with the gate on, every conversation turn is also mirrored to
+Supabase so you can see what users ask for. Run
+[`supabase/chat_messages.sql`](./supabase/chat_messages.sql) once in the SQL
+Editor, then review conversations under **Table Editor → chat_messages**.
+Logging is fire-and-forget: if the table is missing or the insert fails, the
+chat itself is never affected.
+
 ---
 
 ## ☁️ Deploy free (static site)
