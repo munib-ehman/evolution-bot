@@ -1,0 +1,43 @@
+# Evolution
+
+> An AI business operator (an AI COO) for ecommerce store owners. It handles the busywork you'd otherwise split across a VA and a stack of apps, in one accountable tool.
+
+## What we do
+
+Evolution runs the day-to-day operations of a Shopify/DTC store for founders doing roughly $50k to $5M a year:
+
+- Abandoned cart and checkout recovery (email + SMS)
+- Customer support and tickets (where-is-my-order, returns, replies)
+- Product listings, descriptions, and SEO
+- Reviews and social-proof collection
+- Email/SMS lifecycle flows and retention
+- Ads and creative support
+- Analytics and reporting (true profit, what's actually working)
+
+It audits the whole store, finds what's costing the owner sales, ranks the fixes by dollar impact, and handles them. One tool, one bill, accountable to the owner, for about a tenth of the cost of the usual app stack.
+
+## Who it's for
+
+Independent Shopify and DTC ecommerce founders, mostly in the US, doing $50k to $5M a year, who are stretched thin running everything themselves or paying a VA plus several single-purpose apps.
+
+## How it works
+
+Share your store, we run a free audit, find the leaks, and fix them. You pay only if it works.
+
+## Pricing
+
+- Free: a store audit that shows where you're losing sales, plus a limited number of operator tasks each month. No credit card required.
+- Operator ($100/month): the AI COO runs the store's busywork end to end. Billed monthly, cancel anytime.
+
+## Key pages
+
+- Home: https://www.runevolution.io/
+- Free store audit: https://www.runevolution.io/audit
+- Pricing: https://www.runevolution.io/pricing
+- FAQ: https://www.runevolution.io/faq
+- Contact: https://www.runevolution.io/contact
+
+## Contact
+
+- subhan@runevolution.io
+- muneeb@runevolution.io
