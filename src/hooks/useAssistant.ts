@@ -16,7 +16,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Message, Product, Settings } from "../types";
 import { getAssistantReply, isMockMode } from "../llm/client";
-import { speak, stopSpeaking, warmUpKokoro, DEFAULT_VOICE, type ModelProgress } from "../tts";
+import { createSpeaker, stopSpeaking, warmUpVoice, DEFAULT_VOICE, type ModelProgress } from "../tts";
+import { lat } from "../lib/latency";
 import { WebSpeechRecognizer, webSpeechSupported } from "../stt/webSpeech";
 import { LocalRecorder } from "../stt/transformersStt";
 import { DEFAULT_AVATAR_URL } from "../avatar/constants";
@@ -41,10 +42,9 @@ const DEFAULT_SETTINGS: Settings = {
   textOnly: false,
 };
 
-// Give the avatar a beat to visibly "think" before answering. Real LLM calls
-// usually exceed this on their own; in mock mode (instant) it's what makes the
-// pondering pose readable instead of a single flashed frame.
-const MIN_THINK_MS = 700;
+// How often the streaming reply is flushed into React state. Tokens can land
+// at 100+/s; batching keeps re-renders (and the 3D scene) smooth.
+const STREAM_PAINT_MS = 80;
 
 function newId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -140,35 +140,72 @@ export function useAssistant() {
       appendMessage(userMsg);
       logChat("user", text);
       setStatus("thinking");
+      lat.begin(opts?.fromVoice ? "voice" : "text");
 
       const cfg = settingsRef.current;
       const history = [...messagesRef.current, userMsg];
-      const thinkStart = performance.now();
+      const speakable = !cfg.textOnly && cfg.ttsEngine !== "off";
 
-      try {
-        const reply = await getAssistantReply(history, products, { signal: controller.signal });
-        if (controller.signal.aborted) return;
-
-        // Hold the "thinking" pose for a readable minimum beat.
-        const elapsed = performance.now() - thinkStart;
-        if (elapsed < MIN_THINK_MS) {
-          await new Promise((r) => setTimeout(r, MIN_THINK_MS - elapsed));
-          if (controller.signal.aborted) return;
-        }
-
-        const assistantMsg: Message = { id: newId(), role: "assistant", content: reply, pending: true };
-        appendMessage(assistantMsg);
-        logChat("assistant", reply);
-
-        const speakable = !cfg.textOnly && cfg.ttsEngine !== "off";
-        if (speakable) {
-          setStatus("speaking");
-          await speak(reply, cfg.ttsEngine, {
+      // Open the speaking session BEFORE the LLM call: tokens stream straight
+      // into TTS as they arrive, so synthesis overlaps generation and the first
+      // sentence is playing while the rest is still being written.
+      const speaker = speakable
+        ? createSpeaker(cfg.ttsEngine, {
             voice: cfg.voice,
             signal: controller.signal,
-          });
+            onFirstAudio: () => {
+              lat.mark("ttsFirstAudio");
+              if (!controller.signal.aborted) setStatus("speaking");
+            },
+          })
+        : null;
+
+      // The reply bubble streams in as the model writes, batched so a fast
+      // token stream doesn't thrash React (or starve the avatar's render loop).
+      const assistantId = newId();
+      let streamed = "";
+      let bubbleShown = false;
+      let paintTimer: number | null = null;
+      const paint = () => {
+        paintTimer = null;
+        if (controller.signal.aborted) return;
+        if (!bubbleShown) {
+          bubbleShown = true;
+          appendMessage({ id: assistantId, role: "assistant", content: streamed, pending: true });
+        } else {
+          updateMessage(assistantId, { content: streamed });
         }
-        updateMessage(assistantMsg.id, { pending: false });
+      };
+
+      try {
+        const reply = await getAssistantReply(history, products, {
+          signal: controller.signal,
+          onToken: (t) => {
+            if (controller.signal.aborted) return;
+            if (streamed === "") lat.mark("llmFirstToken");
+            streamed += t;
+            speaker?.push(t);
+            if (paintTimer === null) paintTimer = window.setTimeout(paint, STREAM_PAINT_MS);
+          },
+        });
+        lat.mark("llmDone");
+        if (controller.signal.aborted) {
+          speaker?.cancel();
+          return;
+        }
+
+        // Final paint with the definitive text (covers non-streaming providers
+        // where onToken fired once, and any trailing batched tokens).
+        if (paintTimer !== null) window.clearTimeout(paintTimer);
+        streamed = reply;
+        paint();
+        logChat("assistant", reply);
+
+        if (speaker) {
+          await speaker.finish();
+          lat.mark("speakDone");
+        }
+        if (!controller.signal.aborted) updateMessage(assistantId, { pending: false });
 
         // Hands-free conversation: if this turn came in BY VOICE, re-open the mic
         // once Evolution finishes speaking so the founder can just reply. Typed
@@ -187,6 +224,8 @@ export function useAssistant() {
           }, 350);
         }
       } catch (err) {
+        speaker?.cancel();
+        if (paintTimer !== null) window.clearTimeout(paintTimer);
         if (controller.signal.aborted) return;
         console.error("[assistant] reply failed:", err);
         const msg =
@@ -194,8 +233,12 @@ export function useAssistant() {
             ? "I had trouble reaching my brain just now. You can keep chatting — I'll fall back to my built-in answers."
             : "Sorry, something went wrong. Mind trying that again?";
         setError(msg);
-        appendMessage({ id: newId(), role: "assistant", content: msg });
+        // If the bubble already started streaming, keep what arrived; otherwise
+        // surface the apology as its own message.
+        if (bubbleShown) updateMessage(assistantId, { pending: false });
+        else appendMessage({ id: newId(), role: "assistant", content: msg });
       } finally {
+        lat.report();
         if (!controller.signal.aborted) setStatus("idle");
       }
     },
@@ -300,10 +343,12 @@ export function useAssistant() {
     setMicState("idle");
   }, []);
 
-  // Warm up the Kokoro model in the background once we know we'll speak.
+  // Warm up the voice in the background once we know we'll speak: probes the
+  // TTS backend (and pre-warms it), or starts the Kokoro download when the
+  // app is running without a backend.
   const warmUp = useCallback(() => {
     if (settingsRef.current.textOnly || settingsRef.current.ttsEngine !== "kokoro") return;
-    warmUpKokoro((p) => setTtsProgress(p));
+    warmUpVoice((p) => setTtsProgress(p), settingsRef.current.voice);
   }, []);
 
   // Stop everything on unmount.

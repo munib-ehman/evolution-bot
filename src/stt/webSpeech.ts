@@ -6,6 +6,7 @@
  * requires no key. Shoppers who want fully-local, no-upload STT can switch to the
  * Moonshine/Whisper engines in Settings.)
  */
+import { lat } from "../lib/latency";
 
 export interface WebSpeechCallbacks {
   /** Fired continuously with the best-guess transcript (interim + final). */
@@ -24,6 +25,8 @@ export class WebSpeechRecognizer {
   private recognition: SpeechRecognitionLike | null = null;
   private finalText = "";
   private cancelled = false;
+  private finished = false;
+  private lastInterimAt = 0;
 
   start(callbacks: WebSpeechCallbacks): void {
     const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -36,6 +39,8 @@ export class WebSpeechRecognizer {
     this.recognition = recognition;
     this.finalText = "";
     this.cancelled = false;
+    this.finished = false;
+    this.lastInterimAt = 0;
 
     recognition.lang = navigator.language || "en-US";
     recognition.continuous = false; // stop after a natural pause
@@ -53,6 +58,27 @@ export class WebSpeechRecognizer {
       }
       if (final) this.finalText += final;
       callbacks.onPartial?.((this.finalText + interim).trim());
+
+      if (interim) this.lastInterimAt = performance.now();
+
+      // Latency: don't wait for onend — with continuous=false the first final
+      // result IS the utterance, and onend can lag it by hundreds of ms. Fire
+      // now and shut the session down ourselves.
+      if (final && !this.finished && !this.cancelled) {
+        const text = this.finalText.trim();
+        if (text) {
+          this.finished = true;
+          if (this.lastInterimAt > 0) {
+            lat.sttEndpoint(performance.now() - this.lastInterimAt);
+          }
+          try {
+            recognition.abort();
+          } catch {
+            /* already stopping */
+          }
+          callbacks.onFinal?.(text);
+        }
+      }
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
@@ -67,8 +93,13 @@ export class WebSpeechRecognizer {
 
     recognition.onend = () => {
       const text = this.finalText.trim();
-      // A cancelled session discards whatever was heard — nothing is sent.
-      if (text && !this.cancelled) callbacks.onFinal?.(text);
+      // Normally onFinal already fired from the early path above; this is the
+      // safety net for browsers that only finalize at end. A cancelled session
+      // discards whatever was heard — nothing is sent.
+      if (text && !this.cancelled && !this.finished) {
+        this.finished = true;
+        callbacks.onFinal?.(text);
+      }
       callbacks.onEnd?.();
       this.recognition = null;
     };

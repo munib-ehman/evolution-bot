@@ -62,6 +62,12 @@ class SpeechEngine {
     }
   }
 
+  /** Decode compressed audio (e.g. a WAV response) into an AudioBuffer. */
+  async decode(data: ArrayBuffer): Promise<AudioBuffer> {
+    const ctx = this.ensureContext();
+    return ctx.decodeAudioData(data);
+  }
+
   /** Queue one chunk of mono PCM for gapless playback. */
   enqueue(samples: Float32Array, sampleRate: number): void {
     if (samples.length === 0) return;

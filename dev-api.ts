@@ -1,0 +1,134 @@
+/**
+ * Dev-server twin of the Vercel functions in api/ — implements /api/chat and
+ * /api/tts as Vite middleware so `npm run dev` behaves exactly like
+ * production. Reads GROQ_API_KEY from .env (server-side only; never
+ * VITE_-prefixed). Kept in lockstep with api/chat.ts and api/tts.ts via the
+ * shared constants in api/_shared.ts.
+ */
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { loadEnv, type Plugin } from "vite";
+import {
+  GROQ_BASE,
+  CHAT_MODEL_DEFAULT,
+  CHAT_MAX_MESSAGES,
+  CHAT_MAX_TOTAL_CHARS,
+  TTS_MODEL_DEFAULT,
+  TTS_MAX_CHARS,
+  mapVoice,
+} from "./api/_shared";
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => chunks.push(c));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+function send(res: ServerResponse, status: number, text?: string): void {
+  res.statusCode = status;
+  if (text) {
+    res.setHeader("Content-Type", "text/plain");
+    res.end(text);
+  } else {
+    res.end();
+  }
+}
+
+async function pipeUpstream(res: ServerResponse, upstream: Response, fallbackType: string): Promise<void> {
+  if (!upstream.ok || !upstream.body) {
+    const detail = await upstream.text().catch(() => "");
+    send(res, 502, `Upstream error (${upstream.status}). ${detail.slice(0, 200)}`);
+    return;
+  }
+  res.statusCode = 200;
+  res.setHeader("Content-Type", upstream.headers.get("content-type") ?? fallbackType);
+  res.setHeader("Cache-Control", "no-store");
+  for await (const chunk of upstream.body as unknown as AsyncIterable<Uint8Array>) {
+    res.write(chunk);
+  }
+  res.end();
+}
+
+export function devApi(): Plugin {
+  let key = "";
+  let chatModel = CHAT_MODEL_DEFAULT;
+  let ttsModel = TTS_MODEL_DEFAULT;
+
+  return {
+    name: "dev-api",
+    configureServer(server) {
+      const env = loadEnv(server.config.mode, process.cwd(), "");
+      key = (env.GROQ_API_KEY ?? "").trim();
+      chatModel = (env.GROQ_CHAT_MODEL ?? "").trim() || CHAT_MODEL_DEFAULT;
+      ttsModel = (env.GROQ_TTS_MODEL ?? "").trim() || TTS_MODEL_DEFAULT;
+      if (!key) {
+        server.config.logger.warn(
+          "[dev-api] GROQ_API_KEY not set in .env — /api/chat and /api/tts will report unconfigured (the app falls back to mock replies and the in-browser voice).",
+        );
+      }
+
+      server.middlewares.use("/api/chat", (req, res) => {
+        void (async () => {
+          if (req.method === "GET") return send(res, key ? 204 : 503);
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          if (!key) return send(res, 503, "LLM proxy not configured.");
+          let messages: { role: string; content: string }[];
+          try {
+            const body = JSON.parse(await readBody(req)) as { messages?: unknown };
+            if (!Array.isArray(body.messages)) throw new Error("bad");
+            messages = body.messages as { role: string; content: string }[];
+          } catch {
+            return send(res, 400, "Invalid request body.");
+          }
+          if (messages.length === 0 || messages.length > CHAT_MAX_MESSAGES) {
+            return send(res, 400, "Too many messages.");
+          }
+          const total = messages.reduce((n, m) => n + (typeof m.content === "string" ? m.content.length : 0), 0);
+          if (total > CHAT_MAX_TOTAL_CHARS) return send(res, 400, "Conversation too large.");
+
+          const upstream = await fetch(`${GROQ_BASE}/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+            body: JSON.stringify({ model: chatModel, messages, temperature: 0.7, max_tokens: 220, stream: true }),
+          });
+          await pipeUpstream(res, upstream, "text/event-stream");
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/tts", (req, res) => {
+        void (async () => {
+          if (req.method === "GET") return send(res, key ? 204 : 503);
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          if (!key) return send(res, 503, "TTS proxy not configured.");
+          let text = "";
+          let voice: string | undefined;
+          try {
+            const body = JSON.parse(await readBody(req)) as { text?: unknown; voice?: unknown };
+            if (typeof body.text !== "string") throw new Error("bad");
+            text = body.text.trim();
+            voice = typeof body.voice === "string" ? body.voice : undefined;
+          } catch {
+            return send(res, 400, "Invalid request body.");
+          }
+          if (!text) return send(res, 400, "Empty text.");
+          if (text.length > TTS_MAX_CHARS) return send(res, 400, `Text too long (max ${TTS_MAX_CHARS} chars).`);
+
+          const upstream = await fetch(`${GROQ_BASE}/audio/speech`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+            body: JSON.stringify({ model: ttsModel, voice: mapVoice(voice), input: text, response_format: "wav" }),
+          });
+          await pipeUpstream(res, upstream, "audio/wav");
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+    },
+  };
+}
