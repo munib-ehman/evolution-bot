@@ -160,7 +160,7 @@ export default function App() {
           </span>
           <div>
             <h1 className="wordmark">Evolution</h1>
-            <p className="tagline">AI copilot for ecommerce founders</p>
+            <p className="tagline">The AI COO for your ecommerce store</p>
           </div>
         </div>
 

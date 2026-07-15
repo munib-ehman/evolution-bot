@@ -113,10 +113,12 @@ export function Login() {
       </div>
 
       <nav className="login-links" aria-label="Site pages">
-        <a href="pricing.html">Pricing</a>
-        <a href="terms.html">Terms</a>
-        <a href="privacy.html">Privacy</a>
-        <a href="refund.html">Refunds</a>
+        <a href="./">Home</a>
+        <a href="pricing">Pricing</a>
+        <a href="faq">FAQ</a>
+        <a href="terms">Terms</a>
+        <a href="privacy">Privacy</a>
+        <a href="refund">Refunds</a>
       </nav>
     </div>
   );
