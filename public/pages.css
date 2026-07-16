@@ -12,6 +12,9 @@
   --shadow: 0 10px 30px rgba(74, 31, 18, 0.08);
 }
 * { box-sizing: border-box; }
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -93,7 +96,7 @@ h2 {
   font-size: 19px;
 }
 p { margin: 10px 0; color: var(--ink2); }
-ul { margin: 10px 0; padding-left: 22px; color: var(--ink2); }
+ul, ol { margin: 10px 0; padding-left: 22px; color: var(--ink2); }
 li { margin: 6px 0; }
 strong { color: var(--ink); }
 a { color: #e0553f; }
@@ -101,7 +104,9 @@ a { color: #e0553f; }
 /* ── Pricing plan cards ── */
 .plans {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, …): a plain 1fr won't shrink below its longest word, which
+     skews the columns unequal on narrow screens. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
   margin: 30px 0 10px;
 }
@@ -152,6 +157,7 @@ a { color: #e0553f; }
   border: 1px solid var(--line);
   box-shadow: none;
 }
+.guarantee { margin: 12px 0 0; font-size: 13.5px; font-style: italic; color: var(--muted); }
 .fineprint { font-size: 13.5px; color: var(--muted); }
 
 .page-footer {
@@ -162,6 +168,8 @@ a { color: #e0553f; }
 }
 .page-footer a { color: var(--ink2); text-decoration: none; margin: 0 8px; }
 .page-footer a:hover { text-decoration: underline; }
+/* Long email addresses must wrap, never widen the page on small screens. */
+.page-footer p { overflow-wrap: anywhere; }
 
 @media (max-width: 640px) {
   .content { padding: 28px 22px 32px; }
@@ -294,6 +302,45 @@ body::after {
 .cta.big { margin-top: 0; padding: 14px 28px; font-size: 16px; }
 .hero-note { margin: 16px 0 0; font-size: 13.5px; color: var(--muted); }
 
+/* Benefit pills under the hero CTAs */
+.pills {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.pills li {
+  padding: 7px 15px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--line);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink2);
+}
+
+/* "Coming soon" roadmap list */
+.soon-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.soon-list li {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px dashed #eedcc8;
+  border-radius: 14px;
+  background: #fffdf9;
+  font-size: 14px;
+  color: var(--ink2);
+}
+
 .section-title { margin: 52px 0 8px; text-align: center; font-size: 27px; letter-spacing: -0.3px; }
 .section-title::after {
   content: "";
@@ -306,7 +353,7 @@ body::after {
 }
 .section-sub { max-width: 560px; margin: 0 auto 24px; text-align: center; }
 
-.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .step {
   position: relative;
   background: var(--card);
@@ -345,7 +392,7 @@ body::after {
   }
 }
 
-.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .feature {
   background: #fffdf9;
   border: 1px solid var(--line);
@@ -366,8 +413,12 @@ body::after {
 /* Rotate the warm tints so the grid reads hand-arranged, not stamped. */
 .features .feature:nth-child(3n + 2) .feature-ico { background: #ffe9ee; color: #ee5670; }
 .features .feature:nth-child(3n) .feature-ico { background: #fff2cf; color: #d0900e; }
-/* Seven cards on a 3-wide grid: park the straggler in the middle column. */
-.features .feature:nth-child(7):last-child { grid-column: 2; }
+/* Seven cards on a 3-wide grid: park the straggler in the middle column.
+   Desktop only — forcing a column on narrower grids conjures a phantom
+   implicit column and drags every card into a broken two-track layout. */
+@media (min-width: 901px) {
+  .features .feature:nth-child(7):last-child { grid-column: 2; }
+}
 
 /* Cards react to you — small lift, deeper shadow, warmer edge. */
 .step, .feature {
@@ -410,13 +461,29 @@ body::after {
 
 @media (max-width: 900px) {
   .hero h1 { font-size: 38px; }
-  .features { grid-template-columns: 1fr 1fr; }
+  .features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
   .hero h1 { font-size: 31px; }
+  .soon-list { grid-template-columns: 1fr; }
   .page-header { flex-wrap: wrap; row-gap: 14px; }
   .top-nav { width: 100%; margin-left: 0; gap: 14px; font-size: 13.5px; flex-wrap: wrap; }
   .steps, .features { grid-template-columns: 1fr; }
   .panel { padding: 26px 22px; }
   .flutter { display: none; }
+}
+
+@media (max-width: 400px) {
+  .page { padding: 22px 14px 48px; }
+  .wordmark { font-size: 26px; }
+  .brand-mark { width: 38px; height: 38px; }
+  .hero { padding: 30px 2px 22px; }
+  .hero h1 { font-size: 27px; }
+  .hero .lede { font-size: 16px; }
+  /* One thumb-sized button per row beats two cramped ones. */
+  .cta-row { flex-direction: column; align-items: stretch; }
+  .cta-row .cta.big { text-align: center; }
+  .content { padding: 24px 18px 28px; }
+  .price { font-size: 32px; }
+  .closing { padding: 6px 18px 34px; }
 }

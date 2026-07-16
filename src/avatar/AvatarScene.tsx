@@ -66,19 +66,42 @@ function CameraRig({ framing }: { framing: "portrait" | "stage" }) {
   useFrame((state, dt) => {
     const stage = framing === "stage";
     const aspect = state.size.width / state.size.height;
-    // The chat panel only overlays on desktop-wide canvases (see CSS); on
-    // narrow ones the layout stacks instead, so no sideways pan is needed.
-    const wide = aspect > 1.4;
+    // Below the CSS breakpoint the layout stacks and nothing overlays the
+    // stage sideways, so the shot must centre. Aspect alone can't tell this:
+    // the stacked chat-view stage on a phone is short and WIDE (~1.5), which
+    // would otherwise read as a desktop overlay canvas and pan the model.
+    const stacked = window.innerWidth <= 820;
+    const wide = !stacked && aspect > 1.4;
 
-    const camY = stage ? (wide ? -0.1 : -0.24) : -0.05;
-    const camZ = stage ? (wide ? 2.5 : 2.6) : wide ? 2.35 : 2.2;
-    const targetY = stage ? (wide ? -0.16 : -0.4) : -0.1;
+    let camX: number;
+    let camY: number;
+    let camZ: number;
+    let targetY: number;
+    const halfFovTan = Math.tan((30 * Math.PI) / 360);
+    if (stacked && stage) {
+      // Phone canvas in voice view: a head-and-shoulders portrait cropped in a
+      // fixed vertical window — headroom above the crown (~0.5) down to the
+      // collarbone, so the frame always ends above the chest. The width guard
+      // only kicks in on very narrow canvases so the hair never clips.
+      const TOP = 0.62;
+      const BOTTOM = -1.05;
+      const fitHeight = (TOP - BOTTOM) / (2 * halfFovTan);
+      const fitWidth = 0.9 / (2 * halfFovTan * aspect);
+      camZ = Math.min(6, Math.max(fitHeight, fitWidth));
+      targetY = TOP - halfFovTan * camZ;
+      camY = targetY + 0.15;
+      camX = 0;
+    } else {
+      camY = stage ? (wide ? -0.1 : -0.24) : -0.05;
+      camZ = stage ? (wide ? 2.5 : 2.6) : wide ? 2.35 : 2.2;
+      targetY = stage ? (wide ? -0.16 : -0.4) : -0.1;
 
-    // Pan as a FRACTION of the visible width so the model lands in the free
-    // half at any window size: voice → right of the caption column, chat →
-    // centred in the half not covered by the chat panel.
-    const visibleWidth = 2 * camZ * Math.tan((30 * Math.PI) / 360) * aspect;
-    const camX = !wide ? 0 : stage ? -0.17 * visibleWidth : 0.23 * visibleWidth;
+      // Pan as a FRACTION of the visible width so the model lands in the free
+      // half at any window size: voice → right of the caption column, chat →
+      // centred in the half not covered by the chat panel.
+      const visibleWidth = 2 * camZ * halfFovTan * aspect;
+      camX = !wide ? 0 : stage ? -0.17 * visibleWidth : 0.23 * visibleWidth;
+    }
 
     const k = Math.min(1, dt * 3.5); // frame-rate independent easing
     state.camera.position.x += (camX - state.camera.position.x) * k;

@@ -891,20 +891,33 @@ code {
 
 /* ── Responsive: stack on mobile ───────────────────────────────────────── */
 @media (max-width: 820px) {
-  .app { padding: 12px; gap: 12px; height: auto; min-height: 100%; }
+  /* Fixed-viewport app shell: the transcript scrolls, the page never does, so
+     the composer and voice dock are always on screen. dvh tracks the browser
+     chrome and the on-screen keyboard (100% is the fallback). */
+  .app {
+    height: 100%;
+    height: 100dvh;
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+    gap: 10px;
+  }
   /* No side room on small screens: back to a stacked flow — the stage and
      chat become normal grid rows and the chat simply shows/hides. */
   .layout {
     display: grid;
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(280px, 42vh) 1fr;
-    gap: 12px;
+    grid-template-rows: minmax(180px, 34vh) minmax(0, 1fr);
+    gap: 10px;
   }
-  .layout.solo { grid-template-rows: 1fr; }
-  .layout.solo .stage { min-height: 76vh; }
-  .stage { position: relative; inset: auto; }
-  /* Narrow screens: no side room — face rises to the top, controls centre below. */
-  .voice-layer { align-items: center; padding: 20px 14px 22px; }
+  .layout.solo { grid-template-rows: minmax(0, 1fr); }
+  .stage { position: relative; inset: auto; min-height: 0; }
+  /* Narrow screens: no side room — face rises to the top, controls centre below.
+     The taller fade melts the shoulders into the cream so the portrait reads
+     head-and-shoulders even when a narrow canvas forces the camera back. */
+  .voice-layer {
+    align-items: center;
+    padding: 20px 14px calc(22px + env(safe-area-inset-bottom) / 2);
+    background: linear-gradient(180deg, transparent 42%, rgba(255, 233, 213, 0.92) 84%);
+  }
   .suggestions.on-stage { justify-content: center; }
   .chat {
     position: relative;
@@ -912,16 +925,36 @@ code {
     right: auto;
     bottom: auto;
     width: auto;
-    min-height: 46vh;
+    min-height: 0;
     transform: none;
   }
   .chat.hidden { display: none; }
+  .transcript { padding: 14px; }
   .bubble { max-width: 88%; }
   .aura { width: 70vw; height: 70vw; }
+  .composer { padding: 10px; }
+  /* Anything under 16px makes iOS Safari zoom the page on focus. */
+  .composer-input,
+  .field select,
+  .field input,
+  .login-form input { font-size: 16px; }
+  .settings-panel {
+    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px);
+    padding: 18px;
+  }
+}
+
+@media (max-width: 640px) {
+  .wordmark { font-size: 26px; }
+  .brand-mark { width: 38px; height: 38px; }
 }
 
 @media (max-width: 400px) {
   .tagline { display: none; }
+  .orb { width: 74px; height: 74px; }
+  .voice-dock { gap: 14px; }
+  .caption { font-size: 14.5px; padding: 10px 14px; }
 }
 
 /* ── Magic-link login gate (only shown when Supabase auth is configured) ── */
@@ -1031,6 +1064,18 @@ code {
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Header on phones: the email pill must never crowd the wordmark. (These live
+   AFTER .badge.user so the cascade lets them win at equal specificity.) */
+@media (max-width: 820px) {
+  .badge.user { max-width: min(40vw, 200px); font-size: 11px; padding: 5px 9px; }
+  .header-right { gap: 8px; }
+}
+@media (max-width: 640px) {
+  .badge.user { max-width: 34vw; }
+}
+@media (max-width: 400px) {
+  .badge.user { max-width: 30vw; }
 }
 
 .login-links {
