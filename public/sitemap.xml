@@ -2,7 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://www.runevolution.io/</loc>
-    <lastmod>2026-07-15</lastmod>
+    <lastmod>2026-07-16</lastmod>
   </url>
   <url>
     <loc>https://www.runevolution.io/audit</loc>
@@ -10,7 +10,7 @@
   </url>
   <url>
     <loc>https://www.runevolution.io/pricing</loc>
-    <lastmod>2026-07-15</lastmod>
+    <lastmod>2026-07-16</lastmod>
   </url>
   <url>
     <loc>https://www.runevolution.io/faq</loc>
@@ -31,5 +31,13 @@
   <url>
     <loc>https://www.runevolution.io/refund</loc>
     <lastmod>2026-07-15</lastmod>
+  </url>
+  <url>
+    <loc>https://www.runevolution.io/blog</loc>
+    <lastmod>2026-07-17</lastmod>
+  </url>
+  <url>
+    <loc>https://www.runevolution.io/blog/reduce-abandoned-checkouts-shopify</loc>
+    <lastmod>2026-07-17</lastmod>
   </url>
 </urlset>

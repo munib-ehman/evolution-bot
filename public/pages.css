@@ -454,6 +454,48 @@ body::after {
 }
 .closing .section-title { margin-top: 34px; }
 
+/* ── Blog (search-only vertical: /blog + /blog/{slug}) ─────────────────── */
+.article { font-size: 16.5px; }
+.article h1 { margin-bottom: 18px; }
+.article h2 { margin-top: 34px; font-size: 21px; }
+.article h3 { margin: 22px 0 6px; font-size: 17px; }
+.article p, .article li { line-height: 1.75; }
+.article blockquote {
+  margin: 16px 0;
+  padding: 2px 18px;
+  border-left: 3px solid #f3d9c2;
+  color: var(--ink2);
+}
+.article-cta {
+  margin-top: 38px;
+  padding: 22px 24px;
+  border: 2px solid transparent;
+  border-radius: 18px;
+  background:
+    linear-gradient(#fffdf9, #fffdf9) padding-box,
+    var(--grad) border-box;
+}
+.article-cta p { margin: 0 0 4px; }
+.article-more {
+  margin-top: 34px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--line);
+}
+.article-more h2 { font-size: 16px; margin: 0 0 8px; }
+.blog-list { list-style: none; margin: 26px 0 0; padding: 0; }
+.blog-card {
+  margin: 0 0 16px;
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fffdf9;
+}
+.blog-card .effective { margin-bottom: 4px; }
+.blog-card h2 { margin: 0 0 6px; font-size: 19px; }
+.blog-card h2 a { color: var(--ink); text-decoration: none; }
+.blog-card h2 a:hover { color: #e0553f; }
+.blog-card p { margin: 0; font-size: 14.5px; }
+
 @media (prefers-reduced-motion: reduce) {
   body::before, body::after, .flutter, .hero > :not(.flutter) { animation: none; }
   .step, .feature, .cta { transition: none; }
