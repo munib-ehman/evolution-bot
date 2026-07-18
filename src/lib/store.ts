@@ -20,6 +20,16 @@ export interface AuditFinding {
   evidence?: string[];
 }
 
+export interface AuditStats {
+  currency: string | null;
+  orders30: number;
+  revenue30: number;
+  aov: number | null;
+  repeatRate: number | null;
+  abandoned30: number;
+  abandonedValue30: number;
+}
+
 export interface AuditReport {
   storeUrl: string;
   platform: string;
@@ -27,6 +37,9 @@ export interface AuditReport {
   summary: string;
   productCount: number | null;
   findings: AuditFinding[];
+  /** True when the report used the authenticated Shopify (OAuth) data. */
+  connected?: boolean;
+  stats?: AuditStats;
 }
 
 export type Plan = "free" | "operator";

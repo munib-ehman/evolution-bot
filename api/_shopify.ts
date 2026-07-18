@@ -1,0 +1,256 @@
+/**
+ * Shopify OAuth + Admin API — shared by /api/shopify-auth, /api/shopify-callback
+ * and the audit engine (files starting with "_" in api/ are helpers, not
+ * endpoints).
+ *
+ * Flow: the signed-in owner asks to connect → shopify-auth verifies their
+ * Supabase token, signs a state nonce, and returns Shopify's authorize URL →
+ * the owner approves read-only scopes on Shopify → shopify-callback verifies
+ * Shopify's HMAC + our state, swaps the code for an access token, and stores
+ * it in shopify_connections via the service role. The token NEVER reaches
+ * the browser (the table's column grants exclude it), and the app only ever
+ * asks for read scopes — Evolution can look, not touch.
+ */
+import { resolveUser, type AuditEnv } from "./_audit";
+
+export const SHOPIFY_API_VERSION = "2025-07";
+export const SHOPIFY_SCOPES_DEFAULT = "read_products,read_orders,read_checkouts,read_customers";
+/** OAuth states older than this are refused (stops replayed links). */
+const STATE_MAX_AGE_MS = 10 * 60 * 1000;
+
+export interface ShopifyEnv extends AuditEnv {
+  shopifyApiKey?: string;
+  shopifyApiSecret?: string;
+  shopifyScopes?: string;
+}
+
+export interface ShopifyConnection {
+  shop_domain: string;
+  access_token: string;
+}
+
+/** Env bundle for the deployed edge functions (dev-api builds its own via loadEnv). */
+export function shopifyEnvFromProcess(): ShopifyEnv {
+  return {
+    groqKey: (process.env.GROQ_API_KEY ?? "").trim(),
+    groqModel: (process.env.GROQ_CHAT_MODEL ?? "").trim(),
+    supabaseUrl: (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim(),
+    serviceRoleKey: (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim(),
+    shopifyApiKey: (process.env.SHOPIFY_API_KEY ?? "").trim(),
+    shopifyApiSecret: (process.env.SHOPIFY_API_SECRET ?? "").trim(),
+    shopifyScopes: (process.env.SHOPIFY_SCOPES ?? "").trim(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Small crypto helpers (WebCrypto — works on Vercel Edge and Node 18+)
+
+const encoder = new TextEncoder();
+
+async function hmacHex(secret: string, message: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Constant-time-ish hex comparison (length leak is fine — lengths are fixed). */
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+// ---------------------------------------------------------------------------
+// Shop domain + OAuth message verification
+
+/**
+ * Accepts "mystore", "mystore.myshopify.com", or a pasted admin URL and
+ * returns the canonical *.myshopify.com domain, or null. Strict shape —
+ * this string gets interpolated into URLs we then fetch.
+ */
+export function normalizeShopDomain(raw: unknown): string | null {
+  let s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (!s) return null;
+  s = s.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  if (!s.includes(".")) s = `${s}.myshopify.com`;
+  return /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(s) ? s : null;
+}
+
+/** Shopify's OAuth HMAC: sorted `k=v` pairs joined with `&`, HMAC-SHA256 hex. */
+export async function verifyShopifyHmac(params: URLSearchParams, secret: string): Promise<boolean> {
+  const hmac = params.get("hmac") ?? "";
+  if (!hmac) return false;
+  const message = [...params.entries()]
+    .filter(([k]) => k !== "hmac" && k !== "signature")
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${k}=${v}`)
+    .join("&");
+  return safeEqual(await hmacHex(secret, message), hmac.toLowerCase());
+}
+
+/** Our own CSRF state: `ts.userId.sig`, bound to the shop it was issued for. */
+export async function makeState(userId: string, shop: string, secret: string): Promise<string> {
+  const ts = Date.now().toString();
+  const sig = await hmacHex(secret, `${ts}|${userId}|${shop}`);
+  return `${ts}.${userId}.${sig}`;
+}
+
+/** Returns the userId baked into a valid, fresh, shop-bound state — else null. */
+export async function verifyState(state: string, shop: string, secret: string): Promise<string | null> {
+  const parts = state.split(".");
+  if (parts.length !== 3) return null;
+  const [ts, userId, sig] = parts;
+  const age = Date.now() - Number(ts);
+  if (!Number.isFinite(age) || age < 0 || age > STATE_MAX_AGE_MS) return null;
+  const expected = await hmacHex(secret, `${ts}|${userId}|${shop}`);
+  return safeEqual(expected, sig) ? userId : null;
+}
+
+// ---------------------------------------------------------------------------
+// The two OAuth steps, shaped for thin edge/dev shells
+
+/**
+ * Step 1 — POST { shop } with the owner's Supabase bearer token.
+ * Returns Shopify's authorize URL for the client to navigate to.
+ */
+export async function runShopifyAuthStart(
+  shopRaw: unknown,
+  authHeader: string | null,
+  origin: string,
+  env: ShopifyEnv,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (!env.shopifyApiKey || !env.shopifyApiSecret) {
+    return { status: 503, body: { error: "Shopify connect isn't configured yet — email us and we'll set it up." } };
+  }
+  const shop = normalizeShopDomain(shopRaw);
+  if (!shop) {
+    return { status: 400, body: { error: "Enter your .myshopify.com domain (find it in your Shopify admin URL)." } };
+  }
+  const userId = await resolveUser(env, authHeader);
+  if (!userId) return { status: 401, body: { error: "Sign in first." } };
+
+  const state = await makeState(userId, shop, env.shopifyApiSecret);
+  const url = new URL(`https://${shop}/admin/oauth/authorize`);
+  url.searchParams.set("client_id", env.shopifyApiKey);
+  url.searchParams.set("scope", env.shopifyScopes || SHOPIFY_SCOPES_DEFAULT);
+  url.searchParams.set("redirect_uri", `${origin}/api/shopify-callback`);
+  url.searchParams.set("state", state);
+  return { status: 200, body: { url: url.toString() } };
+}
+
+/**
+ * Step 2 — Shopify redirects back with code+hmac+state. Verify everything,
+ * swap the code for a token, persist, and tell the caller where to redirect.
+ */
+export async function runShopifyCallback(
+  requestUrl: URL,
+  env: ShopifyEnv,
+): Promise<{ redirect: string }> {
+  const fail = (reason: string) => ({ redirect: `/app?shopify=error&reason=${encodeURIComponent(reason)}` });
+  if (!env.shopifyApiKey || !env.shopifyApiSecret) return fail("not-configured");
+
+  const params = requestUrl.searchParams;
+  const shop = normalizeShopDomain(params.get("shop"));
+  const code = params.get("code") ?? "";
+  const state = params.get("state") ?? "";
+  if (!shop || !code || !state) return fail("missing-params");
+
+  if (!(await verifyShopifyHmac(params, env.shopifyApiSecret))) return fail("bad-hmac");
+  const userId = await verifyState(state, shop, env.shopifyApiSecret);
+  if (!userId) return fail("bad-state");
+
+  // Swap the grant code for a permanent (until uninstall) access token.
+  let token = "";
+  let scopes = "";
+  try {
+    const res = await fetch(`https://${shop}/admin/oauth/access_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: env.shopifyApiKey,
+        client_secret: env.shopifyApiSecret,
+        code,
+      }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return fail("token-exchange");
+    const data = (await res.json()) as { access_token?: string; scope?: string };
+    token = data.access_token ?? "";
+    scopes = data.scope ?? "";
+  } catch {
+    return fail("token-exchange");
+  }
+  if (!token) return fail("token-exchange");
+
+  if (!env.supabaseUrl || !env.serviceRoleKey) return fail("no-db");
+  const headers = {
+    apikey: env.serviceRoleKey,
+    Authorization: `Bearer ${env.serviceRoleKey}`,
+    "Content-Type": "application/json",
+    Prefer: "resolution=merge-duplicates,return=minimal",
+  };
+  try {
+    // The token row (service-role-only table — the browser never sees it)…
+    const conn = await fetch(`${env.supabaseUrl}/rest/v1/shopify_connections?on_conflict=user_id`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ user_id: userId, shop_domain: shop, access_token: token, scopes }),
+      signal: AbortSignal.timeout(6_000),
+    });
+    if (!conn.ok) return fail("save");
+    // …and the visible store row, so the app knows a store is connected.
+    await fetch(`${env.supabaseUrl}/rest/v1/stores?on_conflict=user_id`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ user_id: userId, url: `https://${shop}`, platform: "shopify" }),
+      signal: AbortSignal.timeout(6_000),
+    });
+  } catch {
+    return fail("save");
+  }
+
+  return { redirect: "/app?shopify=connected" };
+}
+
+// ---------------------------------------------------------------------------
+// Admin API access for the deep audit
+
+/** The stored connection for a user, or null. Service role only. */
+export async function getConnection(env: AuditEnv, userId: string): Promise<ShopifyConnection | null> {
+  if (!env.supabaseUrl || !env.serviceRoleKey) return null;
+  try {
+    const res = await fetch(
+      `${env.supabaseUrl}/rest/v1/shopify_connections?user_id=eq.${userId}&select=shop_domain,access_token`,
+      {
+        headers: { apikey: env.serviceRoleKey, Authorization: `Bearer ${env.serviceRoleKey}` },
+        signal: AbortSignal.timeout(4_000),
+      },
+    );
+    if (!res.ok) return null;
+    const rows = (await res.json()) as ShopifyConnection[];
+    return rows[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** One Admin API GET, JSON out; null on any failure (audit degrades). */
+export async function shopifyGet<T>(shop: string, token: string, pathAndQuery: string): Promise<T | null> {
+  try {
+    const res = await fetch(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/${pathAndQuery}`, {
+      headers: { "X-Shopify-Access-Token": token },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}

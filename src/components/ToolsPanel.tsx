@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createTask, listTasks, TOOLS, type OpsTask } from "../lib/tasks";
 import type { Plan } from "../lib/store";
+import { ShopifyConnect } from "./ShopifyConnect";
 
 const POLL_MS = 30_000;
 
@@ -24,6 +25,7 @@ export function ToolsPanel({
   onClose,
   plan,
   storeId,
+  storeUrl,
   onTaskDone,
   onUpgrade,
 }: {
@@ -31,6 +33,7 @@ export function ToolsPanel({
   onClose: () => void;
   plan: Plan;
   storeId: string | null;
+  storeUrl: string | null;
   onTaskDone: (task: OpsTask) => void;
   onUpgrade: () => void;
 }) {
@@ -101,6 +104,8 @@ export function ToolsPanel({
           ($100/mo). Your first request is reviewed free. <span className="link">Upgrade →</span>
         </button>
       )}
+
+      <ShopifyConnect storeUrl={storeUrl} />
 
       <div className="tool-grid">
         {TOOLS.map((t) => (

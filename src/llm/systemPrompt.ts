@@ -27,7 +27,20 @@ export function buildProductContext(formattedProducts: string): string {
 export function buildStoreContext(
   storeUrl: string,
   platform: string | null,
-  audit: { score: number; summary: string; findings: { title: string; detail: string }[] } | null,
+  audit: {
+    score: number;
+    summary: string;
+    findings: { title: string; detail: string }[];
+    stats?: {
+      currency: string | null;
+      orders30: number;
+      revenue30: number;
+      aov: number | null;
+      repeatRate: number | null;
+      abandoned30: number;
+      abandonedValue30: number;
+    };
+  } | null,
 ): string {
   let block = `\n\nThe founder's connected store: ${storeUrl}${platform === "shopify" ? " (Shopify)" : ""}.`;
   if (audit) {
@@ -36,6 +49,11 @@ export function buildStoreContext(
       .map((f) => `- ${f.title}: ${f.detail}`)
       .join("\n");
     block += `\nTheir latest Evolution audit scored ${audit.score}/100. ${audit.summary}\nAudit findings (reference these when relevant, and suggest filing a task to fix them):\n${findings}`;
+    const s = audit.stats;
+    if (s) {
+      const cur = s.currency ?? "USD";
+      block += `\nReal 30-day numbers from their Shopify data (cite these — they beat guesses): ${s.orders30} orders, ${Math.round(s.revenue30)} ${cur} revenue${s.aov != null ? `, average order ${Math.round(s.aov)} ${cur}` : ""}${s.repeatRate != null ? `, ${Math.round(s.repeatRate * 100)}% repeat customers` : ""}, ${s.abandoned30} abandoned checkouts worth ${Math.round(s.abandonedValue30)} ${cur}.`;
+    }
   } else {
     block += `\nNo audit on file yet — suggest running the free audit or filing a task.`;
   }

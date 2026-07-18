@@ -12,6 +12,7 @@
  * scanning, which is all these checks need.
  */
 import { GROQ_BASE, CHAT_MODEL_DEFAULT } from "./_shared";
+import { getConnection, shopifyGet, type ShopifyConnection } from "./_shopify";
 
 /** Per-request fetch timeout (homepage and products.json run in parallel). */
 export const AUDIT_FETCH_TIMEOUT_MS = 8_000;
@@ -36,6 +37,17 @@ export interface AuditFinding {
   evidence?: string[];
 }
 
+/** 30-day trading stats — only present on a connected (OAuth) deep audit. */
+export interface AuditStats {
+  currency: string | null;
+  orders30: number;
+  revenue30: number;
+  aov: number | null;
+  repeatRate: number | null;
+  abandoned30: number;
+  abandonedValue30: number;
+}
+
 export interface AuditReport {
   storeUrl: string;
   platform: "shopify" | "unknown";
@@ -43,6 +55,9 @@ export interface AuditReport {
   summary: string;
   productCount: number | null;
   findings: AuditFinding[];
+  /** True when the report includes authenticated (OAuth) store data. */
+  connected?: boolean;
+  stats?: AuditStats;
 }
 
 interface ShopifyVariant {
@@ -50,6 +65,7 @@ interface ShopifyVariant {
 }
 interface ShopifyProduct {
   title?: string;
+  handle?: string;
   body_html?: string | null;
   images?: unknown[];
   variants?: ShopifyVariant[];
@@ -138,12 +154,20 @@ async function fetchText(url: string): Promise<{ text: string; finalUrl: string 
 
 export interface StoreSnapshot {
   html: string;
+  /** Homepage + a real product page: where apps actually inject scripts. */
+  corpus: string;
   products: ShopifyProduct[] | null;
   passwordProtected: boolean;
   isShopify: boolean;
+  /** Shopify policy pages that resolved (null = not checked / not Shopify). */
+  policies: { refund: boolean; shipping: boolean } | null;
 }
 
-/** Fetch homepage HTML and /products.json in parallel. Public data only. */
+/**
+ * Fetch the store's public surface in two waves: homepage + /products.json
+ * first, then (informed by those) a real product page — most apps only
+ * inject scripts there, not on the homepage — and the Shopify policy pages.
+ */
 export async function fetchStore(host: string): Promise<StoreSnapshot> {
   const [homepage, productsRaw] = await Promise.all([
     fetchText(`https://${host}/`),
@@ -168,7 +192,30 @@ export async function fetchStore(host: string): Promise<StoreSnapshot> {
   const isShopify =
     products !== null || /cdn\.shopify\.com|Shopify\.theme|\/cdn\/shop\//i.test(html);
 
-  return { html, products, passwordProtected, isShopify };
+  // Wave 2 — only when wave 1 found a live store.
+  let productHtml = "";
+  let policies: StoreSnapshot["policies"] = null;
+  if (!passwordProtected && (html || products)) {
+    const firstHandle = products?.find((p) => typeof p.handle === "string")?.handle;
+    const [productPage, refund, shipping] = await Promise.all([
+      firstHandle ? fetchText(`https://${host}/products/${firstHandle}`) : Promise.resolve(null),
+      isShopify ? fetchText(`https://${host}/policies/refund-policy`) : Promise.resolve(null),
+      isShopify ? fetchText(`https://${host}/policies/shipping-policy`) : Promise.resolve(null),
+    ]);
+    productHtml = productPage?.text ?? "";
+    if (isShopify) {
+      // Shopify serves a real page only when the policy exists; a missing one
+      // redirects home or 404s. ~200 chars of body text = "actually written".
+      const looksReal = (p: { text: string; finalUrl: string } | null, slug: string) =>
+        Boolean(p && p.finalUrl.includes(slug) && stripHtml(p.text).length > 200);
+      policies = {
+        refund: looksReal(refund, "refund-policy"),
+        shipping: looksReal(shipping, "shipping-policy"),
+      };
+    }
+  }
+
+  return { html, corpus: html + "\n" + productHtml, products, passwordProtected, isShopify, policies };
 }
 
 // ---------------------------------------------------------------------------
@@ -178,6 +225,8 @@ const APP_PATTERNS = {
   reviews: /judge\.me|judgeme|loox|yotpo|stamped\.io|okendo|junip|reviews\.io|trustpilot/i,
   emailCapture: /klaviyo|omnisend|privy|postscript|attentive|mailchimp|sendlane|drip\.com/i,
   upsell: /rebuy|zipify|aftersell|boldapps|candyrack|selleasy|upcart|honeycombupsell/i,
+  support: /gorgias|tidio|zendesk|intercom|crisp\.chat|chatra|reamaze|tawk\.to|richpanel/i,
+  pixel: /fbevents\.js|connect\.facebook\.net|gtag\/js|googletagmanager|analytics\.tiktok|snap\.licdn|pintrk/i,
 };
 
 function stripHtml(html: string | null | undefined): string {
@@ -191,10 +240,10 @@ function metaContent(html: string, pattern: RegExp): string {
 
 /** Deterministic findings, ranked by impact. The LLM only rewrites prose. */
 export function runChecks(snapshot: StoreSnapshot): AuditFinding[] {
-  const { html, products } = snapshot;
+  const { html, corpus, products, policies } = snapshot;
   const findings: AuditFinding[] = [];
 
-  if (!APP_PATTERNS.emailCapture.test(html)) {
+  if (!APP_PATTERNS.emailCapture.test(corpus)) {
     findings.push({
       id: "no-cart-recovery",
       title: "No cart-recovery or email capture detected",
@@ -204,7 +253,7 @@ export function runChecks(snapshot: StoreSnapshot): AuditFinding[] {
     });
   }
 
-  if (!APP_PATTERNS.reviews.test(html)) {
+  if (!APP_PATTERNS.reviews.test(corpus)) {
     findings.push({
       id: "no-reviews",
       title: "No customer reviews shown",
@@ -214,13 +263,47 @@ export function runChecks(snapshot: StoreSnapshot): AuditFinding[] {
     });
   }
 
-  if (!APP_PATTERNS.upsell.test(html)) {
+  if (!APP_PATTERNS.upsell.test(corpus)) {
     findings.push({
       id: "no-upsells",
       title: "No upsell or cross-sell in the purchase flow",
       impact: 4,
       detail:
         "No upsell/cross-sell app detected. Post-purchase and in-cart offers are the cheapest way to raise average order value — you're leaving revenue on every order.",
+    });
+  }
+
+  if (!APP_PATTERNS.support.test(corpus)) {
+    findings.push({
+      id: "no-support-channel",
+      title: "No live support channel on the storefront",
+      impact: 3,
+      detail:
+        "No chat widget or helpdesk detected (Gorgias, Tidio, Zendesk…). Pre-sale questions that can't be asked are sales that quietly walk away — especially on mobile.",
+    });
+  }
+
+  if (!APP_PATTERNS.pixel.test(corpus)) {
+    findings.push({
+      id: "no-marketing-pixel",
+      title: "No marketing or analytics pixel detected",
+      impact: 3,
+      detail:
+        "We found no Meta pixel, Google tag, or TikTok pixel. Without one you can't retarget visitors or measure which traffic actually buys — every ad dollar flies blind.",
+    });
+  }
+
+  if (policies && (!policies.refund || !policies.shipping)) {
+    const missing = [
+      !policies.refund ? "refund policy" : null,
+      !policies.shipping ? "shipping policy" : null,
+    ].filter(Boolean);
+    findings.push({
+      id: "missing-policies",
+      title: `Missing ${missing.join(" and ")}`,
+      impact: 2,
+      detail:
+        "Shoppers check policies before trusting a store with their card — and payment processors and ad platforms look for them too. Publishing them is a 20-minute trust win.",
     });
   }
 
@@ -286,6 +369,103 @@ export function runChecks(snapshot: StoreSnapshot): AuditFinding[] {
 export function scoreAudit(findings: AuditFinding[]): number {
   const deduction = findings.reduce((n, f) => n + f.impact * 6, 0);
   return Math.max(25, Math.min(95, 100 - deduction));
+}
+
+// ---------------------------------------------------------------------------
+// Deep checks (Shopify OAuth) — real trading data, quantified findings
+
+interface ShopifyOrder {
+  total_price?: string;
+  customer?: { id?: number } | null;
+}
+interface ShopifyCheckout {
+  total_price?: string;
+}
+
+function fmtMoney(n: number, currency: string | null): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency || "USD",
+      maximumFractionDigits: 0,
+    }).format(n);
+  } catch {
+    return `$${Math.round(n)}`;
+  }
+}
+
+/**
+ * The audit's teeth: with a connected store we read the last 30 days of
+ * orders and abandoned checkouts (read-only Admin API) and turn "you
+ * probably lose carts" into "you lost N checkouts worth $X this month".
+ * Null when the token is dead or the API is unreachable — the public audit
+ * still runs.
+ */
+export async function runDeepChecks(
+  conn: ShopifyConnection,
+): Promise<{ findings: AuditFinding[]; stats: AuditStats } | null> {
+  const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+  const q = encodeURIComponent(since);
+  const [shopInfo, ordersRes, checkoutsRes] = await Promise.all([
+    shopifyGet<{ shop?: { currency?: string } }>(conn.shop_domain, conn.access_token, "shop.json"),
+    shopifyGet<{ orders?: ShopifyOrder[] }>(
+      conn.shop_domain,
+      conn.access_token,
+      `orders.json?status=any&limit=250&created_at_min=${q}&fields=id,total_price,customer`,
+    ),
+    shopifyGet<{ checkouts?: ShopifyCheckout[] }>(
+      conn.shop_domain,
+      conn.access_token,
+      `checkouts.json?limit=250&created_at_min=${q}`,
+    ),
+  ]);
+  if (!ordersRes && !checkoutsRes) return null;
+
+  const currency = shopInfo?.shop?.currency ?? null;
+  const orders = ordersRes?.orders ?? [];
+  const checkouts = checkoutsRes?.checkouts ?? [];
+
+  const revenue30 = orders.reduce((n, o) => n + (parseFloat(o.total_price ?? "0") || 0), 0);
+  const orders30 = orders.length;
+  const aov = orders30 > 0 ? revenue30 / orders30 : null;
+
+  const byCustomer = new Map<number, number>();
+  for (const o of orders) {
+    const id = o.customer?.id;
+    if (typeof id === "number") byCustomer.set(id, (byCustomer.get(id) ?? 0) + 1);
+  }
+  const repeatRate =
+    byCustomer.size > 0
+      ? [...byCustomer.values()].filter((c) => c > 1).length / byCustomer.size
+      : null;
+
+  const abandoned30 = checkouts.length;
+  const abandonedValue30 = checkouts.reduce((n, c) => n + (parseFloat(c.total_price ?? "0") || 0), 0);
+
+  const findings: AuditFinding[] = [];
+
+  if (abandoned30 > 0) {
+    findings.push({
+      id: "abandoned-carts",
+      title: `${abandoned30} abandoned checkout${abandoned30 > 1 ? "s" : ""} worth ${fmtMoney(abandonedValue30, currency)} in the last 30 days`,
+      impact: 5,
+      detail: `Shoppers put ${fmtMoney(abandonedValue30, currency)} in their carts this month and never finished checkout${abandoned30 >= 250 ? " (and that's just the first 250 we counted)" : ""}. A 3-touch recovery sequence typically wins back 5–15% of that — this is the single fastest money on the table.`,
+    });
+  }
+
+  if (orders30 >= 10 && repeatRate !== null && repeatRate < 0.15) {
+    findings.push({
+      id: "low-repeat-rate",
+      title: `Only ${Math.round(repeatRate * 100)}% of this month's customers came back`,
+      impact: 4,
+      detail: `Of ${byCustomer.size} customers in 30 days, just ${Math.round(repeatRate * 100)}% bought more than once. Win-back emails and review requests to past buyers are the cheapest revenue you're not collecting — new-customer ads cost 5–10× more.`,
+    });
+  }
+
+  return {
+    findings,
+    stats: { currency, orders30, revenue30, aov, repeatRate, abandoned30, abandonedValue30 },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -419,23 +599,42 @@ export async function runAudit(
   const normalized = normalizeStoreUrl(rawUrl);
   if ("error" in normalized) return { status: 400, body: { error: normalized.error } };
 
-  const snapshot = await fetchStore(normalized.host);
+  // Public scan and (for signed-in owners with a Shopify connection) the
+  // authenticated deep scan run in parallel — neither waits on the other.
+  const snapshotPromise = fetchStore(normalized.host);
+  const userId = await resolveUser(env, authHeader);
+  const conn = userId ? await getConnection(env, userId) : null;
+  const [snapshot, deep] = await Promise.all([
+    snapshotPromise,
+    conn ? runDeepChecks(conn) : Promise.resolve(null),
+  ]);
 
-  if (snapshot.passwordProtected) {
+  const publicSurface = Boolean(snapshot.html || snapshot.products);
+  if (snapshot.passwordProtected && !deep) {
     return {
       status: 422,
       body: { error: "Your store is password-protected, so we can't audit it from the outside. Remove the password page (or email us) and try again." },
     };
   }
-  if (!snapshot.html && !snapshot.products) {
+  if (!publicSurface && !deep) {
     return {
       status: 422,
       body: { error: "We couldn't reach that store. Check the URL — or if your store blocks bots, email us and a founder will run the audit by hand." },
     };
   }
 
-  const rawFindings = runChecks(snapshot);
-  const platform = snapshot.isShopify ? "shopify" : "unknown";
+  // Public checks only when there was a public surface to check — otherwise
+  // "no apps detected" would just mean "we saw nothing".
+  let rawFindings = publicSurface && !snapshot.passwordProtected ? runChecks(snapshot) : [];
+  if (deep) {
+    // Real abandoned-cart numbers supersede the pattern-guessed version.
+    if (deep.findings.some((f) => f.id === "abandoned-carts")) {
+      rawFindings = rawFindings.filter((f) => f.id !== "no-cart-recovery");
+    }
+    rawFindings = [...deep.findings, ...rawFindings].sort((a, b) => b.impact - a.impact);
+  }
+
+  const platform = snapshot.isShopify || conn ? "shopify" : "unknown";
   const productCount = snapshot.products?.length ?? null;
   const { summary, findings } = await writeProse(
     rawFindings,
@@ -450,9 +649,10 @@ export async function runAudit(
     summary,
     productCount,
     findings,
+    connected: Boolean(deep),
+    stats: deep?.stats,
   };
 
-  const userId = await resolveUser(env, authHeader);
   await persistAudit(env, report, userId);
 
   return { status: 200, body: report as unknown as Record<string, unknown> };

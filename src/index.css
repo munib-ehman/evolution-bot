@@ -1275,3 +1275,38 @@ code {
 .admin-request { max-width: 260px; }
 .admin-table .row-done { opacity: 0.55; }
 .admin-table select { font: inherit; font-size: 13px; margin-right: 6px; }
+
+/* ── Shopify connect (inside the Tasks panel) ── */
+.shopify-connect {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f4fbf6;
+  border-color: #d8f0dd;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.shopify-connect p { margin: 0 0 8px; font-size: 13.5px; color: var(--ink2); }
+.shopify-connect-row { display: flex; gap: 8px; }
+.shopify-connect-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13.5px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+}
+.shopify-connect-row input:focus { border-color: var(--g2); }
+.shopify-connect-row .primary { padding: 9px 16px; font-size: 13.5px; }
+.shopify-connected {
+  font-size: 13.5px;
+  color: #1e7a3a;
+  background: #dff5e4;
+  border: 1px solid #c4ebcd;
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}

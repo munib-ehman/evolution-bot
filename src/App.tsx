@@ -15,7 +15,7 @@ import { ToolsPanel } from "./components/ToolsPanel";
 import { UpgradePanel } from "./components/UpgradePanel";
 import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
-import { ensureProfile, getLatestAudit, getPlan, getStore, type AuditReport, type ConnectedStore, type Plan } from "./lib/store";
+import { ensureProfile, getLatestAudit, getPlan, getStore, runAuditAsUser, type AuditReport, type ConnectedStore, type Plan } from "./lib/store";
 import { TOOLS, type OpsTask } from "./lib/tasks";
 
 type View = "voice" | "chat";
@@ -54,6 +54,35 @@ export default function App() {
       setStore(s);
       setPlan(p);
       setAudit(latest);
+
+      // Returning from the Shopify OAuth loop: re-run the audit with the
+      // fresh connection so the deep findings land immediately.
+      const params = new URLSearchParams(window.location.search);
+      const shopifyResult = params.get("shopify");
+      if (shopifyResult) {
+        history.replaceState(null, "", window.location.pathname + window.location.hash);
+      }
+      if (shopifyResult === "connected") {
+        const target = s?.url ?? params.get("shop");
+        const fresh = target ? await runAuditAsUser(target) : null;
+        if (fresh) {
+          setAudit(fresh);
+          const stats = fresh.stats;
+          a.postAssistantMessage(
+            stats
+              ? `Shopify is connected — I can see your real numbers now. Last 30 days: ${stats.orders30} orders, ${stats.abandoned30} abandoned checkouts. Your audit is updated; open Tasks and let's go get that money back.`
+              : "Shopify is connected! I re-ran your audit with the deeper access — open the Tasks panel when you're ready.",
+          );
+        } else {
+          a.postAssistantMessage("Shopify is connected! Your next audit will use your real store data.");
+        }
+        const freshStore = await getStore();
+        if (freshStore) setStore(freshStore);
+      } else if (shopifyResult === "error") {
+        a.postAssistantMessage(
+          "Hmm, the Shopify connection didn't complete. Try again from the Tasks panel — or email us and we'll sort it out.",
+        );
+      }
     })();
   }, [authEmail]);
 
@@ -392,6 +421,7 @@ export default function App() {
           onClose={() => setTasksOpen(false)}
           plan={plan}
           storeId={store?.id ?? null}
+          storeUrl={store?.url ?? null}
           onTaskDone={handleTaskDone}
           onUpgrade={() => {
             setTasksOpen(false);

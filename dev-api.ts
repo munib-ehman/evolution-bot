@@ -16,7 +16,8 @@ import {
   TTS_MAX_CHARS,
   mapVoice,
 } from "./api/_shared";
-import { runAudit, type AuditEnv } from "./api/_audit";
+import { runAudit } from "./api/_audit";
+import { runShopifyAuthStart, runShopifyCallback, type ShopifyEnv } from "./api/_shopify";
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -56,7 +57,7 @@ export function devApi(): Plugin {
   let key = "";
   let chatModel = CHAT_MODEL_DEFAULT;
   let ttsModel = TTS_MODEL_DEFAULT;
-  let auditEnv: AuditEnv = {};
+  let auditEnv: ShopifyEnv = {};
 
   return {
     name: "dev-api",
@@ -70,6 +71,9 @@ export function devApi(): Plugin {
         groqModel: (env.GROQ_CHAT_MODEL ?? "").trim(),
         supabaseUrl: (env.SUPABASE_URL ?? env.VITE_SUPABASE_URL ?? "").trim(),
         serviceRoleKey: (env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim(),
+        shopifyApiKey: (env.SHOPIFY_API_KEY ?? "").trim(),
+        shopifyApiSecret: (env.SHOPIFY_API_SECRET ?? "").trim(),
+        shopifyScopes: (env.SHOPIFY_SCOPES ?? "").trim(),
       };
       if (!key) {
         server.config.logger.warn(
@@ -126,6 +130,45 @@ export function devApi(): Plugin {
           res.setHeader("Content-Type", "application/json");
           res.setHeader("Cache-Control", "no-store");
           res.end(JSON.stringify(body));
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/shopify-auth", (req, res) => {
+        void (async () => {
+          if (req.method === "GET") {
+            return send(res, auditEnv.shopifyApiKey && auditEnv.shopifyApiSecret ? 204 : 503);
+          }
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let shop: unknown;
+          try {
+            shop = (JSON.parse(await readBody(req)) as { shop?: unknown }).shop;
+          } catch {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            return res.end(JSON.stringify({ error: "Invalid request body." }));
+          }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const origin = `http://${req.headers.host ?? "localhost:5173"}`;
+          const { status, body } = await runShopifyAuthStart(shop, auth, origin, auditEnv);
+          res.statusCode = status;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify(body));
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/shopify-callback", (req, res) => {
+        void (async () => {
+          const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost:5173"}`);
+          const { redirect } = await runShopifyCallback(url, auditEnv);
+          res.statusCode = 302;
+          res.setHeader("Location", redirect);
+          res.end();
         })().catch((err) => {
           if (!res.headersSent) send(res, 500, String(err));
           else res.end();
