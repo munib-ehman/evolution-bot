@@ -16,6 +16,7 @@ import {
   TTS_MAX_CHARS,
   mapVoice,
 } from "./api/_shared";
+import { runAudit, type AuditEnv } from "./api/_audit";
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -55,6 +56,7 @@ export function devApi(): Plugin {
   let key = "";
   let chatModel = CHAT_MODEL_DEFAULT;
   let ttsModel = TTS_MODEL_DEFAULT;
+  let auditEnv: AuditEnv = {};
 
   return {
     name: "dev-api",
@@ -63,6 +65,12 @@ export function devApi(): Plugin {
       key = (env.GROQ_API_KEY ?? "").trim();
       chatModel = (env.GROQ_CHAT_MODEL ?? "").trim() || CHAT_MODEL_DEFAULT;
       ttsModel = (env.GROQ_TTS_MODEL ?? "").trim() || TTS_MODEL_DEFAULT;
+      auditEnv = {
+        groqKey: key,
+        groqModel: (env.GROQ_CHAT_MODEL ?? "").trim(),
+        supabaseUrl: (env.SUPABASE_URL ?? env.VITE_SUPABASE_URL ?? "").trim(),
+        serviceRoleKey: (env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim(),
+      };
       if (!key) {
         server.config.logger.warn(
           "[dev-api] GROQ_API_KEY not set in .env — /api/chat and /api/tts will report unconfigured (the app falls back to mock replies and the in-browser voice).",
@@ -94,6 +102,30 @@ export function devApi(): Plugin {
             body: JSON.stringify({ model: chatModel, messages, temperature: 0.7, max_tokens: 220, stream: true }),
           });
           await pipeUpstream(res, upstream, "text/event-stream");
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/audit", (req, res) => {
+        void (async () => {
+          if (req.method === "GET") return send(res, 204);
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let url: unknown;
+          try {
+            url = (JSON.parse(await readBody(req)) as { url?: unknown }).url;
+          } catch {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            return res.end(JSON.stringify({ error: "Invalid request body." }));
+          }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const { status, body } = await runAudit(url, auth, auditEnv);
+          res.statusCode = status;
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader("Cache-Control", "no-store");
+          res.end(JSON.stringify(body));
         })().catch((err) => {
           if (!res.headersSent) send(res, 500, String(err));
           else res.end();
