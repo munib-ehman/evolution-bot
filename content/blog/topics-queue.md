@@ -13,9 +13,6 @@ Format:
 
 ## Pending
 
-- Abandoned cart email sequence that actually converts: timing, copy, examples
-- SMS vs email for cart recovery: what works for small stores
-- Klaviyo alternatives for stores under $1M revenue
 - Gorgias vs doing support yourself: the real cost math
 - How much does the average Shopify app stack cost per month
 - Hiring a VA for your Shopify store vs automating: honest comparison
@@ -76,3 +73,6 @@ Format:
 ## Written
 
 - [2026-07-17] How to reduce abandoned checkouts on Shopify without discounting — /blog/reduce-abandoned-checkouts-shopify
+- [2026-07-18] Abandoned cart email sequence that actually converts: timing, copy, examples — /blog/abandoned-cart-email-sequence-that-converts
+- [2026-07-18] SMS vs email for cart recovery: what works for small stores — /blog/sms-vs-email-cart-recovery
+- [2026-07-18] Klaviyo alternatives for stores under $1M revenue — /blog/klaviyo-alternatives-for-small-stores
