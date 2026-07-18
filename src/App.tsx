@@ -6,10 +6,17 @@ import { Splash } from "./components/Splash";
 import { ButterflyIcon, MicIcon, StopIcon, CloseIcon, KeyboardIcon } from "./components/icons";
 import { useAssistant } from "./hooks/useAssistant";
 import { useAuthEmail } from "./components/AuthGate";
-import { signOut } from "./lib/auth";
+import { authEnabled, signOut } from "./lib/auth";
 import { looksLowPowered } from "./lib/capabilities";
 import { loadJSON, saveJSON } from "./lib/storage";
 import { speechEngine } from "./audio/speechEngine";
+import { ConnectStore } from "./components/ConnectStore";
+import { ToolsPanel } from "./components/ToolsPanel";
+import { UpgradePanel } from "./components/UpgradePanel";
+import { AdminQueue, isAdmin } from "./components/AdminQueue";
+import { buildStoreContext } from "./llm/systemPrompt";
+import { ensureProfile, getLatestAudit, getPlan, getStore, type AuditReport, type ConnectedStore, type Plan } from "./lib/store";
+import { TOOLS, type OpsTask } from "./lib/tasks";
 
 type View = "voice" | "chat";
 const VIEW_KEY = "shop-avatar-view";
@@ -30,6 +37,45 @@ export default function App() {
   const a = useAssistant();
   const authEmail = useAuthEmail();
   const warmedRef = useRef(false);
+
+  // ── The shell: connected store, plan, audit, panels ───────────────────────
+  // store: undefined = still loading, null = signed in but not connected yet.
+  const [store, setStore] = useState<ConnectedStore | null | undefined>(undefined);
+  const [plan, setPlan] = useState<Plan>("free");
+  const [audit, setAudit] = useState<AuditReport | null>(null);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+
+  useEffect(() => {
+    if (!authEnabled || !authEmail) return;
+    ensureProfile();
+    void (async () => {
+      const [s, p, latest] = await Promise.all([getStore(), getPlan(), getLatestAudit()]);
+      setStore(s);
+      setPlan(p);
+      setAudit(latest);
+    })();
+  }, [authEmail]);
+
+  // Keep the copilot grounded in the founder's real store + audit findings.
+  useEffect(() => {
+    a.setStoreContext(store ? buildStoreContext(store.url, store.platform, audit) : null);
+  }, [store, audit, a.setStoreContext]);
+
+  const handleConnected = (s: ConnectedStore, fresh: AuditReport | null) => {
+    setStore(s);
+    if (fresh) setAudit(fresh);
+    a.postAssistantMessage(
+      fresh
+        ? `Your store is connected! I ran your audit: ${fresh.score} out of 100. ${fresh.summary} Open the Tasks button up top and I'll start fixing things.`
+        : "Your store is connected! Open the Tasks button up top and tell me what to take off your plate first.",
+    );
+  };
+
+  const handleTaskDone = (t: OpsTask) => {
+    const name = TOOLS.find((x) => x.key === t.tool)?.name ?? t.tool;
+    a.postAssistantMessage(`Good news — your "${name}" task is done. ${t.result ?? "Check the Tasks panel for details."}`);
+  };
 
   // Two experiences: an immersive voice stage (default) and a classic chat.
   // The choice is remembered across visits.
@@ -145,6 +191,12 @@ export default function App() {
         ? "Thinking…"
         : (lastAssistant?.content ?? "");
 
+  // Internal ops queue at /app#/admin. The email check is routing only —
+  // the admin RLS policies are the real gate (non-admins get zero rows).
+  if (location.hash === "#/admin" && isAdmin(authEmail)) {
+    return <AdminQueue />;
+  }
+
   return (
     <div className={`app ${reveal ? "revealed" : "booting"}`}>
       {/* Warm, slowly-drifting aurora — the Evolution "alive" background. */}
@@ -166,6 +218,9 @@ export default function App() {
 
         {authEmail && (
           <div className="header-right">
+            <button type="button" className="tasks-btn" onClick={() => setTasksOpen((v) => !v)}>
+              Tasks
+            </button>
             <span className="badge user" title="Signed in">{authEmail}</span>
             <button type="button" className="link" onClick={() => void signOut()}>
               Sign out
@@ -329,6 +384,32 @@ export default function App() {
             />
           </section>
       </main>
+
+      {/* ── The shell: ops queue panel, onboarding, and billing ─────────── */}
+      {authEmail && (
+        <ToolsPanel
+          open={tasksOpen}
+          onClose={() => setTasksOpen(false)}
+          plan={plan}
+          storeId={store?.id ?? null}
+          onTaskDone={handleTaskDone}
+          onUpgrade={() => {
+            setTasksOpen(false);
+            setUpgradeOpen(true);
+          }}
+        />
+      )}
+
+      {authEnabled && authEmail && store === null && splashGone && (
+        <ConnectStore onConnected={handleConnected} />
+      )}
+
+      <UpgradePanel
+        open={upgradeOpen}
+        onClose={() => setUpgradeOpen(false)}
+        plan={plan}
+        email={authEmail}
+      />
 
       {!splashGone && <Splash leaving={reveal} ready={ready} />}
     </div>

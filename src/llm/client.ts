@@ -27,6 +27,12 @@ interface ChatOptions {
    * whole reply — downstream code never has to care which happened.
    */
   onToken?: (text: string) => void;
+  /**
+   * Connected-store context (store URL + audit findings). When present it
+   * REPLACES the demo-catalog block, so the copilot talks about the
+   * founder's real store instead of sample products.
+   */
+  extraContext?: string;
 }
 
 /**
@@ -46,8 +52,9 @@ export async function getAssistantReply(
   const lastUser = [...history].reverse().find((m) => m.role === "user");
   const query = lastUser?.content ?? "";
 
-  const relevant = retrieveRelevant(query, products, 5);
-  const systemContent = SYSTEM_PROMPT + buildProductContext(formatProducts(relevant));
+  const systemContent = options.extraContext
+    ? SYSTEM_PROMPT + options.extraContext
+    : SYSTEM_PROMPT + buildProductContext(formatProducts(retrieveRelevant(query, products, 5)));
 
   const apiMessages = [
     { role: "system" as const, content: systemContent },

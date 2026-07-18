@@ -119,6 +119,26 @@ export function useAssistant() {
     setMessages((prev) => [...prev, msg]);
   }, []);
 
+  // Connected-store context (store URL + audit) injected into every turn's
+  // system prompt. A ref so in-flight sends never read a stale closure.
+  const storeContextRef = useRef<string | null>(null);
+  const setStoreContext = useCallback((ctx: string | null) => {
+    storeContextRef.current = ctx;
+  }, []);
+
+  /**
+   * Drop a finished assistant message into the conversation from outside the
+   * send loop — used when an ops-queue task completes and its result should
+   * read like the operator reporting back.
+   */
+  const postAssistantMessage = useCallback(
+    (content: string) => {
+      appendMessage({ id: newId(), role: "assistant", content });
+      logChat("assistant", content);
+    },
+    [appendMessage],
+  );
+
   const updateMessage = useCallback((id: string, patch: Partial<Message>) => {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
   }, []);
@@ -180,6 +200,7 @@ export function useAssistant() {
       try {
         const reply = await getAssistantReply(history, products, {
           signal: controller.signal,
+          extraContext: storeContextRef.current ?? undefined,
           onToken: (t) => {
             if (controller.signal.aborted) return;
             if (streamed === "") lat.mark("llmFirstToken");
@@ -377,6 +398,8 @@ export function useAssistant() {
     avatarFellBack,
     setAvatarFellBack,
     send,
+    setStoreContext,
+    postAssistantMessage,
     toggleMic,
     cancelListening,
     setHandsFree,

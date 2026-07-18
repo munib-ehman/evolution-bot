@@ -1088,3 +1088,190 @@ code {
   margin: 0 9px;
 }
 .login-links a:hover { text-decoration: underline; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   The shell: onboarding overlay, Tasks panel (ops queue), billing, admin.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Modal overlays (connect store, upgrade) ── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(61, 26, 16, 0.28);
+  backdrop-filter: blur(6px);
+}
+.overlay-card {
+  width: min(460px, 100%);
+  padding: 28px 28px 22px;
+}
+.overlay-card h2 { margin: 0 0 6px; font-size: 22px; }
+.overlay-lede { margin: 0 0 18px; color: var(--ink2); font-size: 15px; }
+.overlay-form { display: flex; flex-direction: column; gap: 10px; }
+.overlay-form input {
+  font: inherit;
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fffdf9;
+  color: var(--ink);
+  outline: none;
+}
+.overlay-form input:focus { border-color: var(--g2); }
+.overlay-error { margin: 10px 0 0; color: #c0392b; font-size: 14px; }
+.overlay-fineprint { margin: 14px 0 0; color: var(--muted); font-size: 12.5px; }
+
+.primary {
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  background: var(--grad);
+  border: 0;
+  border-radius: 14px;
+  padding: 13px 22px;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(255, 90, 80, 0.32);
+}
+.primary:disabled { opacity: 0.6; cursor: wait; }
+.primary.as-link { display: block; text-align: center; text-decoration: none; }
+
+/* ── Header Tasks button ── */
+.tasks-btn {
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 16px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.tasks-btn:hover { border-color: var(--g2); }
+
+/* ── Tasks panel (slide-over) ── */
+.tools-panel {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 50;
+  width: min(420px, calc(100vw - 24px));
+  padding: 20px;
+  overflow-y: auto;
+  transform: translateX(calc(100% + 24px));
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tools-panel.open { transform: translateX(0); }
+.tools-header { display: flex; align-items: baseline; justify-content: space-between; }
+.tools-header h2 { margin: 0 0 10px; font-size: 20px; }
+
+.plan-banner {
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  color: var(--ink2);
+  background: var(--cream-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  cursor: pointer;
+}
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.tool-card {
+  font: inherit;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: #fffdf9;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+}
+.tool-card span { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.tool-card:hover { border-color: var(--g2); }
+.tool-card.selected { border-color: var(--g2); background: #fff3e8; }
+
+.task-compose { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.task-compose textarea {
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffdf9;
+  color: var(--ink);
+  resize: vertical;
+  outline: none;
+}
+.task-compose textarea:focus { border-color: var(--g2); }
+.task-compose-row { display: flex; justify-content: space-between; align-items: center; }
+
+.task-list { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+.task-empty { color: var(--muted); font-size: 14px; }
+.task-item {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fffdf9;
+  padding: 12px 14px;
+}
+.task-item-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.task-request { margin: 6px 0 0; font-size: 13.5px; color: var(--ink2); }
+.task-result {
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  color: var(--ink);
+  background: #f2fbf4;
+  border: 1px solid #d8f0dd;
+  border-radius: 10px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+}
+.status-chip {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--cream-2);
+  color: var(--ink2);
+}
+.status-chip.in_progress { background: #fff3d6; color: #8a6100; }
+.status-chip.done { background: #dff5e4; color: #1e7a3a; }
+
+/* ── Plan card (upgrade) ── */
+.plan-price { margin: 0 0 10px; font-size: 16px; color: var(--ink2); }
+.plan-price strong { font-size: 30px; color: var(--ink); }
+.plan-list { margin: 0 0 18px; padding-left: 20px; color: var(--ink2); font-size: 14.5px; }
+.plan-list li { margin: 6px 0; }
+
+/* ── Admin ops queue (internal — plain on purpose) ── */
+.admin { max-width: 1180px; margin: 0 auto; padding: 24px 20px 60px; }
+.admin-header { display: flex; justify-content: space-between; align-items: baseline; }
+.admin-header h1 { margin: 0 0 14px; font-size: 26px; }
+.admin-note { color: var(--ink2); font-size: 14px; }
+.admin-table { width: 100%; border-collapse: collapse; background: var(--card); font-size: 13.5px; }
+.admin-table th, .admin-table td {
+  border: 1px solid var(--line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.admin-table textarea { width: 100%; min-width: 200px; font: inherit; font-size: 13px; }
+.admin-request { max-width: 260px; }
+.admin-table .row-done { opacity: 0.55; }
+.admin-table select { font: inherit; font-size: 13px; margin-right: 6px; }
