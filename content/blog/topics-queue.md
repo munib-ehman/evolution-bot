@@ -13,9 +13,6 @@ Format:
 
 ## Pending
 
-- Gorgias vs doing support yourself: the real cost math
-- How much does the average Shopify app stack cost per month
-- Hiring a VA for your Shopify store vs automating: honest comparison
 - Where is my order (WISMO): how to cut support tickets in half
 - How to write product descriptions that rank and convert
 - Shopify SEO checklist for stores that can't afford an agency
@@ -76,3 +73,6 @@ Format:
 - [2026-07-18] Abandoned cart email sequence that actually converts: timing, copy, examples — /blog/abandoned-cart-email-sequence-that-converts
 - [2026-07-18] SMS vs email for cart recovery: what works for small stores — /blog/sms-vs-email-cart-recovery
 - [2026-07-18] Klaviyo alternatives for stores under $1M revenue — /blog/klaviyo-alternatives-for-small-stores
+- [2026-07-19] Gorgias vs doing support yourself: the real cost math — /blog/gorgias-vs-diy-support-cost-math
+- [2026-07-19] How much does the average Shopify app stack cost per month — /blog/average-shopify-app-stack-cost-per-month
+- [2026-07-19] Hiring a VA for your Shopify store vs automating: honest comparison — /blog/hiring-va-vs-automating-shopify-store
