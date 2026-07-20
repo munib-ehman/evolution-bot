@@ -11,7 +11,8 @@ Your job:
 - For product research, ground your answers in the provided catalog. If something isn't in the catalog, say so and suggest the closest fit.
 - When you mention a product, include its name and price naturally.
 - If you're unsure about a platform or policy detail, say so honestly and suggest where the founder can confirm it.
-- When the founder asks you to actually DO work on their store (recover carts, research products, set up support, fix findings), you don't do it live in chat: tell them to file it from the Tasks panel (the Tasks button up top) — the operator team handles it and the result appears there. Never claim the work is already done.
+- With a store connected you are its agent, not a generic chatbot: you can run SKILLS that pull the store's live Shopify data and deliver full reports in chat — the skill chips under the conversation run them. When the founder asks for analysis a skill covers (product listings, cart recovery, retention, stock), answer briefly from the store context you have, then point them at the matching skill by name for the full report.
+- When the founder wants something CHANGED (rewriting descriptions, setting up flows, anything hands-on), that's the Evolution team's work: tell them to hit "Ask the team to fix this" under a skill report, or file it from the Tasks panel — the team is notified and the result appears in chat. Never claim work is already done.
 
 Speak like a sharp, supportive colleague who knows the founder's store well.`;
 
@@ -57,5 +58,6 @@ export function buildStoreContext(
   } else {
     block += `\nNo audit on file yet — suggest running the free audit or filing a task.`;
   }
+  block += `\nSkills you can suggest by name (the founder runs them from the chips under the chat): "Audit my product listings", "Cart recovery report", "Retention & reviews snapshot", "Back-in-stock check".`;
   return block;
 }

@@ -17,6 +17,7 @@ import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
 import { ensureProfile, getLatestAudit, getPlan, getStore, runAuditAsUser, type AuditReport, type ConnectedStore, type Plan } from "./lib/store";
 import { TOOLS, type OpsTask } from "./lib/tasks";
+import { SKILL_CHIPS, type SkillChip } from "./lib/skills";
 
 type View = "voice" | "chat";
 const VIEW_KEY = "shop-avatar-view";
@@ -180,6 +181,15 @@ export default function App() {
     a.toggleMic();
   };
 
+  // Skill runs live in the chat view — reports are read, not spoken. From the
+  // voice stage a chip first glides over to chat (mic safely off), then runs.
+  const skillsAvailable = store != null;
+  const handleSkill = (chip: SkillChip) => {
+    a.cancelListening();
+    setView("chat");
+    void a.runSkillFlow(chip);
+  };
+
   const voiceEnabled = !a.settings.textOnly && a.settings.ttsEngine !== "off";
   const canTalk = voiceEnabled && a.micSupported;
   // Voice stage needs a working mic — otherwise fall back to chat gracefully.
@@ -313,14 +323,21 @@ export default function App() {
                 )
               )}
 
-              {/* Starter prompts — the first screen invites a real task. */}
+              {/* Starter prompts — the first screen invites a real task. With
+                   a store connected, they become the agentic skill chips. */}
               {a.messages.length <= 1 && a.status === "idle" && a.micState === "idle" && (
                 <div className="suggestions on-stage" aria-label="Suggested questions">
-                  {STARTERS.map((s) => (
-                    <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
-                      {s}
-                    </button>
-                  ))}
+                  {skillsAvailable
+                    ? SKILL_CHIPS.map((c) => (
+                        <button key={c.id} type="button" className="chip" title={c.blurb} onClick={() => handleSkill(c)}>
+                          {c.label}
+                        </button>
+                      ))
+                    : STARTERS.map((s) => (
+                        <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
+                          {s}
+                        </button>
+                      ))}
                 </div>
               )}
 
@@ -370,14 +387,43 @@ export default function App() {
         {/* ── Chat experience: an always-mounted panel that slides in over the
              right of the stage while the camera glides the model left. ───── */}
         <section className={`chat card ${voiceView ? "hidden" : ""}`} aria-hidden={voiceView}>
-            <MessageList messages={a.messages} status={a.status} />
+            <MessageList
+              messages={a.messages}
+              status={a.status}
+              onEscalate={(taskTool, note) => void a.escalateToTeam(taskTool, note)}
+            />
 
-            {/* Starter prompts — fill the empty first screen with useful taps. */}
+            {/* Starter prompts — fill the empty first screen with useful taps.
+                 With a store connected, they become the agentic skill chips. */}
             {a.messages.length <= 1 && a.status === "idle" && (
               <div className="suggestions" aria-label="Suggested questions">
-                {STARTERS.map((s) => (
-                  <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
-                    {s}
+                {skillsAvailable
+                  ? SKILL_CHIPS.map((c) => (
+                      <button key={c.id} type="button" className="chip" title={c.blurb} onClick={() => handleSkill(c)}>
+                        {c.label}
+                      </button>
+                    ))
+                  : STARTERS.map((s) => (
+                      <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
+                        {s}
+                      </button>
+                    ))}
+              </div>
+            )}
+
+            {/* Skills stay one tap away after the conversation has started. */}
+            {skillsAvailable && a.messages.length > 1 && (
+              <div className="skills-row" aria-label="Skills">
+                {SKILL_CHIPS.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="chip small"
+                    title={c.blurb}
+                    disabled={a.status === "thinking"}
+                    onClick={() => handleSkill(c)}
+                  >
+                    {c.label}
                   </button>
                 ))}
               </div>

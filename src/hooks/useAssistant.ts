@@ -24,6 +24,8 @@ import { DEFAULT_AVATAR_URL } from "../avatar/constants";
 import { loadJSON, saveJSON } from "../lib/storage";
 import { hasWebSpeech, hasMicrophone } from "../lib/capabilities";
 import { logChat } from "../lib/chatLog";
+import { runSkill as requestSkillRun, SkillError } from "../llm/skillClient";
+import { FILE_FIXES_SKILL_ID, type SkillChip } from "../lib/skills";
 
 export type AssistantStatus = "idle" | "thinking" | "speaking";
 export type MicState = "idle" | "listening" | "transcribing";
@@ -266,6 +268,133 @@ export function useAssistant() {
     [appendMessage, updateMessage, products, status],
   );
 
+  /**
+   * Run a skill against the connected store — the agentic path. Parallel to
+   * `send`, NOT through it: reports are long markdown that must never be
+   * pushed into TTS, and the stream carries progress events.
+   */
+  const runSkillCore = useCallback(
+    async (params: {
+      skillId: string;
+      kind: "agentic" | "concierge";
+      taskTool: string;
+      note?: string;
+      userText: string;
+      escalateNoteLabel?: string;
+    }) => {
+      if (status === "thinking") return;
+
+      // Barge-in: stop speech and cancel any in-flight reply or run.
+      stopSpeaking();
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      setError(null);
+      appendMessage({ id: newId(), role: "user", content: params.userText });
+      logChat("user", params.userText);
+      setStatus("thinking");
+
+      const assistantId = newId();
+      appendMessage({
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        pending: true,
+        markdown: true,
+        progress: "Starting…",
+      });
+
+      let streamed = "";
+      let paintTimer: number | null = null;
+      const paint = () => {
+        paintTimer = null;
+        if (controller.signal.aborted) return;
+        updateMessage(assistantId, { content: streamed });
+      };
+
+      try {
+        const result = await requestSkillRun(params.skillId, {
+          note: params.note,
+          taskTool: params.taskTool,
+          signal: controller.signal,
+          onProgress: (label) => {
+            if (!controller.signal.aborted) updateMessage(assistantId, { progress: label });
+          },
+          onToken: (t) => {
+            if (controller.signal.aborted) return;
+            streamed += t;
+            if (paintTimer === null) paintTimer = window.setTimeout(paint, STREAM_PAINT_MS);
+          },
+        });
+        if (controller.signal.aborted) return;
+        if (paintTimer !== null) window.clearTimeout(paintTimer);
+        streamed = result.report;
+        updateMessage(assistantId, {
+          content: result.report,
+          pending: false,
+          progress: undefined,
+          // Finished agentic reports carry the escalation action; the note
+          // travels to the team verbatim, so make it self-contained.
+          escalate:
+            params.kind === "agentic"
+              ? {
+                  taskTool: params.taskTool,
+                  note:
+                    `The founder ran the "${params.escalateNoteLabel ?? params.skillId}" skill and asked the team to fix what it found.\n\nReport:\n` +
+                    result.report.slice(0, 1500),
+                }
+              : undefined,
+        });
+        logChat("assistant", result.report);
+      } catch (err) {
+        if (paintTimer !== null) window.clearTimeout(paintTimer);
+        if (controller.signal.aborted) return;
+        console.error("[skill] run failed:", err);
+        const msg =
+          err instanceof SkillError && err.status === 401
+            ? "Your session expired — sign in again to run skills."
+            : err instanceof SkillError && err.status === 409
+              ? "Connect your Shopify store first (Tasks → Connect Shopify) — skills run on your real store data."
+              : err instanceof SkillError
+                ? err.message
+                : "That skill run failed. Mind trying again?";
+        if (streamed) updateMessage(assistantId, { pending: false, progress: undefined });
+        else updateMessage(assistantId, { content: msg, pending: false, progress: undefined, markdown: false });
+        setError(msg);
+      } finally {
+        if (!controller.signal.aborted) setStatus("idle");
+      }
+    },
+    [appendMessage, updateMessage, status],
+  );
+
+  /** Run one of the skill chips (the agentic store reports). */
+  const runSkillFlow = useCallback(
+    (chip: SkillChip) =>
+      runSkillCore({
+        skillId: chip.id,
+        kind: chip.kind,
+        taskTool: chip.taskTool,
+        userText: chip.label,
+        escalateNoteLabel: chip.label,
+      }),
+    [runSkillCore],
+  );
+
+  /** "Ask the team to fix this" under a report → file task + email the team. */
+  const escalateToTeam = useCallback(
+    (taskTool: string, note: string) =>
+      runSkillCore({
+        skillId: FILE_FIXES_SKILL_ID,
+        kind: "concierge",
+        taskTool,
+        note,
+        userText: "Ask the team to fix this",
+      }),
+    [runSkillCore],
+  );
+
   // ── Microphone / speech-to-text ────────────────────────────────────────────
   const micSupported = useMemo(() => {
     const cfg = settings;
@@ -398,6 +527,8 @@ export function useAssistant() {
     avatarFellBack,
     setAvatarFellBack,
     send,
+    runSkillFlow,
+    escalateToTeam,
     setStoreContext,
     postAssistantMessage,
     toggleMic,

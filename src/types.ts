@@ -15,6 +15,12 @@ export interface Message {
   content: string;
   /** True while the assistant reply is still being produced or spoken. */
   pending?: boolean;
+  /** Render content as a markdown report bubble (skill runs). */
+  markdown?: boolean;
+  /** Status line shown while a skill run hasn't produced tokens yet. */
+  progress?: string;
+  /** Offer an "Ask the team to fix this" action under a finished report. */
+  escalate?: { taskTool: string; note: string };
 }
 
 /** Speech-to-text engine choice, selectable in Settings. */

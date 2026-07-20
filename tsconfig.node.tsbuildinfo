@@ -1,1 +1,1 @@
-{"root":["./vite.config.ts","./dev-api.ts","./api/_audit.ts","./api/_shared.ts","./api/_shopify.ts","./api/audit.ts","./api/chat.ts","./api/shopify-auth.ts","./api/shopify-callback.ts","./api/tts.ts"],"version":"5.9.3"}
+{"root":["./vite.config.ts","./dev-api.ts","./api/_audit.ts","./api/_email.ts","./api/_shared.ts","./api/_shopify.ts","./api/_skilltools.ts","./api/_skills.ts","./api/audit.ts","./api/chat.ts","./api/shopify-auth.ts","./api/shopify-callback.ts","./api/skill.ts","./api/task-notify.ts","./api/tts.ts"],"version":"5.9.3"}

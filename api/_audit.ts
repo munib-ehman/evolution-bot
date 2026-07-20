@@ -229,7 +229,7 @@ const APP_PATTERNS = {
   pixel: /fbevents\.js|connect\.facebook\.net|gtag\/js|googletagmanager|analytics\.tiktok|snap\.licdn|pintrk/i,
 };
 
-function stripHtml(html: string | null | undefined): string {
+export function stripHtml(html: string | null | undefined): string {
   return (html ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
@@ -376,10 +376,84 @@ export function scoreAudit(findings: AuditFinding[]): number {
 
 interface ShopifyOrder {
   total_price?: string;
+  created_at?: string;
   customer?: { id?: number } | null;
 }
 interface ShopifyCheckout {
   total_price?: string;
+}
+
+/**
+ * Order-level trading stats for an arbitrary window — shared by the deep
+ * audit (30 days) and the skill engine (up to 90 days). `fetched` is false
+ * when the orders API was unreachable (stats are then all zeros).
+ */
+export interface OrderStats {
+  currency: string | null;
+  days: number;
+  fetched: boolean;
+  orders: number;
+  revenue: number;
+  aov: number | null;
+  uniqueCustomers: number;
+  repeatRate: number | null;
+  weekly: { weekStart: string; orders: number; revenue: number }[];
+}
+
+export async function fetchOrderStats(conn: ShopifyConnection, days: number): Promise<OrderStats> {
+  const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
+  const q = encodeURIComponent(since);
+  const [shopInfo, ordersRes] = await Promise.all([
+    shopifyGet<{ shop?: { currency?: string } }>(conn.shop_domain, conn.access_token, "shop.json"),
+    shopifyGet<{ orders?: ShopifyOrder[] }>(
+      conn.shop_domain,
+      conn.access_token,
+      `orders.json?status=any&limit=250&created_at_min=${q}&fields=id,total_price,created_at,customer`,
+    ),
+  ]);
+
+  const currency = shopInfo?.shop?.currency ?? null;
+  const orders = ordersRes?.orders ?? [];
+  const revenue = orders.reduce((n, o) => n + (parseFloat(o.total_price ?? "0") || 0), 0);
+  const aov = orders.length > 0 ? revenue / orders.length : null;
+
+  const byCustomer = new Map<number, number>();
+  for (const o of orders) {
+    const id = o.customer?.id;
+    if (typeof id === "number") byCustomer.set(id, (byCustomer.get(id) ?? 0) + 1);
+  }
+  const repeatRate =
+    byCustomer.size > 0
+      ? [...byCustomer.values()].filter((c) => c > 1).length / byCustomer.size
+      : null;
+
+  const byWeek = new Map<string, { orders: number; revenue: number }>();
+  for (const o of orders) {
+    const t = Date.parse(o.created_at ?? "");
+    if (!Number.isFinite(t)) continue;
+    const d = new Date(t);
+    d.setUTCDate(d.getUTCDate() - d.getUTCDay()); // snap to Sunday
+    const key = d.toISOString().slice(0, 10);
+    const bucket = byWeek.get(key) ?? { orders: 0, revenue: 0 };
+    bucket.orders += 1;
+    bucket.revenue += parseFloat(o.total_price ?? "0") || 0;
+    byWeek.set(key, bucket);
+  }
+  const weekly = [...byWeek.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([weekStart, w]) => ({ weekStart, orders: w.orders, revenue: Math.round(w.revenue) }));
+
+  return {
+    currency,
+    days,
+    fetched: ordersRes !== null,
+    orders: orders.length,
+    revenue,
+    aov,
+    uniqueCustomers: byCustomer.size,
+    repeatRate,
+    weekly,
+  };
 }
 
 function fmtMoney(n: number, currency: string | null): string {
@@ -406,38 +480,23 @@ export async function runDeepChecks(
 ): Promise<{ findings: AuditFinding[]; stats: AuditStats } | null> {
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
   const q = encodeURIComponent(since);
-  const [shopInfo, ordersRes, checkoutsRes] = await Promise.all([
-    shopifyGet<{ shop?: { currency?: string } }>(conn.shop_domain, conn.access_token, "shop.json"),
-    shopifyGet<{ orders?: ShopifyOrder[] }>(
-      conn.shop_domain,
-      conn.access_token,
-      `orders.json?status=any&limit=250&created_at_min=${q}&fields=id,total_price,customer`,
-    ),
+  const [os, checkoutsRes] = await Promise.all([
+    fetchOrderStats(conn, 30),
     shopifyGet<{ checkouts?: ShopifyCheckout[] }>(
       conn.shop_domain,
       conn.access_token,
       `checkouts.json?limit=250&created_at_min=${q}`,
     ),
   ]);
-  if (!ordersRes && !checkoutsRes) return null;
+  if (!os.fetched && !checkoutsRes) return null;
 
-  const currency = shopInfo?.shop?.currency ?? null;
-  const orders = ordersRes?.orders ?? [];
+  const currency = os.currency;
   const checkouts = checkoutsRes?.checkouts ?? [];
 
-  const revenue30 = orders.reduce((n, o) => n + (parseFloat(o.total_price ?? "0") || 0), 0);
-  const orders30 = orders.length;
-  const aov = orders30 > 0 ? revenue30 / orders30 : null;
-
-  const byCustomer = new Map<number, number>();
-  for (const o of orders) {
-    const id = o.customer?.id;
-    if (typeof id === "number") byCustomer.set(id, (byCustomer.get(id) ?? 0) + 1);
-  }
-  const repeatRate =
-    byCustomer.size > 0
-      ? [...byCustomer.values()].filter((c) => c > 1).length / byCustomer.size
-      : null;
+  const revenue30 = os.revenue;
+  const orders30 = os.orders;
+  const aov = os.aov;
+  const repeatRate = os.repeatRate;
 
   const abandoned30 = checkouts.length;
   const abandonedValue30 = checkouts.reduce((n, c) => n + (parseFloat(c.total_price ?? "0") || 0), 0);
@@ -458,7 +517,7 @@ export async function runDeepChecks(
       id: "low-repeat-rate",
       title: `Only ${Math.round(repeatRate * 100)}% of this month's customers came back`,
       impact: 4,
-      detail: `Of ${byCustomer.size} customers in 30 days, just ${Math.round(repeatRate * 100)}% bought more than once. Win-back emails and review requests to past buyers are the cheapest revenue you're not collecting — new-customer ads cost 5–10× more.`,
+      detail: `Of ${os.uniqueCustomers} customers in 30 days, just ${Math.round(repeatRate * 100)}% bought more than once. Win-back emails and review requests to past buyers are the cheapest revenue you're not collecting — new-customer ads cost 5–10× more.`,
     });
   }
 
@@ -559,6 +618,27 @@ export async function resolveUser(env: AuditEnv, authHeader: string | null): Pro
     if (!res.ok) return null;
     const user = (await res.json()) as { id?: string };
     return typeof user.id === "string" ? user.id : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Like resolveUser, but also returns the email (for team notifications). */
+export async function resolveUserFull(
+  env: AuditEnv,
+  authHeader: string | null,
+): Promise<{ id: string; email: string | null } | null> {
+  const token = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!token || !env.supabaseUrl || !env.serviceRoleKey) return null;
+  try {
+    const res = await fetch(`${env.supabaseUrl}/auth/v1/user`, {
+      headers: { apikey: env.serviceRoleKey, Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (!res.ok) return null;
+    const user = (await res.json()) as { id?: string; email?: string };
+    if (typeof user.id !== "string") return null;
+    return { id: user.id, email: typeof user.email === "string" ? user.email : null };
   } catch {
     return null;
   }

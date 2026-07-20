@@ -8,7 +8,7 @@
  * the panel is closed and surface the result in the chat.
  */
 import { useEffect, useRef, useState } from "react";
-import { createTask, listTasks, TOOLS, type OpsTask } from "../lib/tasks";
+import { createTask, listTasks, notifyTeam, TOOLS, type OpsTask } from "../lib/tasks";
 import type { Plan } from "../lib/store";
 import { ShopifyConnect } from "./ShopifyConnect";
 
@@ -86,6 +86,7 @@ export function ToolsPanel({
       setTasks((prev) => [task, ...prev]);
       setTool(null);
       setRequest("");
+      void notifyTeam(task.id); // email the founders (no-op without Resend)
     }
   };
 

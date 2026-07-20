@@ -16,8 +16,11 @@ import {
   TTS_MAX_CHARS,
   mapVoice,
 } from "./api/_shared";
-import { runAudit } from "./api/_audit";
+import { runAudit, resolveUserFull } from "./api/_audit";
 import { runShopifyAuthStart, runShopifyCallback, type ShopifyEnv } from "./api/_shopify";
+import { runSkill, type SkillRunBody } from "./api/_skills";
+import type { SkillEnv } from "./api/_skillTools";
+import { sendTaskEmail } from "./api/_email";
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -36,6 +39,18 @@ function send(res: ServerResponse, status: number, text?: string): void {
   } else {
     res.end();
   }
+}
+
+/** Pipe one of OUR web Responses (any status, streaming or JSON) to Node. */
+async function pipeResponse(res: ServerResponse, response: Response): Promise<void> {
+  res.statusCode = response.status;
+  response.headers.forEach((v, k) => res.setHeader(k, v));
+  if (response.body) {
+    for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+      res.write(chunk);
+    }
+  }
+  res.end();
 }
 
 async function pipeUpstream(res: ServerResponse, upstream: Response, fallbackType: string): Promise<void> {
@@ -58,6 +73,7 @@ export function devApi(): Plugin {
   let chatModel = CHAT_MODEL_DEFAULT;
   let ttsModel = TTS_MODEL_DEFAULT;
   let auditEnv: ShopifyEnv = {};
+  let skillEnv: SkillEnv = {};
 
   return {
     name: "dev-api",
@@ -74,6 +90,15 @@ export function devApi(): Plugin {
         shopifyApiKey: (env.SHOPIFY_API_KEY ?? "").trim(),
         shopifyApiSecret: (env.SHOPIFY_API_SECRET ?? "").trim(),
         shopifyScopes: (env.SHOPIFY_SCOPES ?? "").trim(),
+      };
+      skillEnv = {
+        groqKey: key,
+        groqModel: (env.GROQ_CHAT_MODEL ?? "").trim(),
+        supabaseUrl: auditEnv.supabaseUrl,
+        serviceRoleKey: auditEnv.serviceRoleKey,
+        resendKey: (env.RESEND_API_KEY ?? "").trim(),
+        resendFrom: (env.RESEND_FROM ?? "").trim(),
+        teamEmails: (env.TEAM_NOTIFY_EMAILS ?? "").trim(),
       };
       if (!key) {
         server.config.logger.warn(
@@ -169,6 +194,75 @@ export function devApi(): Plugin {
           res.statusCode = 302;
           res.setHeader("Location", redirect);
           res.end();
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/skill", (req, res) => {
+        void (async () => {
+          if (req.method === "GET") return send(res, 204);
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: SkillRunBody;
+          try {
+            body = JSON.parse(await readBody(req)) as SkillRunBody;
+          } catch {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            return res.end(JSON.stringify({ error: "Invalid request body." }));
+          }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const origin = `http://${req.headers.host ?? "localhost:5173"}`;
+          await pipeResponse(res, await runSkill(body, auth, origin, skillEnv));
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/task-notify", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let taskId = "";
+          try {
+            const body = JSON.parse(await readBody(req)) as { taskId?: unknown };
+            taskId = typeof body.taskId === "string" ? body.taskId : "";
+          } catch {
+            return send(res, 400);
+          }
+          if (!/^[0-9a-f-]{36}$/i.test(taskId)) return send(res, 400);
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const user = await resolveUserFull(skillEnv, auth);
+          if (!user) return send(res, 401);
+          if (skillEnv.resendKey && skillEnv.supabaseUrl && skillEnv.serviceRoleKey) {
+            try {
+              const lookup = await fetch(
+                `${skillEnv.supabaseUrl}/rest/v1/tasks?id=eq.${taskId}&user_id=eq.${user.id}&select=tool,request&limit=1`,
+                {
+                  headers: {
+                    apikey: skillEnv.serviceRoleKey,
+                    Authorization: `Bearer ${skillEnv.serviceRoleKey}`,
+                  },
+                  signal: AbortSignal.timeout(4_000),
+                },
+              );
+              const rows = lookup.ok ? ((await lookup.json()) as { tool?: string; request?: string }[]) : [];
+              if (rows[0]) {
+                await sendTaskEmail(skillEnv, {
+                  userEmail: user.email,
+                  shopDomain: null,
+                  tool: rows[0].tool ?? "custom",
+                  request: rows[0].request ?? "",
+                  taskId,
+                  origin: `http://${req.headers.host ?? "localhost:5173"}`,
+                });
+              }
+            } catch {
+              /* best-effort */
+            }
+          }
+          send(res, 204);
         })().catch((err) => {
           if (!res.headersSent) send(res, 500, String(err));
           else res.end();

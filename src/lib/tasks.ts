@@ -76,6 +76,27 @@ export async function createTask(tool: string, request: string, storeId?: string
   }
 }
 
+/**
+ * Fire-and-forget team notification for a just-filed task. The server
+ * re-reads the task (scoped to the caller) and emails the founders when
+ * Resend is configured; without it this is a harmless 204. Never throws.
+ */
+export async function notifyTeam(taskId: string): Promise<void> {
+  if (!supabase) return;
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    await fetch("/api/task-notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ taskId }),
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
 /** The signed-in owner's tasks, newest first (RLS scopes to own rows). */
 export async function listTasks(): Promise<OpsTask[]> {
   if (!supabase) return [];
