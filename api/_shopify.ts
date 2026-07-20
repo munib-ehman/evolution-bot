@@ -13,7 +13,7 @@
  */
 import { resolveUser, type AuditEnv } from "./_audit";
 
-export const SHOPIFY_API_VERSION = "2025-07";
+export const SHOPIFY_API_VERSION = "2026-04";
 export const SHOPIFY_SCOPES_DEFAULT = "read_products,read_orders,read_checkouts,read_customers";
 /** OAuth states older than this are refused (stops replayed links). */
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
@@ -243,13 +243,55 @@ export async function getConnection(env: AuditEnv, userId: string): Promise<Shop
 
 /** One Admin API GET, JSON out; null on any failure (audit degrades). */
 export async function shopifyGet<T>(shop: string, token: string, pathAndQuery: string): Promise<T | null> {
+  const { data } = await shopifyGetDetailed<T>(shop, token, pathAndQuery);
+  return data;
+}
+
+/**
+ * Like shopifyGet but keeps the HTTP status so callers can say WHY a call
+ * failed (401 dead token vs 403 missing access vs 404 endpoint gone —
+ * Shopify blocks the REST product endpoints for newly created apps).
+ * status 0 = network/timeout.
+ */
+export async function shopifyGetDetailed<T>(
+  shop: string,
+  token: string,
+  pathAndQuery: string,
+): Promise<{ status: number; data: T | null }> {
   try {
     const res = await fetch(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/${pathAndQuery}`, {
       headers: { "X-Shopify-Access-Token": token },
       signal: AbortSignal.timeout(8_000),
     });
+    if (!res.ok) return { status: res.status, data: null };
+    return { status: res.status, data: (await res.json()) as T };
+  } catch {
+    return { status: 0, data: null };
+  }
+}
+
+/**
+ * One GraphQL Admin API call. Returns the `data` object, or null on any
+ * failure (HTTP error, GraphQL errors, network). GraphQL is the only way
+ * new apps may read products — REST products.json is legacy-blocked.
+ */
+export async function shopifyGraphql<T>(
+  shop: string,
+  token: string,
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<T | null> {
+  try {
+    const res = await fetch(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
+      method: "POST",
+      headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(8_000),
+    });
     if (!res.ok) return null;
-    return (await res.json()) as T;
+    const json = (await res.json()) as { data?: T; errors?: unknown[] };
+    if (json.errors?.length || !json.data) return null;
+    return json.data;
   } catch {
     return null;
   }

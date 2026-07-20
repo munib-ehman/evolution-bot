@@ -10,7 +10,7 @@
  * `file_task` is the one write — into OUR tasks table (the human ops queue),
  * not into Shopify. It also pings the team via _email.ts, best-effort.
  */
-import { shopifyGet, type ShopifyConnection } from "./_shopify";
+import { shopifyGet, shopifyGetDetailed, shopifyGraphql, type ShopifyConnection } from "./_shopify";
 import { fetchOrderStats, stripHtml, type AuditEnv } from "./_audit";
 import { sendTaskEmail, type EmailEnv } from "./_email";
 
@@ -69,40 +69,173 @@ interface AdminProduct {
   variants?: AdminVariant[];
 }
 
-/** Admin API has no `available` flag: sold out = tracked, empty, no oversell. */
-function isSoldOut(p: AdminProduct): boolean {
-  const variants = p.variants ?? [];
-  if (variants.length === 0) return false;
-  const tracked = variants.filter((v) => v.inventory_management);
-  if (tracked.length !== variants.length) return false; // untracked = assume sellable
-  return tracked.every((v) => (v.inventory_quantity ?? 0) <= 0 && v.inventory_policy !== "continue");
+/** Provider-neutral product shape both fetch paths map into. */
+interface ProductSource {
+  title: string;
+  status: string;
+  descText: string;
+  imageCount: number;
+  imagesNoAlt: number;
+  variants: { price: number | null; qty: number | null; tracked: boolean; oversells: boolean }[];
+  tagCount: number;
 }
 
-export async function buildProductsDigest(conn: ShopifyConnection, limit: number) {
-  const res = await shopifyGet<{ products?: AdminProduct[] }>(
+/** Sold out = every variant tracked, at/under zero, and not set to oversell. */
+function isSoldOut(p: ProductSource): boolean {
+  if (p.variants.length === 0) return false;
+  if (!p.variants.every((v) => v.tracked)) return false; // untracked = assume sellable
+  return p.variants.every((v) => (v.qty ?? 0) <= 0 && !v.oversells);
+}
+
+/**
+ * Primary product fetch: GraphQL Admin API. Shopify blocks the REST product
+ * endpoints for newly created apps (legacy since 2025), so GraphQL is the
+ * path that works for OUR app. Paginated at 25/page to stay well under the
+ * query-cost ceiling; variants/media are sampled (first 10 each).
+ */
+const PRODUCTS_QUERY = `query ProductAudit($first: Int!, $after: String) {
+  products(first: $first, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      title
+      status
+      descriptionHtml
+      tags
+      mediaCount { count }
+      media(first: 10) { nodes { alt } }
+      variants(first: 10) {
+        nodes {
+          price
+          inventoryQuantity
+          inventoryPolicy
+          inventoryItem { tracked }
+        }
+      }
+    }
+  }
+}`;
+
+interface GqlProductsData {
+  products?: {
+    pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+    nodes?: {
+      title?: string;
+      status?: string;
+      descriptionHtml?: string | null;
+      tags?: string[];
+      mediaCount?: { count?: number } | null;
+      media?: { nodes?: { alt?: string | null }[] };
+      variants?: {
+        nodes?: {
+          price?: string;
+          inventoryQuantity?: number | null;
+          inventoryPolicy?: string;
+          inventoryItem?: { tracked?: boolean } | null;
+        }[];
+      };
+    }[];
+  };
+}
+
+async function fetchProductsGraphql(conn: ShopifyConnection, limit: number): Promise<ProductSource[] | null> {
+  const out: ProductSource[] = [];
+  let after: string | null = null;
+  for (let page = 0; page < 4 && out.length < limit; page++) {
+    const data: GqlProductsData | null = await shopifyGraphql<GqlProductsData>(
+      conn.shop_domain,
+      conn.access_token,
+      PRODUCTS_QUERY,
+      { first: Math.min(25, limit - out.length), after },
+    );
+    const productsPage: GqlProductsData["products"] = data?.products;
+    if (!productsPage?.nodes) return page === 0 ? null : out; // partial > nothing
+    for (const n of productsPage.nodes) {
+      const media = n.media?.nodes ?? [];
+      out.push({
+        title: n.title ?? "(untitled)",
+        status: (n.status ?? "ACTIVE").toLowerCase(),
+        descText: stripHtml(n.descriptionHtml),
+        imageCount: n.mediaCount?.count ?? media.length,
+        imagesNoAlt: media.filter((m) => !(m.alt ?? "").trim()).length,
+        variants: (n.variants?.nodes ?? []).map((v) => ({
+          price: Number.isFinite(parseFloat(v.price ?? "")) ? parseFloat(v.price ?? "") : null,
+          qty: v.inventoryQuantity ?? null,
+          tracked: v.inventoryItem?.tracked ?? false,
+          oversells: v.inventoryPolicy === "CONTINUE",
+        })),
+        tagCount: (n.tags ?? []).length,
+      });
+    }
+    if (!productsPage.pageInfo?.hasNextPage || !productsPage.pageInfo.endCursor) break;
+    after = productsPage.pageInfo.endCursor;
+  }
+  return out;
+}
+
+/** REST fallback for older apps where products.json still works. */
+async function fetchProductsRest(
+  conn: ShopifyConnection,
+  limit: number,
+): Promise<{ items: ProductSource[] | null; status: number }> {
+  const { status, data } = await shopifyGetDetailed<{ products?: AdminProduct[] }>(
     conn.shop_domain,
     conn.access_token,
     `products.json?limit=${limit}&fields=id,title,handle,status,body_html,tags,images,variants`,
   );
-  if (!res?.products) return null;
-
-  const products = res.products.map((p) => {
-    const desc = stripHtml(p.body_html);
-    const images = p.images ?? [];
-    const prices = (p.variants ?? [])
-      .map((v) => parseFloat(v.price ?? ""))
-      .filter((n) => Number.isFinite(n));
-    return {
-      title: (p.title ?? "(untitled)").slice(0, 60),
+  if (!data?.products) return { items: null, status };
+  return {
+    status,
+    items: data.products.map((p) => ({
+      title: p.title ?? "(untitled)",
       status: p.status ?? "active",
-      descChars: desc.length,
-      descQuality: desc.length === 0 ? "missing" : desc.length < 200 ? "thin" : "ok",
-      images: images.length,
-      imagesNoAlt: images.filter((i) => !(i.alt ?? "").trim()).length,
+      descText: stripHtml(p.body_html),
+      imageCount: (p.images ?? []).length,
+      imagesNoAlt: (p.images ?? []).filter((i) => !(i.alt ?? "").trim()).length,
+      variants: (p.variants ?? []).map((v) => ({
+        price: Number.isFinite(parseFloat(v.price ?? "")) ? parseFloat(v.price ?? "") : null,
+        qty: v.inventory_quantity ?? null,
+        tracked: Boolean(v.inventory_management),
+        oversells: v.inventory_policy === "continue",
+      })),
+      tagCount: (p.tags ?? "").split(",").filter((t) => t.trim()).length,
+    })),
+  };
+}
+
+export async function buildProductsDigest(
+  conn: ShopifyConnection,
+  limit: number,
+): Promise<{ products: unknown[]; aggregate: Record<string, unknown> } | { error: string }> {
+  let sources = await fetchProductsGraphql(conn, limit);
+  if (!sources) {
+    const rest = await fetchProductsRest(conn, limit);
+    if (!rest.items) {
+      const why =
+        rest.status === 401
+          ? "the connection's access token was rejected (reconnect the store from Tasks → Connect Shopify)"
+          : rest.status === 403
+            ? "the app doesn't have product access (reconnect the store to re-approve permissions)"
+            : rest.status > 0
+              ? `Shopify answered with HTTP ${rest.status}`
+              : "Shopify didn't answer in time";
+      return { error: `Couldn't fetch the store's products — ${why}.` };
+    }
+    sources = rest.items;
+  }
+
+  const products = sources.slice(0, limit).map((p) => {
+    const prices = p.variants.map((v) => v.price).filter((n): n is number => n !== null);
+    return {
+      title: p.title.slice(0, 60),
+      status: p.status,
+      descChars: p.descText.length,
+      descQuality: p.descText.length === 0 ? "missing" : p.descText.length < 200 ? "thin" : "ok",
+      images: p.imageCount,
+      imagesNoAlt: p.imagesNoAlt,
       soldOut: isSoldOut(p),
       priceMin: prices.length ? Math.min(...prices) : null,
       priceMax: prices.length ? Math.max(...prices) : null,
-      tags: (p.tags ?? "").split(",").filter((t) => t.trim()).length,
+      tags: p.tagCount,
     };
   });
 
@@ -148,8 +281,7 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
     },
     async run(ctx, args) {
       if (!ctx.conn) return { error: "No Shopify store connected." };
-      const digest = await buildProductsDigest(ctx.conn, clampInt(args.limit, 1, 100, 100));
-      return digest ?? { error: "Couldn't reach the Shopify products API." };
+      return buildProductsDigest(ctx.conn, clampInt(args.limit, 1, 100, 100));
     },
   },
 
