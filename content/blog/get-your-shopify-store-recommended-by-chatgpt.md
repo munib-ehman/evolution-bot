@@ -13,7 +13,7 @@ The practice of earning those recommendations is called AEO (answer engine optim
 
 Ranking well on Google does not mean AI tools recommend you. Top-10 Google results show up in AI answers only about 8% of the time. SEO rewards keywords, backlinks, and domain authority. AI answers reward something different: parseable product data, answer-shaped content, and what *other people* say about you.
 
-That last one is the big one. LLMs pull 80%+ of their product recommendations from third-party sources — reviews, buying guides, Reddit threads, press — not from your own website. You can't copywrite your way into a ChatGPT answer. You earn your way in from the outside, and you make your store easy to verify from the inside.
+That last one is the big one. LLMs pull 80%+ of their product recommendations from third-party sources (reviews, buying guides, Reddit threads, press), not from your own website. You can't copywrite your way into a ChatGPT answer. You earn your way in from the outside, and you make your store easy to verify from the inside.
 
 Also worth knowing: ad spend has zero influence here. For once, small stores and big brands play on the same field.
 
@@ -44,16 +44,16 @@ Buying-guide content gets cited by AI at much higher rates than product pages. "
 
 Since most recommendations come from outside your site:
 
-- **Reviews first.** Volume matters. A steady post-purchase review ask is the single highest-leverage AEO action a small store can take — and [you don't need a paid reviews app](/blog/how-to-get-more-product-reviews) to run one.
-- **Show up where your category is discussed.** Reddit, niche forums, community blogs. Helpfully, not promotionally — one genuine answer from a founder outlasts fifty dropped links.
+- **Reviews first.** Volume matters. A steady post-purchase review ask is the single highest-leverage AEO action a small store can take, and [you don't need a paid reviews app](/blog/how-to-get-more-product-reviews) to run one.
+- **Show up where your category is discussed.** Reddit, niche forums, community blogs. Helpfully, not promotionally. One genuine answer from a founder outlasts fifty dropped links.
 - **Pitch inclusion in existing "best X" roundups.** Writers updating those lists for 2026 need candidates. A short pitch with real differentiators works more often than you'd think.
 
 ### 5. Answer questions in the first paragraph
 
-Take your ten most common presale questions and make sure each has a page (or FAQ entry) that answers it in the first two sentences. AI systems extract answers; they don't summarize your brand story. This also happens to win you the presale conversations that AI didn't intercept — the same questions, answered fast, are [what AI support agents get built on](/blog/ai-agents-for-ecommerce-small-stores).
+Take your ten most common presale questions and make sure each has a page (or FAQ entry) that answers it in the first two sentences. AI systems extract answers; they don't summarize your brand story. This also happens to win you the presale conversations that AI didn't intercept. The same questions, answered fast, are [what AI support agents get built on](/blog/ai-agents-for-ecommerce-small-stores).
 
 ## What to skip
 
-AEO tracking platforms and "AI visibility" dashboards are built for brands with teams. At your size, the free check is enough: ask ChatGPT and Perplexity the three questions a customer would ask before finding you ("best [your product] for [use case]"), note who gets recommended, and look at *why* — their review counts, the guides that mention them. That's your gap list. Re-run it monthly.
+AEO tracking platforms and "AI visibility" dashboards are built for brands with teams. At your size, the free check is enough: ask ChatGPT and Perplexity the three questions a customer would ask before finding you ("best [your product] for [use case]"), note who gets recommended, and look at *why*: their review counts, the guides that mention them. That's your gap list. Re-run it monthly.
 
 None of this is exotic. Clean data, honest answer-first content, and real reviews were already the right moves for converting human customers. AI search just raised the price of skipping them.
