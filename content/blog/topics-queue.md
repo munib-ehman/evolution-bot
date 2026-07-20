@@ -13,9 +13,6 @@ Format:
 
 ## Pending
 
-- Where is my order (WISMO): how to cut support tickets in half
-- How to write product descriptions that rank and convert
-- Shopify SEO checklist for stores that can't afford an agency
 - How to get more product reviews without paying for a reviews app
 - Back in stock alerts: recovering sales you didn't know you lost
 - How to calculate true profit per order (not just revenue)
@@ -76,3 +73,6 @@ Format:
 - [2026-07-19] Gorgias vs doing support yourself: the real cost math — /blog/gorgias-vs-diy-support-cost-math
 - [2026-07-19] How much does the average Shopify app stack cost per month — /blog/average-shopify-app-stack-cost-per-month
 - [2026-07-19] Hiring a VA for your Shopify store vs automating: honest comparison — /blog/hiring-va-vs-automating-shopify-store
+- [2026-07-20] Where is my order (WISMO): how to cut support tickets in half — /blog/wismo-cut-support-tickets-in-half
+- [2026-07-20] How to write product descriptions that rank and convert — /blog/product-descriptions-that-rank-and-convert
+- [2026-07-20] Shopify SEO checklist for stores that can't afford an agency — /blog/shopify-seo-checklist-cant-afford-agency
