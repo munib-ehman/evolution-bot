@@ -13,7 +13,6 @@ Format:
 
 ## Pending
 
-- How to get more product reviews without paying for a reviews app
 - Back in stock alerts: recovering sales you didn't know you lost
 - How to calculate true profit per order (not just revenue)
 - CAC vs LTV for small ecommerce stores: a plain-English guide
@@ -76,3 +75,6 @@ Format:
 - [2026-07-20] Where is my order (WISMO): how to cut support tickets in half — /blog/wismo-cut-support-tickets-in-half
 - [2026-07-20] How to write product descriptions that rank and convert — /blog/product-descriptions-that-rank-and-convert
 - [2026-07-20] Shopify SEO checklist for stores that can't afford an agency — /blog/shopify-seo-checklist-cant-afford-agency
+- [2026-07-20] AI agents for ecommerce: what they actually do for a small store (competitor-trend: Tidio/Gorgias/Triple Whale agentic push) — /blog/ai-agents-for-ecommerce-small-stores
+- [2026-07-20] How to get your Shopify store recommended by ChatGPT / AEO (competitor-trend: AI search visibility) — /blog/get-your-shopify-store-recommended-by-chatgpt
+- [2026-07-20] How to get more product reviews without paying for a reviews app — /blog/how-to-get-more-product-reviews
