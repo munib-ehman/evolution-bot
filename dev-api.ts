@@ -92,10 +92,7 @@ export function devApi(): Plugin {
         shopifyScopes: (env.SHOPIFY_SCOPES ?? "").trim(),
       };
       skillEnv = {
-        groqKey: key,
-        groqModel: (env.GROQ_CHAT_MODEL ?? "").trim(),
-        supabaseUrl: auditEnv.supabaseUrl,
-        serviceRoleKey: auditEnv.serviceRoleKey,
+        ...auditEnv, // includes the Shopify app creds for token refresh
         resendKey: (env.RESEND_API_KEY ?? "").trim(),
         resendFrom: (env.RESEND_FROM ?? "").trim(),
         teamEmails: (env.TEAM_NOTIFY_EMAILS ?? "").trim(),

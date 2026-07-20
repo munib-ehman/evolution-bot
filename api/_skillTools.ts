@@ -10,11 +10,12 @@
  * `file_task` is the one write — into OUR tasks table (the human ops queue),
  * not into Shopify. It also pings the team via _email.ts, best-effort.
  */
-import { shopifyGet, shopifyGetDetailed, shopifyGraphql, type ShopifyConnection } from "./_shopify";
-import { fetchOrderStats, stripHtml, type AuditEnv } from "./_audit";
+import { shopifyGet, shopifyGetDetailed, shopifyGraphql, type ShopifyConnection, type ShopifyEnv } from "./_shopify";
+import { fetchOrderStats, stripHtml } from "./_audit";
 import { sendTaskEmail, type EmailEnv } from "./_email";
 
-export type SkillEnv = AuditEnv & EmailEnv;
+/** Includes the Shopify app creds so getConnection can refresh tokens. */
+export type SkillEnv = ShopifyEnv & EmailEnv;
 
 export interface ToolCtx {
   env: SkillEnv;
@@ -211,13 +212,11 @@ export async function buildProductsDigest(
     const rest = await fetchProductsRest(conn, limit);
     if (!rest.items) {
       const why =
-        rest.status === 401
-          ? "the connection's access token was rejected (reconnect the store from Tasks → Connect Shopify)"
-          : rest.status === 403
-            ? "the app doesn't have product access (reconnect the store to re-approve permissions)"
-            : rest.status > 0
-              ? `Shopify answered with HTTP ${rest.status}`
-              : "Shopify didn't answer in time";
+        rest.status === 401 || rest.status === 403
+          ? `Shopify rejected the store's access token (HTTP ${rest.status}). Shopify retired old-style tokens, so hit "Reconnect" next to your store in the Tasks panel and this will work again`
+          : rest.status > 0
+            ? `Shopify answered with HTTP ${rest.status}`
+            : "Shopify didn't answer in time";
       return { error: `Couldn't fetch the store's products — ${why}.` };
     }
     sources = rest.items;

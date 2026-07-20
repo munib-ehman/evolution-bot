@@ -21,7 +21,7 @@
  */
 import { GROQ_BASE, CHAT_MODEL_DEFAULT } from "./_shared";
 import { resolveUserFull } from "./_audit";
-import { getConnection } from "./_shopify";
+import { getConnection, shopifyEnvFromProcess } from "./_shopify";
 import { SKILL_TOOLS, type SkillEnv, type ToolCtx } from "./_skillTools";
 import { sendTaskEmail } from "./_email";
 
@@ -106,10 +106,7 @@ export const SKILLS: Record<string, SkillDef> = {
 /** Env bundle for the deployed edge functions (dev-api builds its own via loadEnv). */
 export function skillEnvFromProcess(): SkillEnv {
   return {
-    groqKey: (process.env.GROQ_API_KEY ?? "").trim(),
-    groqModel: (process.env.GROQ_CHAT_MODEL ?? "").trim(),
-    supabaseUrl: (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim(),
-    serviceRoleKey: (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim(),
+    ...shopifyEnvFromProcess(),
     resendKey: (process.env.RESEND_API_KEY ?? "").trim(),
     resendFrom: (process.env.RESEND_FROM ?? "").trim(),
     teamEmails: (process.env.TEAM_NOTIFY_EMAILS ?? "").trim(),

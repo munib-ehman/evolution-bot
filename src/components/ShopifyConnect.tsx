@@ -30,11 +30,28 @@ export function ShopifyConnect({ storeUrl }: { storeUrl: string | null }) {
   }, [storeUrl]);
 
   if (status) {
+    const reconnect = async () => {
+      if (busy) return;
+      setBusy(true);
+      setError(null);
+      const err = await startShopifyConnect(status.shop_domain);
+      // On success the browser navigates to Shopify; reaching here = failure.
+      if (err) {
+        setError(err);
+        setBusy(false);
+      }
+    };
     return (
-      <p className="shopify-connected">
-        ✓ Shopify connected: <strong>{status.shop_domain}</strong> — your audits now use real
-        orders and abandoned-checkout data.
-      </p>
+      <div className="shopify-connected">
+        <p>
+          ✓ Shopify connected: <strong>{status.shop_domain}</strong> — your audits and skills use
+          real store data.{" "}
+          <button type="button" className="link" onClick={() => void reconnect()} disabled={busy}>
+            {busy ? "Opening Shopify…" : "Reconnect"}
+          </button>
+        </p>
+        {error && <p className="overlay-error">{error}</p>}
+      </div>
     );
   }
   if (!available) return null;

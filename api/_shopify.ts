@@ -27,6 +27,9 @@ export interface ShopifyEnv extends AuditEnv {
 export interface ShopifyConnection {
   shop_domain: string;
   access_token: string;
+  /** Expiring-token fields (null on legacy rows, which Shopify now rejects). */
+  refresh_token?: string | null;
+  token_expires_at?: string | null;
 }
 
 /** Env bundle for the deployed edge functions (dev-api builds its own via loadEnv). */
@@ -166,9 +169,14 @@ export async function runShopifyCallback(
   const userId = await verifyState(state, shop, env.shopifyApiSecret);
   if (!userId) return fail("bad-state");
 
-  // Swap the grant code for a permanent (until uninstall) access token.
+  // Swap the grant code for an EXPIRING offline token (expiring=1). Shopify
+  // rejects the old non-expiring kind outright now; the ~24h access token is
+  // auto-refreshed in getConnection() with the rotating 90-day refresh token.
   let token = "";
   let scopes = "";
+  let refreshToken: string | null = null;
+  let tokenExpiresAt: string | null = null;
+  let refreshExpiresAt: string | null = null;
   try {
     const res = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: "POST",
@@ -177,13 +185,23 @@ export async function runShopifyCallback(
         client_id: env.shopifyApiKey,
         client_secret: env.shopifyApiSecret,
         code,
+        expiring: "1",
       }),
       signal: AbortSignal.timeout(8_000),
     });
     if (!res.ok) return fail("token-exchange");
-    const data = (await res.json()) as { access_token?: string; scope?: string };
+    const data = (await res.json()) as {
+      access_token?: string;
+      scope?: string;
+      expires_in?: number;
+      refresh_token?: string;
+      refresh_token_expires_in?: number;
+    };
     token = data.access_token ?? "";
     scopes = data.scope ?? "";
+    refreshToken = data.refresh_token ?? null;
+    tokenExpiresAt = expiryIso(data.expires_in);
+    refreshExpiresAt = expiryIso(data.refresh_token_expires_in);
   } catch {
     return fail("token-exchange");
   }
@@ -201,7 +219,15 @@ export async function runShopifyCallback(
     const conn = await fetch(`${env.supabaseUrl}/rest/v1/shopify_connections?on_conflict=user_id`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ user_id: userId, shop_domain: shop, access_token: token, scopes }),
+      body: JSON.stringify({
+        user_id: userId,
+        shop_domain: shop,
+        access_token: token,
+        scopes,
+        refresh_token: refreshToken,
+        token_expires_at: tokenExpiresAt,
+        refresh_token_expires_at: refreshExpiresAt,
+      }),
       signal: AbortSignal.timeout(6_000),
     });
     if (!conn.ok) return fail("save");
@@ -220,14 +246,29 @@ export async function runShopifyCallback(
 }
 
 // ---------------------------------------------------------------------------
-// Admin API access for the deep audit
+// Admin API access for the deep audit + skills
 
-/** The stored connection for a user, or null. Service role only. */
-export async function getConnection(env: AuditEnv, userId: string): Promise<ShopifyConnection | null> {
+const expiryIso = (seconds: number | undefined): string | null =>
+  typeof seconds === "number" && Number.isFinite(seconds)
+    ? new Date(Date.now() + seconds * 1000).toISOString()
+    : null;
+
+/** Refresh when the access token has less runway than this. */
+const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+
+/**
+ * The stored connection for a user, or null. Service role only. When the
+ * access token is expired (or close), it's refreshed in place with the
+ * rotating refresh token — callers always get the freshest token we can
+ * produce. Legacy non-expiring rows (no refresh_token) are returned as-is;
+ * Shopify 403s them and the UI tells the owner to reconnect.
+ */
+export async function getConnection(env: ShopifyEnv, userId: string): Promise<ShopifyConnection | null> {
   if (!env.supabaseUrl || !env.serviceRoleKey) return null;
+  let conn: ShopifyConnection | null = null;
   try {
     const res = await fetch(
-      `${env.supabaseUrl}/rest/v1/shopify_connections?user_id=eq.${userId}&select=shop_domain,access_token`,
+      `${env.supabaseUrl}/rest/v1/shopify_connections?user_id=eq.${userId}&select=shop_domain,access_token,refresh_token,token_expires_at`,
       {
         headers: { apikey: env.serviceRoleKey, Authorization: `Bearer ${env.serviceRoleKey}` },
         signal: AbortSignal.timeout(4_000),
@@ -235,7 +276,71 @@ export async function getConnection(env: AuditEnv, userId: string): Promise<Shop
     );
     if (!res.ok) return null;
     const rows = (await res.json()) as ShopifyConnection[];
-    return rows[0] ?? null;
+    conn = rows[0] ?? null;
+  } catch {
+    return null;
+  }
+  if (!conn) return null;
+
+  const expMs = conn.token_expires_at ? Date.parse(conn.token_expires_at) : NaN;
+  const needsRefresh = Number.isFinite(expMs) && expMs - Date.now() < TOKEN_REFRESH_MARGIN_MS;
+  if (needsRefresh && conn.refresh_token && env.shopifyApiKey && env.shopifyApiSecret) {
+    const refreshed = await refreshConnection(env, userId, conn);
+    if (refreshed) return refreshed;
+  }
+  return conn;
+}
+
+/** Rotate the access token (and refresh token — Shopify issues a new one). */
+async function refreshConnection(
+  env: ShopifyEnv,
+  userId: string,
+  conn: ShopifyConnection,
+): Promise<ShopifyConnection | null> {
+  try {
+    const res = await fetch(`https://${conn.shop_domain}/admin/oauth/access_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: env.shopifyApiKey,
+        client_secret: env.shopifyApiSecret,
+        grant_type: "refresh_token",
+        refresh_token: conn.refresh_token,
+      }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      access_token?: string;
+      expires_in?: number;
+      refresh_token?: string;
+      refresh_token_expires_in?: number;
+    };
+    if (!data.access_token) return null;
+
+    const fresh: ShopifyConnection = {
+      shop_domain: conn.shop_domain,
+      access_token: data.access_token,
+      refresh_token: data.refresh_token ?? conn.refresh_token,
+      token_expires_at: expiryIso(data.expires_in),
+    };
+    await fetch(`${env.supabaseUrl}/rest/v1/shopify_connections?user_id=eq.${userId}`, {
+      method: "PATCH",
+      headers: {
+        apikey: env.serviceRoleKey!,
+        Authorization: `Bearer ${env.serviceRoleKey}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        access_token: fresh.access_token,
+        refresh_token: fresh.refresh_token,
+        token_expires_at: fresh.token_expires_at,
+        refresh_token_expires_at: expiryIso(data.refresh_token_expires_in),
+      }),
+      signal: AbortSignal.timeout(6_000),
+    }).catch(() => {});
+    return fresh;
   } catch {
     return null;
   }

@@ -10,20 +10,12 @@
  * GET is a health probe: 204 = reachable (the audit works even with no
  * GROQ_API_KEY — prose falls back to templates).
  */
-import { runAudit, type AuditEnv } from "./_audit";
+import { runAudit } from "./_audit";
+// The full Shopify env (not just AuditEnv): the deep audit's getConnection
+// needs the app creds to auto-refresh expiring Admin API tokens.
+import { shopifyEnvFromProcess } from "./_shopify";
 
 export const config = { runtime: "edge" };
-
-function auditEnv(): AuditEnv {
-  return {
-    groqKey: (process.env.GROQ_API_KEY ?? "").trim(),
-    groqModel: (process.env.GROQ_CHAT_MODEL ?? "").trim(),
-    // The Supabase URL is public by design; fall back to the client var so
-    // one less thing can be misconfigured. The service role key is NOT.
-    supabaseUrl: (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim(),
-    serviceRoleKey: (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim(),
-  };
-}
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === "GET") {
@@ -43,7 +35,7 @@ export default async function handler(req: Request): Promise<Response> {
     });
   }
 
-  const { status, body } = await runAudit(url, req.headers.get("authorization"), auditEnv());
+  const { status, body } = await runAudit(url, req.headers.get("authorization"), shopifyEnvFromProcess());
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
