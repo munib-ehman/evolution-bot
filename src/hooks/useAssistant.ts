@@ -375,17 +375,10 @@ export function useAssistant() {
           content: result.report,
           pending: false,
           progress: undefined,
-          // Finished agentic reports carry the escalation action; the note
-          // travels to the team verbatim, so make it self-contained.
-          escalate:
-            params.kind === "agentic"
-              ? {
-                  taskTool: params.taskTool,
-                  note:
-                    `The founder ran the "${params.escalateNoteLabel ?? params.skillId}" skill and asked Evolution to fix what it found.\n\nReport:\n` +
-                    result.report.slice(0, 1500),
-                }
-              : undefined,
+          // Advisory era: no write access to stores yet, so reports carry no
+          // "fix this" action — the bot guides, it doesn't promise work.
+          // Re-attach the escalate payload here when write access ships.
+          escalate: undefined,
         });
         logChat("assistant", result.report);
       } catch (err) {

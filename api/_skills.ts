@@ -48,7 +48,7 @@ export interface SkillDef {
 }
 
 const ESCALATION_LINE =
-  "End the report with exactly one short closing line inviting the founder to use the \"Queue this fix\" action under the report if they want Evolution to handle the work. Never mention a human team — Evolution itself works through its queue.";
+  "End the report with exactly one short closing line inviting the founder to ask you in chat for a step-by-step walkthrough or ready-to-paste copy for any fix above. Do NOT promise that Evolution or anyone will make the changes — there is no write access to the store yet.";
 
 export const SKILLS: Record<string, SkillDef> = {
   product_audit: {
@@ -255,10 +255,11 @@ async function runConcierge(
     origin: ctx.origin,
   });
   controller.enqueue(sse({ meta: { taskId: result.taskId, emailed } }));
-  // Founder-facing framing: Evolution queued the work and will report back.
+  // Advisory era: no write access anywhere yet, so never promise the work
+  // will be done. The request is still logged internally for tracking.
   // (The emailed flag is internal plumbing — never surfaced in this copy.)
   const confirmation =
-    "Done — I've queued this up. I have a few tasks ahead of it, but I'm on it: you can track it in your Tasks panel, and I'll post the result right here in chat the moment it's finished.";
+    "Noted — I've logged this request. I can't make changes to your store yet, but ask me in chat and I'll give you exact steps or ready-to-paste copy to get it done yourself.";
   controller.enqueue(sse({ choices: [{ delta: { content: confirmation } }] }));
 }
 

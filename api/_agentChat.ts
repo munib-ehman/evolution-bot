@@ -30,14 +30,17 @@ import { resolveUserFull } from "./_audit";
 import { getConnection } from "./_shopify";
 import { SKILL_TOOLS, buildProductsDigest, type SkillEnv, type ToolCtx } from "./_skillTools";
 
-/** Tools the chat may call. file_task is last so the model treats it as the escalation, not a data source. */
+/**
+ * Tools the chat may call — read-only store data. file_task is deliberately
+ * NOT exposed: with no write access anywhere yet, the bot must never promise
+ * that a change will be made; it advises instead (re-add when fixes ship).
+ */
 const AGENT_TOOL_NAMES = [
   "get_products",
   "get_product_sales",
   "get_orders_summary",
   "get_abandoned_checkouts",
   "get_latest_audit",
-  "file_task",
 ] as const;
 
 const PROGRESS_LABELS: Record<string, string> = {
@@ -46,7 +49,6 @@ const PROGRESS_LABELS: Record<string, string> = {
   get_orders_summary: "Pulling your order stats…",
   get_abandoned_checkouts: "Checking your abandoned carts…",
   get_latest_audit: "Reading your latest audit…",
-  file_task: "Adding this to my work queue…",
 };
 
 /** Tool rounds before we force a plain answer — enough for lookup + follow-up. */
@@ -109,7 +111,7 @@ function buildSystemPrompt(shop: string, catalogBlock: string): string {
     `You have TOOLS that fetch the store's REAL data. When a question needs data you don't already have — sales, top sellers, order stats, abandoned carts, audit findings, deeper product detail — CALL the right tool instead of guessing, deflecting, or claiming you lack data. Check your tools before ever saying you can't see something.`,
     `Every number you state must come from a tool result or the catalog below — NEVER invent figures. If a tool returns an "error" field, say plainly that that data source is unreachable right now and answer with what you have.`,
     `Keep replies SHORT and conversational (1–4 sentences); use a compact list only when the founder asks for a list. No preamble like "Based on the data".`,
-    `When the founder wants something CHANGED in the store (rewriting listings, setting up flows, adding products — anything hands-on), first confirm what they want, then call file_task to add it to your work queue. After queueing, tell them something like: "I've queued this behind my current tasks — I'll post the result right here when it's done." You handle queued work yourself, asynchronously. NEVER mention a human team, and never claim the work is already finished.`,
+    `You do NOT have write access to the store — you cannot change listings, prices, or settings, and you must NEVER promise that you (or anyone) will make a change. When the founder asks you to fix or change something, be the expert guide instead: give exact, actionable help — step-by-step Shopify admin instructions, ready-to-paste description or title copy, concrete recommended settings — grounded in their real store data from your tools.`,
     catalogBlock,
   ].join("\n\n");
 }
