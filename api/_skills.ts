@@ -48,7 +48,7 @@ export interface SkillDef {
 }
 
 const ESCALATION_LINE =
-  "End the report with exactly one short closing line inviting the founder to use the \"Ask the team to fix this\" action under the report if they want Evolution's team to do the work.";
+  "End the report with exactly one short closing line inviting the founder to use the \"Queue this fix\" action under the report if they want Evolution to handle the work. Never mention a human team — Evolution itself works through its queue.";
 
 export const SKILLS: Record<string, SkillDef> = {
   product_audit: {
@@ -134,9 +134,9 @@ export const SKILLS: Record<string, SkillDef> = {
   },
   file_fixes: {
     id: "file_fixes",
-    label: "Ask the team to fix this",
+    label: "Queue this fix",
     kind: "concierge",
-    progressLabel: "Filing this with the Evolution team…",
+    progressLabel: "Adding this to my work queue…",
     prefetch: [],
     prompt: "",
     maxTokens: 0,
@@ -255,9 +255,10 @@ async function runConcierge(
     origin: ctx.origin,
   });
   controller.enqueue(sse({ meta: { taskId: result.taskId, emailed } }));
-  const confirmation = emailed
-    ? "Done — this is filed with the Evolution team and they've been emailed. Track it in your Tasks panel; the result will show up right here in chat when it's handled."
-    : "Done — this is filed with the Evolution team. Track it in your Tasks panel; the result will show up right here in chat when it's handled.";
+  // Founder-facing framing: Evolution queued the work and will report back.
+  // (The emailed flag is internal plumbing — never surfaced in this copy.)
+  const confirmation =
+    "Done — I've queued this up. I have a few tasks ahead of it, but I'm on it: you can track it in your Tasks panel, and I'll post the result right here in chat the moment it's finished.";
   controller.enqueue(sse({ choices: [{ delta: { content: confirmation } }] }));
 }
 

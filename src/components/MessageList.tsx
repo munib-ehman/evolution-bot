@@ -6,7 +6,7 @@ import { renderMarkdown } from "../lib/markdown";
 interface Props {
   messages: Message[];
   status: AssistantStatus;
-  /** Fired when the owner clicks "Ask the team to fix this" under a report. */
+  /** Fired when the owner clicks "Queue this fix" under a report. */
   onEscalate?: (taskTool: string, note: string) => void;
 }
 
@@ -36,7 +36,7 @@ export function MessageList({ messages, status, onEscalate }: Props) {
                 className="report-escalate"
                 onClick={() => onEscalate(m.escalate!.taskTool, m.escalate!.note)}
               >
-                Ask the team to fix this
+                Queue this fix
               </button>
             )}
           </div>

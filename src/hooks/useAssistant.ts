@@ -382,7 +382,7 @@ export function useAssistant() {
               ? {
                   taskTool: params.taskTool,
                   note:
-                    `The founder ran the "${params.escalateNoteLabel ?? params.skillId}" skill and asked the team to fix what it found.\n\nReport:\n` +
+                    `The founder ran the "${params.escalateNoteLabel ?? params.skillId}" skill and asked Evolution to fix what it found.\n\nReport:\n` +
                     result.report.slice(0, 1500),
                 }
               : undefined,
@@ -423,7 +423,7 @@ export function useAssistant() {
     [runSkillCore],
   );
 
-  /** "Ask the team to fix this" under a report → file task + email the team. */
+  /** "Queue this fix" under a report → ops-queue task (internal notify stays server-side). */
   const escalateToTeam = useCallback(
     (taskTool: string, note: string) =>
       runSkillCore({
@@ -431,7 +431,7 @@ export function useAssistant() {
         kind: "concierge",
         taskTool,
         note,
-        userText: "Ask the team to fix this",
+        userText: "Queue this fix",
       }),
     [runSkillCore],
   );

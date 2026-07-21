@@ -71,7 +71,7 @@ export function UpgradePanel({
 
         {plan === "operator" ? (
           <p className="overlay-lede">
-            The operator is on the job — file tasks and the team + AI handle them. Cancel anytime by
+            The operator is on the job — file tasks and Evolution works through them. Cancel anytime by
             emailing us.
           </p>
         ) : (
@@ -81,7 +81,7 @@ export function UpgradePanel({
             </p>
             <ul className="plan-list">
               <li>All six tools, fulfilled for you: product research, cart recovery, support, retention, back-in-stock, true profit.</li>
-              <li>The operator + our team do the work — you approve, it ships.</li>
+              <li>Evolution does the work — you approve, it ships.</li>
               <li>You only pay when it works. No setup fees.</li>
             </ul>
             {paddleReady ? (

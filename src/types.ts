@@ -19,7 +19,7 @@ export interface Message {
   markdown?: boolean;
   /** Status line shown while a skill run hasn't produced tokens yet. */
   progress?: string;
-  /** Offer an "Ask the team to fix this" action under a finished report. */
+  /** Offer a "Queue this fix" action under a finished report. */
   escalate?: { taskTool: string; note: string };
 }
 
