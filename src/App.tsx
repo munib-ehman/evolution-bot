@@ -15,7 +15,7 @@ import { ToolsPanel } from "./components/ToolsPanel";
 import { UpgradePanel } from "./components/UpgradePanel";
 import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
-import { ensureProfile, getLatestAudit, getPlan, getStore, runAuditAsUser, type AuditReport, type ConnectedStore, type Plan } from "./lib/store";
+import { ensureProfile, getLatestAudit, getPlan, getStore, getStoreCatalog, runAuditAsUser, type AuditReport, type ConnectedStore, type Plan, type StoreCatalog } from "./lib/store";
 import { TOOLS, type OpsTask } from "./lib/tasks";
 import { SKILL_CHIPS, type SkillChip } from "./lib/skills";
 
@@ -44,6 +44,8 @@ export default function App() {
   const [store, setStore] = useState<ConnectedStore | null | undefined>(undefined);
   const [plan, setPlan] = useState<Plan>("free");
   const [audit, setAudit] = useState<AuditReport | null>(null);
+  // The live product list (names + prices) that grounds the chat copilot.
+  const [catalog, setCatalog] = useState<StoreCatalog | null>(null);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
@@ -51,10 +53,16 @@ export default function App() {
     if (!authEnabled || !authEmail) return;
     ensureProfile();
     void (async () => {
-      const [s, p, latest] = await Promise.all([getStore(), getPlan(), getLatestAudit()]);
+      const [s, p, latest, cat] = await Promise.all([
+        getStore(),
+        getPlan(),
+        getLatestAudit(),
+        getStoreCatalog(),
+      ]);
       setStore(s);
       setPlan(p);
       setAudit(latest);
+      setCatalog(cat);
 
       // Returning from the Shopify OAuth loop: re-run the audit with the
       // fresh connection so the deep findings land immediately.
@@ -79,6 +87,8 @@ export default function App() {
         }
         const freshStore = await getStore();
         if (freshStore) setStore(freshStore);
+        // The connection just landed — the catalog fetch above likely 409'd.
+        setCatalog(await getStoreCatalog());
       } else if (shopifyResult === "error") {
         a.postAssistantMessage(
           "Hmm, the Shopify connection didn't complete. Try again from the Tasks panel — or email us and we'll sort it out.",
@@ -89,12 +99,13 @@ export default function App() {
 
   // Keep the copilot grounded in the founder's real store + audit findings.
   useEffect(() => {
-    a.setStoreContext(store ? buildStoreContext(store.url, store.platform, audit) : null);
-  }, [store, audit, a.setStoreContext]);
+    a.setStoreContext(store ? buildStoreContext(store.url, store.platform, audit, catalog) : null);
+  }, [store, audit, catalog, a.setStoreContext]);
 
   const handleConnected = (s: ConnectedStore, fresh: AuditReport | null) => {
     setStore(s);
     if (fresh) setAudit(fresh);
+    void getStoreCatalog().then(setCatalog);
     a.postAssistantMessage(
       fresh
         ? `Your store is connected! I ran your audit: ${fresh.score} out of 100. ${fresh.summary} Open the Tasks button up top and I'll start fixing things.`

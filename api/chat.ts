@@ -8,7 +8,13 @@
  *
  * GET is a health probe: 204 = configured, 503 = key missing.
  */
-import { GROQ_BASE, CHAT_MODEL_DEFAULT, CHAT_MAX_MESSAGES, CHAT_MAX_TOTAL_CHARS } from "./_shared";
+import {
+  GROQ_BASE,
+  CHAT_MODEL_DEFAULT,
+  CHAT_MAX_MESSAGES,
+  CHAT_MAX_TOTAL_CHARS,
+  CHAT_MAX_COMPLETION_TOKENS,
+} from "./_shared";
 
 export const config = { runtime: "edge" };
 
@@ -65,7 +71,7 @@ export default async function handler(req: Request): Promise<Response> {
       model: (process.env.GROQ_CHAT_MODEL ?? "").trim() || CHAT_MODEL_DEFAULT,
       messages,
       temperature: 0.7,
-      max_tokens: 220,
+      max_tokens: CHAT_MAX_COMPLETION_TOKENS,
       stream: true,
     }),
   });

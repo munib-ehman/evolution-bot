@@ -44,6 +44,18 @@ export interface AuditReport {
 
 export type Plan = "free" | "operator";
 
+export interface CatalogItem {
+  title: string;
+  priceMin: number | null;
+  priceMax: number | null;
+  soldOut: boolean;
+}
+
+export interface StoreCatalog {
+  total: number;
+  products: CatalogItem[];
+}
+
 /** The audit funnel page stashes the report here for post-signup handoff. */
 export const PENDING_AUDIT_KEY = "evolution-pending-audit";
 
@@ -73,6 +85,29 @@ export async function connectStore(url: string, platform?: string): Promise<Conn
       .single();
     if (error) return null;
     return data as ConnectedStore;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The connected store's slim live catalog (names + prices) from
+ * /api/store-products — grounds the chat copilot in real products. Null when
+ * signed out, not connected (409), or anything fails: the chat then simply
+ * runs without a catalog block, never breaks.
+ */
+export async function getStoreCatalog(): Promise<StoreCatalog | null> {
+  if (!supabase) return null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return null;
+    const res = await fetch("/api/store-products", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as StoreCatalog;
+    return Array.isArray(body.products) ? body : null;
   } catch {
     return null;
   }

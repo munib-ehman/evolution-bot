@@ -31,6 +31,13 @@ export const CHAT_MAX_MESSAGES = 24;
 export const CHAT_MAX_TOTAL_CHARS = 24_000;
 
 /**
+ * Chat completion cap. Replies are prompted short (spoken aloud), but the cap
+ * needs headroom for catalog answers — listing a whole store's products at
+ * 220 tokens truncated mid-list.
+ */
+export const CHAT_MAX_COMPLETION_TOKENS = 600;
+
+/**
  * The app's voice settings still hold Kokoro voice ids (the offline fallback
  * voices). Map them to the closest Orpheus persona server-side so the two
  * engines stay roughly in character.

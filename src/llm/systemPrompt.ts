@@ -43,6 +43,10 @@ export function buildStoreContext(
       abandonedValue30: number;
     };
   } | null,
+  catalog?: {
+    total: number;
+    products: { title: string; priceMin: number | null; priceMax: number | null; soldOut: boolean }[];
+  } | null,
 ): string {
   let block = `\n\nThe founder's connected store: ${storeUrl}${platform === "shopify" ? " (Shopify)" : ""}.`;
   if (audit) {
@@ -58,6 +62,21 @@ export function buildStoreContext(
     }
   } else {
     block += `\nNo audit on file yet — suggest running the free audit or filing a task.`;
+  }
+  if (catalog && catalog.products.length > 0) {
+    const shown = catalog.products.slice(0, 50);
+    const lines = shown.map((p, i) => {
+      const price =
+        p.priceMin == null
+          ? "price not set"
+          : p.priceMax == null || p.priceMax === p.priceMin
+            ? `$${p.priceMin}`
+            : `$${p.priceMin}-$${p.priceMax}`;
+      return `${i + 1}. ${p.title} — ${price}${p.soldOut ? " (sold out)" : ""}`;
+    });
+    block += `\nTheir LIVE catalog, fetched from their store just now (${catalog.total} products${
+      catalog.total > shown.length ? `, first ${shown.length} shown` : ""
+    }). Answer catalog questions — listing products, counts, prices, cheapest or priciest, what's sold out — directly from this list, never deflect to a skill for these:\n${lines.join("\n")}`;
   }
   block += `\nSkills you can suggest by name (the founder runs them from the chips under the chat): "Audit my product listings", "Find winning products" (live web research: trending products with sourcing), "Cart recovery report", "Retention & reviews snapshot", "Back-in-stock check".`;
   return block;
