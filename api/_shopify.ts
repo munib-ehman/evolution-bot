@@ -37,6 +37,7 @@ export function shopifyEnvFromProcess(): ShopifyEnv {
   return {
     groqKey: (process.env.GROQ_API_KEY ?? "").trim(),
     groqModel: (process.env.GROQ_CHAT_MODEL ?? "").trim(),
+    groqResearchModel: (process.env.GROQ_RESEARCH_MODEL ?? "").trim(),
     supabaseUrl: (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim(),
     serviceRoleKey: (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim(),
     shopifyApiKey: (process.env.SHOPIFY_API_KEY ?? "").trim(),

@@ -10,6 +10,15 @@ export const GROQ_BASE = "https://api.groq.com/openai/v1";
 
 export const CHAT_MODEL_DEFAULT = "llama-3.3-70b-versatile";
 
+/**
+ * Groq's agentic system with built-in live web search — the research skills
+ * run on it so market claims come from real searches, not model memory.
+ * Same GROQ_API_KEY. Mini is the free-tier-safe default: full groq/compound's
+ * search context trips the free tier's per-request cap (HTTP 413, verified
+ * 2026-07-21). Set GROQ_RESEARCH_MODEL=groq/compound once the org is on Dev Tier.
+ */
+export const RESEARCH_MODEL_DEFAULT = "groq/compound-mini";
+
 /** Groq's hosted Orpheus TTS (playai-tts was decommissioned). */
 export const TTS_MODEL_DEFAULT = "canopylabs/orpheus-v1-english";
 export const TTS_VOICE_DEFAULT = "autumn";

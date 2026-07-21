@@ -19,7 +19,7 @@
  *   data: {"error":"…"}                                terminal failure
  *   data: [DONE]
  */
-import { GROQ_BASE, CHAT_MODEL_DEFAULT } from "./_shared";
+import { GROQ_BASE, CHAT_MODEL_DEFAULT, RESEARCH_MODEL_DEFAULT } from "./_shared";
 import { resolveUserFull } from "./_audit";
 import { getConnection, shopifyEnvFromProcess } from "./_shopify";
 import { SKILL_TOOLS, type SkillEnv, type ToolCtx } from "./_skillTools";
@@ -35,6 +35,14 @@ export interface SkillDef {
   prefetch: { tool: string; args: Record<string, unknown> }[];
   /** Optional digest slimming before it enters model context. */
   shape?: (digests: Record<string, unknown>) => Record<string, unknown>;
+  /**
+   * Web-research skill: runs on the search-capable model (RESEARCH_MODEL_DEFAULT)
+   * with a longer stream budget, and the grounding rules flip — store facts come
+   * from the digests, market facts must come from live searches with cited URLs.
+   */
+  web?: boolean;
+  /** Status line while the model writes (research skills say what's really happening). */
+  writingLabel?: string;
   prompt: string;
   maxTokens: number;
 }
@@ -51,6 +59,38 @@ export const SKILLS: Record<string, SkillDef> = {
     prefetch: [{ tool: "get_products", args: { limit: 100 } }],
     prompt: `Write a product listing audit. Structure: "## Product listing audit — {shop}" then a 2–3 sentence executive summary with the headline numbers from the aggregate block, then sections "### Descriptions" (missing/thin counts, name the worst offenders by title), "### Images & alt text", "### Stock" (sold-out products by name), "### Titles & organization" (duplicates, tag hygiene), then "### Do this week" — a numbered priority list of at most 5 concrete actions, most valuable first. ${ESCALATION_LINE}`,
     maxTokens: 1300,
+  },
+  product_research: {
+    id: "product_research",
+    label: "Find winning products",
+    kind: "agentic",
+    progressLabel: "Reading your catalog to pin down your niche…",
+    prefetch: [{ tool: "get_products", args: { limit: 100 } }],
+    web: true,
+    writingLabel: "Researching live market trends on the web — this takes a minute…",
+    shape: (digests) => {
+      const d = digests.get_products as
+        | {
+            products?: { title: string; status: string; priceMin: number | null; priceMax: number | null }[];
+            aggregate?: Record<string, unknown>;
+          }
+        | undefined;
+      if (!d?.products) return digests;
+      // The researcher needs the niche and price band, not listing-quality flags.
+      const active = d.products.filter((p) => p.status === "active");
+      return {
+        store_catalog: {
+          totalProducts: d.aggregate?.total ?? d.products.length,
+          // 30 titles is plenty to pin the niche, and keeps the request small
+          // enough that the search context fits free-tier token windows.
+          products: (active.length ? active : d.products)
+            .slice(0, 30)
+            .map((p) => ({ title: p.title, priceMin: p.priceMin, priceMax: p.priceMax })),
+        },
+      };
+    },
+    prompt: `The founder wants winning products to add to this store. Research the live market FIRST — run web searches for products trending right now in and adjacent to this store's niche (infer the niche from the catalog digest): current trending-product and marketplace best-seller roundups, demand signals (search and social trend reports), and real supplier listings for pricing. Only then write the report. Structure: "## Winning products research — {shop}" then a 2–3 sentence executive summary naming the store's niche and which one product you'd launch first, then "### Your catalog today" (max 2 sentences: what the store sells and its price band, from the digest), then "### 3 winning products" — a "#### {n}. {Product}" block per product, each with exactly these bolded fields: **Why it's winning now** (the trend evidence you found, with the source linked), **Numbers** (typical supplier unit cost vs suggested retail and rough margin, from listings you actually found), **Sourcing** (2–3 named places to source it — e.g. AliExpress, CJdropshipping, Faire, Alibaba — with what to search there, linking listings you found), **Fit** (one line on why it suits THIS store and its price band), then "### Launch checklist" — 4–5 numbered steps to get the first product live this week. Every trend claim and price must come from a search result you cite; if you can't verify a candidate, replace it rather than pad with guesses. ${ESCALATION_LINE}`,
+    maxTokens: 1400,
   },
   cart_recovery: {
     id: "cart_recovery",
@@ -245,13 +285,17 @@ async function runAgentic(
     return;
   }
 
-  progress("Writing your report…");
+  progress(skill.writingLabel ?? "Writing your report…");
   const shaped = skill.shape ? skill.shape(digests) : digests;
   const shop = ctx.conn?.shop_domain?.replace(".myshopify.com", "") ?? "your store";
 
+  const grounding = skill.web
+    ? 'The JSON digests in the user message describe the founder\'s REAL catalog, computed directly from the store\'s Admin API — use them to understand the niche and price points. Everything about the MARKET must come from live web searches you run now: put a source link next to every trend claim, price benchmark, and supplier. If a search didn\'t verify something, leave it out — never invent products, stats, or links. If a digest carries an "error" field, say plainly that that data source was unreachable and work with what you have.'
+    : 'The JSON digests in the user message were computed directly from the store\'s Admin API — every number is real. Cite only products and numbers present in the digests; NEVER invent data. If a digest carries an "error" field, say plainly that that data source was unreachable and work with what you have.';
+
   const system = [
     `You are Evolution, the AI COO for the founder's connected Shopify store "${shop}". You just ran the "${skill.label}" skill.`,
-    "The JSON digests in the user message were computed directly from the store's Admin API — every number is real. Cite only products and numbers present in the digests; NEVER invent data. If a digest carries an \"error\" field, say plainly that that data source was unreachable and work with what you have.",
+    grounding,
     "Write GitHub-flavored markdown. Concrete, founder-to-founder, no fluff, no em dashes. Short paragraphs and bullet lists over walls of text.",
     skill.prompt.replaceAll("{shop}", shop),
   ].join("\n\n");
@@ -264,7 +308,9 @@ async function runAgentic(
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${ctx.env.groqKey}` },
     body: JSON.stringify({
-      model: ctx.env.groqModel || CHAT_MODEL_DEFAULT,
+      model: skill.web
+        ? ctx.env.groqResearchModel || RESEARCH_MODEL_DEFAULT
+        : ctx.env.groqModel || CHAT_MODEL_DEFAULT,
       messages: [
         { role: "system", content: system },
         { role: "user", content: userMsg },
@@ -273,10 +319,20 @@ async function runAgentic(
       max_tokens: skill.maxTokens,
       stream: true,
     }),
-    signal: AbortSignal.timeout(GROQ_TIMEOUT_MS + 45_000), // stream can run long; connect is what matters
+    // Stream can run long; connect is what matters. Research skills get a
+    // bigger budget — the model runs real web searches before/while writing.
+    signal: AbortSignal.timeout(GROQ_TIMEOUT_MS + (skill.web ? 165_000 : 45_000)),
   });
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => "");
+    // Research runs pull big search contexts through Groq; on tight token
+    // windows that surfaces as 413/429. Say "retry" — not Groq's billing copy.
+    if (skill.web && (upstream.status === 413 || upstream.status === 429)) {
+      controller.enqueue(
+        sse({ error: "Live research is at capacity this minute — give it about 60 seconds and run it again." }),
+      );
+      return;
+    }
     controller.enqueue(sse({ error: `Report writer error (${upstream.status}). ${detail.slice(0, 120)}` }));
     return;
   }

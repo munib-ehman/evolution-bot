@@ -85,6 +85,7 @@ export function devApi(): Plugin {
       auditEnv = {
         groqKey: key,
         groqModel: (env.GROQ_CHAT_MODEL ?? "").trim(),
+        groqResearchModel: (env.GROQ_RESEARCH_MODEL ?? "").trim(),
         supabaseUrl: (env.SUPABASE_URL ?? env.VITE_SUPABASE_URL ?? "").trim(),
         serviceRoleKey: (env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim(),
         shopifyApiKey: (env.SHOPIFY_API_KEY ?? "").trim(),

@@ -28,6 +28,13 @@ export const SKILL_CHIPS: SkillChip[] = [
     taskTool: "product",
   },
   {
+    id: "product_research",
+    label: "Find winning products",
+    blurb: "Live web research: 3 trending products for your niche, with real sourcing and margins.",
+    kind: "agentic",
+    taskTool: "product",
+  },
+  {
     id: "cart_recovery",
     label: "Cart recovery report",
     blurb: "What abandoned checkouts cost you last month, and what a flow would win back.",

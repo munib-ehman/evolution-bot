@@ -74,6 +74,8 @@ interface ShopifyProduct {
 export interface AuditEnv {
   groqKey?: string;
   groqModel?: string;
+  /** Web-search-capable model for research skills (GROQ_RESEARCH_MODEL). */
+  groqResearchModel?: string;
   supabaseUrl?: string;
   serviceRoleKey?: string;
 }
