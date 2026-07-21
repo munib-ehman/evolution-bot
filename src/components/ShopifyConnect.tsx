@@ -6,13 +6,21 @@
  */
 import { useEffect, useState } from "react";
 import {
+  disconnectShopify,
   getShopifyStatus,
   shopifyConnectAvailable,
   startShopifyConnect,
   type ShopifyStatus,
 } from "../lib/shopify";
 
-export function ShopifyConnect({ storeUrl }: { storeUrl: string | null }) {
+export function ShopifyConnect({
+  storeUrl,
+  onDisconnected,
+}: {
+  storeUrl: string | null;
+  /** Fired after a successful disconnect so the app can reset store state. */
+  onDisconnected?: () => void;
+}) {
   const [available, setAvailable] = useState(false);
   const [status, setStatus] = useState<ShopifyStatus | null>(null);
   const [shop, setShop] = useState("");
@@ -41,13 +49,35 @@ export function ShopifyConnect({ storeUrl }: { storeUrl: string | null }) {
         setBusy(false);
       }
     };
+    const disconnect = async () => {
+      if (busy) return;
+      const sure = window.confirm(
+        `Disconnect ${status.shop_domain}? Evolution loses its read-only access to this store. You can connect this or another store again anytime.`,
+      );
+      if (!sure) return;
+      setBusy(true);
+      setError(null);
+      const ok = await disconnectShopify();
+      setBusy(false);
+      if (ok) {
+        setStatus(null);
+        setShop("");
+        onDisconnected?.();
+      } else {
+        setError("Couldn't disconnect — try again in a moment.");
+      }
+    };
     return (
       <div className="shopify-connected">
         <p>
           ✓ Shopify connected: <strong>{status.shop_domain}</strong> — read-only access; your
           audits and skills use real store data.{" "}
           <button type="button" className="link" onClick={() => void reconnect()} disabled={busy}>
-            {busy ? "Opening Shopify…" : "Reconnect"}
+            {busy ? "Working…" : "Reconnect"}
+          </button>
+          {" · "}
+          <button type="button" className="link" onClick={() => void disconnect()} disabled={busy}>
+            Disconnect
           </button>
         </p>
         {error && <p className="overlay-error">{error}</p>}

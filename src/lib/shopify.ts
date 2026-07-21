@@ -37,6 +37,26 @@ export async function getShopifyStatus(): Promise<ShopifyStatus | null> {
 }
 
 /**
+ * Sever the store: the server deletes the Shopify connection and the stores
+ * row (service role — the browser has no destructive access). True on success.
+ */
+export async function disconnectShopify(): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return false;
+    const res = await fetch("/api/shopify-disconnect", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Kick off OAuth: ask the server for Shopify's authorize URL and navigate
  * there. Returns an error message instead when something is off.
  */

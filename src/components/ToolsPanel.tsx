@@ -14,10 +14,12 @@ export function ToolsPanel({
   open,
   onClose,
   storeUrl,
+  onDisconnected,
 }: {
   open: boolean;
   onClose: () => void;
   storeUrl: string | null;
+  onDisconnected: () => void;
 }) {
   return (
     <aside className={`tools-panel card ${open ? "open" : ""}`} aria-hidden={!open} aria-label="My store">
@@ -28,7 +30,7 @@ export function ToolsPanel({
         </button>
       </header>
 
-      <ShopifyConnect storeUrl={storeUrl} />
+      <ShopifyConnect storeUrl={storeUrl} onDisconnected={onDisconnected} />
 
       <p className="store-disclaimer">
         <strong>Read-only, by design.</strong> Evolution never edits or writes anything on your

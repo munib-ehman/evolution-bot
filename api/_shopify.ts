@@ -347,6 +347,49 @@ async function refreshConnection(
   }
 }
 
+/**
+ * Sever the store: delete the owner's Shopify connection (the token row) and
+ * their stores row, so they can connect a different store from scratch.
+ * Service-role deletes — the browser has no destructive grants on either
+ * table. We only drop OUR stored access; the owner can also uninstall the
+ * app from their Shopify admin to revoke on Shopify's side.
+ */
+export async function runShopifyDisconnect(
+  authHeader: string | null,
+  env: ShopifyEnv,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (!env.supabaseUrl || !env.serviceRoleKey) {
+    return { status: 503, body: { error: "Store storage isn't configured." } };
+  }
+  const userId = await resolveUser(env, authHeader);
+  if (!userId) return { status: 401, body: { error: "Sign in first." } };
+
+  const headers = {
+    apikey: env.serviceRoleKey,
+    Authorization: `Bearer ${env.serviceRoleKey}`,
+  };
+  try {
+    const [connRes, storeRes] = await Promise.all([
+      fetch(`${env.supabaseUrl}/rest/v1/shopify_connections?user_id=eq.${userId}`, {
+        method: "DELETE",
+        headers,
+        signal: AbortSignal.timeout(6_000),
+      }),
+      fetch(`${env.supabaseUrl}/rest/v1/stores?user_id=eq.${userId}`, {
+        method: "DELETE",
+        headers,
+        signal: AbortSignal.timeout(6_000),
+      }),
+    ]);
+    if (!connRes.ok || !storeRes.ok) {
+      return { status: 502, body: { error: "Couldn't fully disconnect — try again." } };
+    }
+    return { status: 200, body: { ok: true } };
+  } catch {
+    return { status: 502, body: { error: "Couldn't reach store storage — try again." } };
+  }
+}
+
 /** One Admin API GET, JSON out; null on any failure (audit degrades). */
 export async function shopifyGet<T>(shop: string, token: string, pathAndQuery: string): Promise<T | null> {
   const { data } = await shopifyGetDetailed<T>(shop, token, pathAndQuery);

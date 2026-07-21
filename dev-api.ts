@@ -18,7 +18,7 @@ import {
   mapVoice,
 } from "./api/_shared";
 import { runAudit, resolveUserFull } from "./api/_audit";
-import { runShopifyAuthStart, runShopifyCallback, type ShopifyEnv } from "./api/_shopify";
+import { runShopifyAuthStart, runShopifyCallback, runShopifyDisconnect, type ShopifyEnv } from "./api/_shopify";
 import { runSkill, type SkillRunBody } from "./api/_skills";
 import { runStoreCatalog } from "./api/_catalog";
 import { runAgentChat, type AgentChatBody } from "./api/_agentChat";
@@ -187,6 +187,21 @@ export function devApi(): Plugin {
           const { status, body } = await runShopifyAuthStart(shop, auth, origin, auditEnv);
           res.statusCode = status;
           res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify(body));
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/shopify-disconnect", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const { status, body } = await runShopifyDisconnect(auth, auditEnv);
+          res.statusCode = status;
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader("Cache-Control", "no-store");
           res.end(JSON.stringify(body));
         })().catch((err) => {
           if (!res.headersSent) send(res, 500, String(err));

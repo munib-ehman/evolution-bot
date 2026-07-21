@@ -101,6 +101,16 @@ export default function App() {
     a.setStoreContext(store ? buildStoreContext(store.url, store.platform, audit, catalog) : null);
   }, [store, audit, catalog, a.setStoreContext]);
 
+  const handleDisconnected = () => {
+    setStore(null);
+    setAudit(null);
+    setCatalog(null);
+    setTasksOpen(false);
+    a.postAssistantMessage(
+      "Your store is disconnected — I no longer have any access to it. Connect this or a different store whenever you're ready and I'll take a fresh look.",
+    );
+  };
+
   const handleConnected = (s: ConnectedStore, fresh: AuditReport | null) => {
     setStore(s);
     if (fresh) setAudit(fresh);
@@ -472,6 +482,7 @@ export default function App() {
           open={tasksOpen}
           onClose={() => setTasksOpen(false)}
           storeUrl={store?.url ?? null}
+          onDisconnected={handleDisconnected}
         />
       )}
 
