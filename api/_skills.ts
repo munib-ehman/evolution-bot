@@ -101,7 +101,7 @@ export const SKILLS: Record<string, SkillDef> = {
       { tool: "get_abandoned_checkouts", args: { days: 30 } },
       { tool: "get_orders_summary", args: { days: 30 } },
     ],
-    prompt: `Write an abandoned-cart recovery report. Structure: "## Cart recovery — {shop}" then a summary contrasting completed revenue vs abandoned value (30 days), then "### What's being left behind" (count, total and average value, how many left an email = recoverable), "### What a recovery flow would win back" (use the industry 5–15% recovery range applied to the real abandoned value — show the math), "### The 3-touch sequence we recommend" (timing: ~1h, ~24h, ~72h; one line each on the angle). ${ESCALATION_LINE}`,
+    prompt: `Write an abandoned-cart recovery report. Structure: "## Cart recovery — {shop}" then a summary contrasting completed revenue vs abandoned value (30 days), then "### What's being left behind" (count, total and average value, how many left an email = recoverable), "### What a recovery flow would win back" (use the industry 5–15% recovery range applied to the real abandoned value — show the math), "### The 3-touch sequence we recommend" (timing: ~1h, ~24h, ~72h; one line each on the angle). End the report with exactly one short closing line pointing the founder to the "Recovery" button at the top of the app, where every recoverable cart already has personalized, ready-to-send emails prepared for them to send from their own inbox.`,
     maxTokens: 1100,
   },
   retention: {

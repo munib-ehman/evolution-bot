@@ -12,6 +12,7 @@ import { loadJSON, saveJSON } from "./lib/storage";
 import { speechEngine } from "./audio/speechEngine";
 import { ConnectStore } from "./components/ConnectStore";
 import { ToolsPanel } from "./components/ToolsPanel";
+import { RecoveryPanel } from "./components/RecoveryPanel";
 import { UpgradePanel } from "./components/UpgradePanel";
 import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
@@ -46,6 +47,7 @@ export default function App() {
   // The live product list (names + prices) that grounds the chat copilot.
   const [catalog, setCatalog] = useState<StoreCatalog | null>(null);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   useEffect(() => {
@@ -273,7 +275,26 @@ export default function App() {
 
         {authEmail && (
           <div className="header-right">
-            <button type="button" className="tasks-btn" onClick={() => setTasksOpen((v) => !v)}>
+            {store && (
+              <button
+                type="button"
+                className="tasks-btn"
+                onClick={() => {
+                  setTasksOpen(false);
+                  setRecoveryOpen((v) => !v);
+                }}
+              >
+                Recovery
+              </button>
+            )}
+            <button
+              type="button"
+              className="tasks-btn"
+              onClick={() => {
+                setRecoveryOpen(false);
+                setTasksOpen((v) => !v);
+              }}
+            >
               My store
             </button>
             <span className="badge user" title="Signed in">{authEmail}</span>
@@ -483,6 +504,14 @@ export default function App() {
           onClose={() => setTasksOpen(false)}
           storeUrl={store?.url ?? null}
           onDisconnected={handleDisconnected}
+        />
+      )}
+
+      {authEmail && store && (
+        <RecoveryPanel
+          open={recoveryOpen}
+          onClose={() => setRecoveryOpen(false)}
+          storeName={store.url.replace(/^https?:\/\//, "").replace(/\.myshopify\.com.*$/, "").replace(/\/.*$/, "")}
         />
       )}
 

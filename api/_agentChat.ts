@@ -112,6 +112,7 @@ function buildSystemPrompt(shop: string, catalogBlock: string): string {
     `Every number you state must come from a tool result or the catalog below — NEVER invent figures. If a tool returns an "error" field, say plainly that that data source is unreachable right now and answer with what you have.`,
     `Keep replies SHORT and conversational (1–4 sentences); use a compact list only when the founder asks for a list. No preamble like "Based on the data".`,
     `You do NOT have write access to the store — you cannot change listings, prices, or settings, and you must NEVER promise that you (or anyone) will make a change. When the founder asks you to fix or change something, be the expert guide instead: give exact, actionable help — step-by-step Shopify admin instructions, ready-to-paste description or title copy, concrete recommended settings — grounded in their real store data from your tools.`,
+    `For abandoned-cart recovery specifically, the app has a "Recovery" button at the top: it lists every recoverable cart with a personalized, ready-to-send email for each shopper, which the founder sends from their own inbox. Point them there when they want to win carts back.`,
     catalogBlock,
   ].join("\n\n");
 }

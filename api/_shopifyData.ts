@@ -235,6 +235,125 @@ export async function fetchAbandonedCheckoutsWindow(
 }
 
 // ---------------------------------------------------------------------------
+// Recoverable checkouts — the ONE fetcher that returns customer PII.
+//
+// Names/emails/recovery links flow Shopify → server → the OWNER's browser
+// only (via /api/recovery-carts). They must never enter LLM context or the
+// skill/agent tool digests — those use fetchAbandonedCheckoutsWindow above.
+
+export interface RecoverableCart {
+  id: string;
+  createdAt: string;
+  totalPrice: number;
+  /** Shopify's magic link that restores the cart at checkout. */
+  recoveryUrl: string;
+  firstName: string;
+  /** Empty string when the shopper left no email (or access is restricted). */
+  email: string;
+  items: { title: string; qty: number }[];
+}
+
+const RECOVERY_QUERY = `query RecoverableCheckouts($first: Int!, $after: String, $q: String) {
+  abandonedCheckouts(first: $first, after: $after, query: $q, sortKey: CREATED_AT, reverse: true) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id
+      createdAt
+      abandonedCheckoutUrl
+      totalPriceSet { shopMoney { amount } }
+      customer { firstName email }
+      lineItems(first: 10) { nodes { title quantity } }
+    }
+  }
+}`;
+
+interface GqlRecoveryData {
+  abandonedCheckouts?: {
+    pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+    nodes?: {
+      id?: string;
+      createdAt?: string;
+      abandonedCheckoutUrl?: string | null;
+      totalPriceSet?: { shopMoney?: { amount?: string } } | null;
+      customer?: { firstName?: string | null; email?: string | null } | null;
+      lineItems?: { nodes?: { title?: string; quantity?: number }[] };
+    }[];
+  };
+}
+
+async function fetchRecoveryGraphql(conn: ShopifyConnection, days: number): Promise<RecoverableCart[] | null> {
+  const q = `created_at:>='${sinceIso(days)}'`;
+  const out: RecoverableCart[] = [];
+  let after: string | null = null;
+  while (out.length < CHECKOUTS_CAP) {
+    const data: GqlRecoveryData | null = await shopifyGraphql<GqlRecoveryData>(
+      conn.shop_domain,
+      conn.access_token,
+      RECOVERY_QUERY,
+      { first: Math.min(CHECKOUTS_PAGE, CHECKOUTS_CAP - out.length), after, q },
+    );
+    const page: GqlRecoveryData["abandonedCheckouts"] = data?.abandonedCheckouts;
+    if (!page?.nodes) return out.length === 0 ? null : out;
+    for (const n of page.nodes) {
+      out.push({
+        id: n.id ?? "",
+        createdAt: n.createdAt ?? "",
+        totalPrice: money(n.totalPriceSet?.shopMoney?.amount),
+        recoveryUrl: n.abandonedCheckoutUrl ?? "",
+        firstName: (n.customer?.firstName ?? "").trim(),
+        email: (n.customer?.email ?? "").trim(),
+        items: (n.lineItems?.nodes ?? []).map((li) => ({
+          title: (li.title ?? "").trim() || "(untitled)",
+          qty: li.quantity ?? 0,
+        })),
+      });
+    }
+    if (!page.pageInfo?.hasNextPage || !page.pageInfo.endCursor) break;
+    after = page.pageInfo.endCursor;
+  }
+  return out;
+}
+
+async function fetchRecoveryRest(conn: ShopifyConnection, days: number): Promise<RecoverableCart[] | null> {
+  const since = encodeURIComponent(sinceIso(days));
+  const res = await shopifyGet<{
+    checkouts?: {
+      id?: number;
+      created_at?: string;
+      completed_at?: string | null;
+      total_price?: string;
+      abandoned_checkout_url?: string;
+      email?: string;
+      customer?: { first_name?: string | null } | null;
+      line_items?: { title?: string; quantity?: number }[];
+    }[];
+  }>(conn.shop_domain, conn.access_token, `checkouts.json?limit=250&created_at_min=${since}`);
+  if (!res?.checkouts) return null;
+  return res.checkouts
+    .filter((c) => !c.completed_at)
+    .map((c) => ({
+      id: String(c.id ?? ""),
+      createdAt: c.created_at ?? "",
+      totalPrice: parseFloat(c.total_price ?? "0") || 0,
+      recoveryUrl: c.abandoned_checkout_url ?? "",
+      firstName: (c.customer?.first_name ?? "").trim(),
+      email: (c.email ?? "").trim(),
+      items: (c.line_items ?? []).map((li) => ({
+        title: (li.title ?? "").trim() || "(untitled)",
+        qty: li.quantity ?? 0,
+      })),
+    }));
+}
+
+/** Abandoned carts with customer + recovery detail (PII — owner's eyes only). */
+export async function fetchRecoverableCheckouts(
+  conn: ShopifyConnection,
+  days: number,
+): Promise<RecoverableCart[] | null> {
+  return (await fetchRecoveryGraphql(conn, days)) ?? (await fetchRecoveryRest(conn, days));
+}
+
+// ---------------------------------------------------------------------------
 // Shop info
 
 /** The store's currency code, or null if both APIs failed. */
