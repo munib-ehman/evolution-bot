@@ -21,6 +21,7 @@ import { runAudit, resolveUserFull } from "./api/_audit";
 import { runShopifyAuthStart, runShopifyCallback, type ShopifyEnv } from "./api/_shopify";
 import { runSkill, type SkillRunBody } from "./api/_skills";
 import { runStoreCatalog } from "./api/_catalog";
+import { runAgentChat, type AgentChatBody } from "./api/_agentChat";
 import type { SkillEnv } from "./api/_skillTools";
 import { sendTaskEmail } from "./api/_email";
 
@@ -221,6 +222,27 @@ export function devApi(): Plugin {
           const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
           const origin = `http://${req.headers.host ?? "localhost:5173"}`;
           await pipeResponse(res, await runSkill(body, auth, origin, skillEnv));
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/agent-chat", (req, res) => {
+        void (async () => {
+          if (req.method === "GET") return send(res, 204);
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: AgentChatBody;
+          try {
+            body = JSON.parse(await readBody(req)) as AgentChatBody;
+          } catch {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            return res.end(JSON.stringify({ error: "Invalid request body." }));
+          }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const origin = `http://${req.headers.host ?? "localhost:5173"}`;
+          await pipeResponse(res, await runAgentChat(body, auth, origin, skillEnv));
         })().catch((err) => {
           if (!res.headersSent) send(res, 500, String(err));
           else res.end();

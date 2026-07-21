@@ -284,6 +284,65 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
     },
   },
 
+  get_product_sales: {
+    schema: {
+      type: "function",
+      function: {
+        name: "get_product_sales",
+        description:
+          "Per-product sales for the last N days, computed from real order line items: top sellers ranked by units (with revenue), and how many distinct products sold at all. Use for 'top/best selling product', 'how many did X sell', 'what's not selling'.",
+        parameters: {
+          type: "object",
+          properties: {
+            days: { type: "integer", minimum: 7, maximum: 90, default: 30 },
+          },
+        },
+      },
+    },
+    async run(ctx, args) {
+      if (!ctx.conn) return { error: "No Shopify store connected." };
+      const days = clampInt(args.days, 7, 90, 30);
+      const since = encodeURIComponent(new Date(Date.now() - days * 24 * 3600 * 1000).toISOString());
+      const res = await shopifyGet<{
+        orders?: { line_items?: { title?: string; quantity?: number; price?: string }[] }[];
+      }>(
+        ctx.conn.shop_domain,
+        ctx.conn.access_token,
+        `orders.json?status=any&limit=250&created_at_min=${since}&fields=id,created_at,line_items`,
+      );
+      if (!res?.orders) return { error: "Couldn't reach the Shopify orders API." };
+      const byTitle = new Map<string, { units: number; revenue: number }>();
+      for (const order of res.orders) {
+        for (const li of order.line_items ?? []) {
+          const title = (li.title ?? "").trim() || "(untitled)";
+          const qty = li.quantity ?? 0;
+          const price = parseFloat(li.price ?? "0") || 0;
+          const cur = byTitle.get(title) ?? { units: 0, revenue: 0 };
+          cur.units += qty;
+          cur.revenue += price * qty;
+          byTitle.set(title, cur);
+        }
+      }
+      const ranked = [...byTitle.entries()].sort((a, b) => b[1].units - a[1].units);
+      return {
+        windowDays: days,
+        ordersCounted: res.orders.length,
+        bestsellers: ranked.slice(0, 10).map(([title, s]) => ({
+          title,
+          units: s.units,
+          revenue: Math.round(s.revenue),
+        })),
+        distinctProductsSold: byTitle.size,
+        note:
+          res.orders.length >= 250
+            ? "capped at the first 250 orders"
+            : byTitle.size === 0
+              ? "no orders in this window"
+              : undefined,
+      };
+    },
+  },
+
   get_orders_summary: {
     schema: {
       type: "function",

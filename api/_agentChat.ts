@@ -1,0 +1,261 @@
+/**
+ * The agentic chat engine — shared by /api/agent-chat (edge) and dev-api.ts.
+ *
+ * This is the general answer to "the copilot deflects whenever a question
+ * needs data we didn't pre-feed": for a signed-in founder with a connected
+ * store, the chat model holds the SAME tools the skills use and decides
+ * mid-conversation which to call. The founder can ask across any vertical
+ * (sales, orders, carts, audit, catalog) without us shipping a context block
+ * per question type. The design rule is unchanged: tools compute every
+ * number in code; the model orchestrates and narrates.
+ *
+ * Flow per turn: auth → prefetch a compact catalog block (cheap, makes
+ * catalog questions instant) → up to MAX_TOOL_ROUNDS Groq calls with
+ * tool_choice auto, executing SKILL_TOOLS between rounds → the final answer
+ * is emitted through the same SSE protocol the skills use, so the client's
+ * parser and the voice pipeline work unchanged:
+ *   data: {"progress":"Crunching your sales…"}
+ *   data: {"choices":[{"delta":{"content":"…"}}]}
+ *   data: {"error":"…"}
+ *   data: [DONE]
+ */
+import {
+  GROQ_BASE,
+  CHAT_MODEL_DEFAULT,
+  CHAT_MAX_MESSAGES,
+  CHAT_MAX_TOTAL_CHARS,
+  CHAT_MAX_COMPLETION_TOKENS,
+} from "./_shared";
+import { resolveUserFull } from "./_audit";
+import { getConnection } from "./_shopify";
+import { SKILL_TOOLS, buildProductsDigest, type SkillEnv, type ToolCtx } from "./_skillTools";
+
+/** Tools the chat may call. file_task is last so the model treats it as the escalation, not a data source. */
+const AGENT_TOOL_NAMES = [
+  "get_products",
+  "get_product_sales",
+  "get_orders_summary",
+  "get_abandoned_checkouts",
+  "get_latest_audit",
+  "file_task",
+] as const;
+
+const PROGRESS_LABELS: Record<string, string> = {
+  get_products: "Reading your catalog…",
+  get_product_sales: "Crunching your sales…",
+  get_orders_summary: "Pulling your order stats…",
+  get_abandoned_checkouts: "Checking your abandoned carts…",
+  get_latest_audit: "Reading your latest audit…",
+  file_task: "Filing this with the Evolution team…",
+};
+
+/** Tool rounds before we force a plain answer — enough for lookup + follow-up. */
+const MAX_TOOL_ROUNDS = 4;
+const GROQ_TIMEOUT_MS = 25_000;
+/** Client history is advisory; the server enforces its own tighter cap. */
+const MAX_HISTORY_TURNS = 12;
+
+export interface AgentChatBody {
+  messages?: unknown;
+}
+
+interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+interface GroqToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
+interface GroqChatMessage {
+  role: string;
+  content: string | null;
+  tool_calls?: GroqToolCall[];
+}
+
+const enc = new TextEncoder();
+const sse = (obj: unknown) => enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
+const sseDone = enc.encode("data: [DONE]\n\n");
+
+function jsonResponse(status: number, body: Record<string, unknown>): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+}
+
+function validateTurns(raw: unknown): ChatTurn[] | null {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > CHAT_MAX_MESSAGES) return null;
+  const turns: ChatTurn[] = [];
+  let total = 0;
+  for (const m of raw) {
+    const msg = m as { role?: unknown; content?: unknown };
+    // The system prompt is server-built; client-sent system turns are dropped.
+    if (msg.role !== "user" && msg.role !== "assistant") continue;
+    if (typeof msg.content !== "string") return null;
+    total += msg.content.length;
+    turns.push({ role: msg.role, content: msg.content });
+  }
+  if (turns.length === 0 || total > CHAT_MAX_TOTAL_CHARS) return null;
+  return turns.slice(-MAX_HISTORY_TURNS);
+}
+
+function buildSystemPrompt(shop: string, catalogBlock: string): string {
+  return [
+    `You are Evolution, the AI COO for the founder's connected Shopify store "${shop}". You are their store-aware copilot; replies may be spoken aloud.`,
+    `You have TOOLS that fetch the store's REAL data. When a question needs data you don't already have — sales, top sellers, order stats, abandoned carts, audit findings, deeper product detail — CALL the right tool instead of guessing, deflecting, or claiming you lack data. Check your tools before ever saying you can't see something.`,
+    `Every number you state must come from a tool result or the catalog below — NEVER invent figures. If a tool returns an "error" field, say plainly that that data source is unreachable right now and answer with what you have.`,
+    `Keep replies SHORT and conversational (1–4 sentences); use a compact list only when the founder asks for a list. No preamble like "Based on the data".`,
+    `When the founder wants something CHANGED in the store (rewriting listings, setting up flows, adding products — anything hands-on), first confirm what they want, then call file_task to send it to Evolution's human team. Never claim work is already done.`,
+    catalogBlock,
+  ].join("\n\n");
+}
+
+async function buildCatalogBlock(ctx: ToolCtx): Promise<string> {
+  if (!ctx.conn) return "No catalog available.";
+  const digest = await buildProductsDigest(ctx.conn, 100);
+  if ("error" in digest) {
+    return `The catalog couldn't be fetched right now (${digest.error}). Use get_products if the founder asks about products.`;
+  }
+  const products = digest.products as {
+    title: string;
+    soldOut: boolean;
+    priceMin: number | null;
+    priceMax: number | null;
+  }[];
+  const lines = products.slice(0, 50).map((p, i) => {
+    const price =
+      p.priceMin == null
+        ? "price not set"
+        : p.priceMax == null || p.priceMax === p.priceMin
+          ? `$${p.priceMin}`
+          : `$${p.priceMin}-$${p.priceMax}`;
+    return `${i + 1}. ${p.title} — ${price}${p.soldOut ? " (sold out)" : ""}`;
+  });
+  const total = typeof digest.aggregate.total === "number" ? digest.aggregate.total : products.length;
+  return (
+    `Their LIVE catalog, fetched just now (${total} products${total > lines.length ? `, first ${lines.length} shown` : ""}) — answer listing/count/price/sold-out questions directly from it:\n` +
+    lines.join("\n")
+  );
+}
+
+export async function runAgentChat(
+  body: AgentChatBody,
+  authHeader: string | null,
+  origin: string,
+  env: SkillEnv,
+): Promise<Response> {
+  const turns = validateTurns(body.messages);
+  if (!turns) return jsonResponse(400, { error: "Invalid messages." });
+
+  if (!env.groqKey) return jsonResponse(503, { error: "The copilot brain isn't configured yet." });
+
+  const user = await resolveUserFull(env, authHeader);
+  if (!user) return jsonResponse(401, { error: "Sign in to chat with your store." });
+
+  const conn = await getConnection(env, user.id);
+  if (!conn) return jsonResponse(409, { error: "Connect your Shopify store first." });
+
+  const ctx: ToolCtx = { env, userId: user.id, userEmail: user.email, conn, origin };
+  const shop = conn.shop_domain.replace(".myshopify.com", "");
+  const model = env.groqModel || CHAT_MODEL_DEFAULT;
+  const tools = AGENT_TOOL_NAMES.map((n) => SKILL_TOOLS[n].schema);
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const progress = (label: string) => controller.enqueue(sse({ progress: label }));
+      try {
+        const catalogBlock = await buildCatalogBlock(ctx);
+        const convo: Record<string, unknown>[] = [
+          { role: "system", content: buildSystemPrompt(shop, catalogBlock) },
+          ...turns,
+        ];
+
+        for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+          const lastRound = round === MAX_TOOL_ROUNDS;
+          const res = await fetch(`${GROQ_BASE}/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.groqKey}` },
+            body: JSON.stringify({
+              model,
+              messages: convo,
+              temperature: 0.4,
+              max_tokens: CHAT_MAX_COMPLETION_TOKENS,
+              ...(lastRound ? {} : { tools, tool_choice: "auto" }),
+            }),
+            signal: AbortSignal.timeout(GROQ_TIMEOUT_MS),
+          });
+          if (!res.ok) {
+            const detail = await res.text().catch(() => "");
+            controller.enqueue(
+              sse({
+                error:
+                  res.status === 429 || res.status === 413
+                    ? "I'm at capacity this minute — give me about 60 seconds and ask again."
+                    : `Copilot brain error (${res.status}). ${detail.slice(0, 120)}`,
+              }),
+            );
+            return;
+          }
+          const data = (await res.json()) as { choices?: { message?: GroqChatMessage }[] };
+          const msg = data.choices?.[0]?.message;
+          if (!msg) {
+            controller.enqueue(sse({ error: "The copilot brain returned an empty response." }));
+            return;
+          }
+
+          const calls = (msg.tool_calls ?? []).filter((c) => c.type === "function");
+          if (calls.length === 0 || lastRound) {
+            const text = (msg.content ?? "").trim();
+            if (!text) {
+              controller.enqueue(sse({ error: "The copilot brain returned an empty reply." }));
+              return;
+            }
+            controller.enqueue(sse({ choices: [{ delta: { content: text } }] }));
+            return;
+          }
+
+          // Execute this round's tool calls, then loop with the results.
+          convo.push({ role: "assistant", content: msg.content ?? null, tool_calls: calls });
+          for (const call of calls) {
+            const name = call.function.name;
+            const tool = (AGENT_TOOL_NAMES as readonly string[]).includes(name)
+              ? SKILL_TOOLS[name]
+              : null;
+            progress(PROGRESS_LABELS[name] ?? "Checking your store data…");
+            let result: unknown;
+            if (!tool) {
+              result = { error: `Unknown tool: ${name}` };
+            } else {
+              let args: Record<string, unknown> = {};
+              try {
+                args = JSON.parse(call.function.arguments || "{}") as Record<string, unknown>;
+              } catch {
+                /* run with defaults */
+              }
+              result = await tool.run(ctx, args).catch((err) => ({ error: String(err).slice(0, 200) }));
+            }
+            convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+          }
+        }
+      } catch (err) {
+        controller.enqueue(sse({ error: `Chat failed: ${String(err).slice(0, 160)}` }));
+      } finally {
+        controller.enqueue(sseDone);
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-store",
+      Connection: "keep-alive",
+    },
+  });
+}

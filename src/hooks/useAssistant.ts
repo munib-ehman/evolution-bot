@@ -25,6 +25,7 @@ import { loadJSON, saveJSON } from "../lib/storage";
 import { hasWebSpeech, hasMicrophone } from "../lib/capabilities";
 import { logChat } from "../lib/chatLog";
 import { runSkill as requestSkillRun, SkillError } from "../llm/skillClient";
+import { runAgentChat, AgentChatError } from "../llm/agentChatClient";
 import { FILE_FIXES_SKILL_ID, type SkillChip } from "../lib/skills";
 
 export type AssistantStatus = "idle" | "thinking" | "speaking";
@@ -195,22 +196,60 @@ export function useAssistant() {
           bubbleShown = true;
           appendMessage({ id: assistantId, role: "assistant", content: streamed, pending: true });
         } else {
-          updateMessage(assistantId, { content: streamed });
+          // Tokens flowing — any agent "checking your data…" status is done.
+          updateMessage(assistantId, { content: streamed, progress: undefined });
+        }
+      };
+
+      const onToken = (t: string) => {
+        if (controller.signal.aborted) return;
+        if (streamed === "") lat.mark("llmFirstToken");
+        streamed += t;
+        speaker?.push(t);
+        if (paintTimer === null) paintTimer = window.setTimeout(paint, STREAM_PAINT_MS);
+      };
+
+      // Agent tool runs happen before any token arrives; surface them as a
+      // status line on the (pending) reply bubble, like the skill runs do.
+      const onProgress = (label: string) => {
+        if (controller.signal.aborted) return;
+        if (!bubbleShown) {
+          bubbleShown = true;
+          appendMessage({ id: assistantId, role: "assistant", content: "", pending: true, progress: label });
+        } else {
+          updateMessage(assistantId, { progress: label });
         }
       };
 
       try {
-        const reply = await getAssistantReply(history, products, {
-          signal: controller.signal,
-          extraContext: storeContextRef.current ?? undefined,
-          onToken: (t) => {
-            if (controller.signal.aborted) return;
-            if (streamed === "") lat.mark("llmFirstToken");
-            streamed += t;
-            speaker?.push(t);
-            if (paintTimer === null) paintTimer = window.setTimeout(paint, STREAM_PAINT_MS);
-          },
-        });
+        // Store connected → the agentic path: the model can pull real store
+        // data itself. Falls back to the generic brain when the agent is
+        // unavailable (no session, endpoint missing, store disconnected) —
+        // but never after content already streamed (it would double-speak).
+        let reply: string | null = null;
+        if (storeContextRef.current !== null) {
+          try {
+            reply = await runAgentChat(history, {
+              signal: controller.signal,
+              onProgress,
+              onToken,
+            });
+          } catch (err) {
+            if (controller.signal.aborted) {
+              speaker?.cancel();
+              return;
+            }
+            if (err instanceof AgentChatError && err.streamedSomething) throw err;
+            console.warn("[assistant] agent chat unavailable, using the generic brain:", err);
+          }
+        }
+        if (reply === null) {
+          reply = await getAssistantReply(history, products, {
+            signal: controller.signal,
+            extraContext: storeContextRef.current ?? undefined,
+            onToken,
+          });
+        }
         lat.mark("llmDone");
         if (controller.signal.aborted) {
           speaker?.cancel();
@@ -228,7 +267,7 @@ export function useAssistant() {
           await speaker.finish();
           lat.mark("speakDone");
         }
-        if (!controller.signal.aborted) updateMessage(assistantId, { pending: false });
+        if (!controller.signal.aborted) updateMessage(assistantId, { pending: false, progress: undefined });
 
         // Hands-free conversation: if this turn came in BY VOICE, re-open the mic
         // once Evolution finishes speaking so the founder can just reply. Typed
@@ -252,13 +291,15 @@ export function useAssistant() {
         if (controller.signal.aborted) return;
         console.error("[assistant] reply failed:", err);
         const msg =
-          err instanceof Error && /LLM/.test(err.message)
-            ? "I had trouble reaching my brain just now. You can keep chatting — I'll fall back to my built-in answers."
-            : "Sorry, something went wrong. Mind trying that again?";
+          err instanceof AgentChatError
+            ? err.message
+            : err instanceof Error && /LLM/.test(err.message)
+              ? "I had trouble reaching my brain just now. You can keep chatting — I'll fall back to my built-in answers."
+              : "Sorry, something went wrong. Mind trying that again?";
         setError(msg);
         // If the bubble already started streaming, keep what arrived; otherwise
         // surface the apology as its own message.
-        if (bubbleShown) updateMessage(assistantId, { pending: false });
+        if (bubbleShown) updateMessage(assistantId, { pending: false, progress: undefined });
         else appendMessage({ id: newId(), role: "assistant", content: msg });
       } finally {
         lat.report();
