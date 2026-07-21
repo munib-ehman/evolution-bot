@@ -16,7 +16,6 @@ import { UpgradePanel } from "./components/UpgradePanel";
 import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
 import { ensureProfile, getLatestAudit, getPlan, getStore, getStoreCatalog, runAuditAsUser, type AuditReport, type ConnectedStore, type Plan, type StoreCatalog } from "./lib/store";
-import { TOOLS, type OpsTask } from "./lib/tasks";
 import { SKILL_CHIPS, type SkillChip } from "./lib/skills";
 
 type View = "voice" | "chat";
@@ -79,8 +78,8 @@ export default function App() {
           const stats = fresh.stats;
           a.postAssistantMessage(
             stats
-              ? `Shopify is connected — I can see your real numbers now. Last 30 days: ${stats.orders30} orders, ${stats.abandoned30} abandoned checkouts. Your audit is updated; open Tasks and let's go get that money back.`
-              : "Shopify is connected! I re-ran your audit with the deeper access — open the Tasks panel when you're ready.",
+              ? `Shopify is connected — I can see your real numbers now (read-only: I never edit or write anything on your store). Last 30 days: ${stats.orders30} orders, ${stats.abandoned30} abandoned checkouts. Your audit is updated — ask me anything about your store.`
+              : "Shopify is connected! I re-ran your audit with the deeper access — ask me anything about your store. And just so you know: my access is read-only, I never change anything in your store.",
           );
         } else {
           a.postAssistantMessage("Shopify is connected! Your next audit will use your real store data.");
@@ -91,7 +90,7 @@ export default function App() {
         setCatalog(await getStoreCatalog());
       } else if (shopifyResult === "error") {
         a.postAssistantMessage(
-          "Hmm, the Shopify connection didn't complete. Try again from the Tasks panel — or email us and we'll sort it out.",
+          "Hmm, the Shopify connection didn't complete. Try again from the My store panel — or email us and we'll sort it out.",
         );
       }
     })();
@@ -108,15 +107,11 @@ export default function App() {
     void getStoreCatalog().then(setCatalog);
     a.postAssistantMessage(
       fresh
-        ? `Your store is connected! I ran your audit: ${fresh.score} out of 100. ${fresh.summary} Open the Tasks button up top and I'll start fixing things.`
-        : "Your store is connected! Open the Tasks button up top and tell me what to take off your plate first.",
+        ? `Your store is connected! I ran your audit: ${fresh.score} out of 100. ${fresh.summary} Ask me anything — I can see your real data now (read-only: I never change anything in your store).`
+        : "Your store is connected! Ask me anything — I can see your real data now (read-only: I never change anything in your store).",
     );
   };
 
-  const handleTaskDone = (t: OpsTask) => {
-    const name = TOOLS.find((x) => x.key === t.tool)?.name ?? t.tool;
-    a.postAssistantMessage(`Good news — your "${name}" task is done. ${t.result ?? "Check the Tasks panel for details."}`);
-  };
 
   // Two experiences: an immersive voice stage (default) and a classic chat.
   // The choice is remembered across visits.
@@ -269,7 +264,7 @@ export default function App() {
         {authEmail && (
           <div className="header-right">
             <button type="button" className="tasks-btn" onClick={() => setTasksOpen((v) => !v)}>
-              Tasks
+              My store
             </button>
             <span className="badge user" title="Signed in">{authEmail}</span>
             <button type="button" className="link" onClick={() => void signOut()}>
@@ -471,19 +466,12 @@ export default function App() {
           </section>
       </main>
 
-      {/* ── The shell: ops queue panel, onboarding, and billing ─────────── */}
+      {/* ── The shell: store panel, onboarding, and billing ─────────────── */}
       {authEmail && (
         <ToolsPanel
           open={tasksOpen}
           onClose={() => setTasksOpen(false)}
-          plan={plan}
-          storeId={store?.id ?? null}
           storeUrl={store?.url ?? null}
-          onTaskDone={handleTaskDone}
-          onUpgrade={() => {
-            setTasksOpen(false);
-            setUpgradeOpen(true);
-          }}
         />
       )}
 

@@ -44,8 +44,8 @@ export function ShopifyConnect({ storeUrl }: { storeUrl: string | null }) {
     return (
       <div className="shopify-connected">
         <p>
-          ✓ Shopify connected: <strong>{status.shop_domain}</strong> — your audits and skills use
-          real store data.{" "}
+          ✓ Shopify connected: <strong>{status.shop_domain}</strong> — read-only access; your
+          audits and skills use real store data.{" "}
           <button type="button" className="link" onClick={() => void reconnect()} disabled={busy}>
             {busy ? "Opening Shopify…" : "Reconnect"}
           </button>
