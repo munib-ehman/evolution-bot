@@ -12,7 +12,8 @@
  * scanning, which is all these checks need.
  */
 import { GROQ_BASE, CHAT_MODEL_DEFAULT } from "./_shared";
-import { getConnection, shopifyGet, type ShopifyConnection } from "./_shopify";
+import { getConnection, type ShopifyConnection } from "./_shopify";
+import { fetchOrdersWindow, fetchAbandonedCheckoutsWindow, fetchShopCurrency } from "./_shopifyData";
 
 /** Per-request fetch timeout (homepage and products.json run in parallel). */
 export const AUDIT_FETCH_TIMEOUT_MS = 8_000;
@@ -376,19 +377,12 @@ export function scoreAudit(findings: AuditFinding[]): number {
 // ---------------------------------------------------------------------------
 // Deep checks (Shopify OAuth) — real trading data, quantified findings
 
-interface ShopifyOrder {
-  total_price?: string;
-  created_at?: string;
-  customer?: { id?: number } | null;
-}
-interface ShopifyCheckout {
-  total_price?: string;
-}
-
 /**
  * Order-level trading stats for an arbitrary window — shared by the deep
  * audit (30 days) and the skill engine (up to 90 days). `fetched` is false
  * when the orders API was unreachable (stats are then all zeros).
+ * Reads via _shopifyData.ts: GraphQL Admin API first (REST is legacy-blocked
+ * for newly created apps), REST fallback for older installs.
  */
 export interface OrderStats {
   currency: string | null;
@@ -403,26 +397,18 @@ export interface OrderStats {
 }
 
 export async function fetchOrderStats(conn: ShopifyConnection, days: number): Promise<OrderStats> {
-  const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
-  const q = encodeURIComponent(since);
-  const [shopInfo, ordersRes] = await Promise.all([
-    shopifyGet<{ shop?: { currency?: string } }>(conn.shop_domain, conn.access_token, "shop.json"),
-    shopifyGet<{ orders?: ShopifyOrder[] }>(
-      conn.shop_domain,
-      conn.access_token,
-      `orders.json?status=any&limit=250&created_at_min=${q}&fields=id,total_price,created_at,customer`,
-    ),
+  const [currency, orders] = await Promise.all([
+    fetchShopCurrency(conn),
+    fetchOrdersWindow(conn, days),
   ]);
 
-  const currency = shopInfo?.shop?.currency ?? null;
-  const orders = ordersRes?.orders ?? [];
-  const revenue = orders.reduce((n, o) => n + (parseFloat(o.total_price ?? "0") || 0), 0);
-  const aov = orders.length > 0 ? revenue / orders.length : null;
+  const rows = orders ?? [];
+  const revenue = rows.reduce((n, o) => n + o.totalPrice, 0);
+  const aov = rows.length > 0 ? revenue / rows.length : null;
 
-  const byCustomer = new Map<number, number>();
-  for (const o of orders) {
-    const id = o.customer?.id;
-    if (typeof id === "number") byCustomer.set(id, (byCustomer.get(id) ?? 0) + 1);
+  const byCustomer = new Map<string, number>();
+  for (const o of rows) {
+    if (o.customerId) byCustomer.set(o.customerId, (byCustomer.get(o.customerId) ?? 0) + 1);
   }
   const repeatRate =
     byCustomer.size > 0
@@ -430,15 +416,15 @@ export async function fetchOrderStats(conn: ShopifyConnection, days: number): Pr
       : null;
 
   const byWeek = new Map<string, { orders: number; revenue: number }>();
-  for (const o of orders) {
-    const t = Date.parse(o.created_at ?? "");
+  for (const o of rows) {
+    const t = Date.parse(o.createdAt);
     if (!Number.isFinite(t)) continue;
     const d = new Date(t);
     d.setUTCDate(d.getUTCDate() - d.getUTCDay()); // snap to Sunday
     const key = d.toISOString().slice(0, 10);
     const bucket = byWeek.get(key) ?? { orders: 0, revenue: 0 };
     bucket.orders += 1;
-    bucket.revenue += parseFloat(o.total_price ?? "0") || 0;
+    bucket.revenue += o.totalPrice;
     byWeek.set(key, bucket);
   }
   const weekly = [...byWeek.entries()]
@@ -448,8 +434,8 @@ export async function fetchOrderStats(conn: ShopifyConnection, days: number): Pr
   return {
     currency,
     days,
-    fetched: ordersRes !== null,
-    orders: orders.length,
+    fetched: orders !== null,
+    orders: rows.length,
     revenue,
     aov,
     uniqueCustomers: byCustomer.size,
@@ -480,20 +466,14 @@ function fmtMoney(n: number, currency: string | null): string {
 export async function runDeepChecks(
   conn: ShopifyConnection,
 ): Promise<{ findings: AuditFinding[]; stats: AuditStats } | null> {
-  const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-  const q = encodeURIComponent(since);
   const [os, checkoutsRes] = await Promise.all([
     fetchOrderStats(conn, 30),
-    shopifyGet<{ checkouts?: ShopifyCheckout[] }>(
-      conn.shop_domain,
-      conn.access_token,
-      `checkouts.json?limit=250&created_at_min=${q}`,
-    ),
+    fetchAbandonedCheckoutsWindow(conn, 30),
   ]);
   if (!os.fetched && !checkoutsRes) return null;
 
   const currency = os.currency;
-  const checkouts = checkoutsRes?.checkouts ?? [];
+  const checkouts = checkoutsRes ?? [];
 
   const revenue30 = os.revenue;
   const orders30 = os.orders;
@@ -501,7 +481,7 @@ export async function runDeepChecks(
   const repeatRate = os.repeatRate;
 
   const abandoned30 = checkouts.length;
-  const abandonedValue30 = checkouts.reduce((n, c) => n + (parseFloat(c.total_price ?? "0") || 0), 0);
+  const abandonedValue30 = checkouts.reduce((n, c) => n + c.totalPrice, 0);
 
   const findings: AuditFinding[] = [];
 

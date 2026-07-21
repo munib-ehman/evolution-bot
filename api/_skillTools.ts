@@ -10,7 +10,8 @@
  * `file_task` is the one write — into OUR tasks table (the human ops queue),
  * not into Shopify. It also pings the team via _email.ts, best-effort.
  */
-import { shopifyGet, shopifyGetDetailed, shopifyGraphql, type ShopifyConnection, type ShopifyEnv } from "./_shopify";
+import { shopifyGetDetailed, shopifyGraphql, type ShopifyConnection, type ShopifyEnv } from "./_shopify";
+import { fetchOrdersWindow, fetchAbandonedCheckoutsWindow } from "./_shopifyData";
 import { fetchOrderStats, stripHtml } from "./_audit";
 import { sendTaskEmail, type EmailEnv } from "./_email";
 
@@ -302,31 +303,21 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
     async run(ctx, args) {
       if (!ctx.conn) return { error: "No Shopify store connected." };
       const days = clampInt(args.days, 7, 90, 30);
-      const since = encodeURIComponent(new Date(Date.now() - days * 24 * 3600 * 1000).toISOString());
-      const res = await shopifyGet<{
-        orders?: { line_items?: { title?: string; quantity?: number; price?: string }[] }[];
-      }>(
-        ctx.conn.shop_domain,
-        ctx.conn.access_token,
-        `orders.json?status=any&limit=250&created_at_min=${since}&fields=id,created_at,line_items`,
-      );
-      if (!res?.orders) return { error: "Couldn't reach the Shopify orders API." };
+      const orders = await fetchOrdersWindow(ctx.conn, days, { lineItems: true });
+      if (!orders) return { error: "Couldn't reach the Shopify orders API." };
       const byTitle = new Map<string, { units: number; revenue: number }>();
-      for (const order of res.orders) {
-        for (const li of order.line_items ?? []) {
-          const title = (li.title ?? "").trim() || "(untitled)";
-          const qty = li.quantity ?? 0;
-          const price = parseFloat(li.price ?? "0") || 0;
-          const cur = byTitle.get(title) ?? { units: 0, revenue: 0 };
-          cur.units += qty;
-          cur.revenue += price * qty;
-          byTitle.set(title, cur);
+      for (const order of orders) {
+        for (const li of order.lineItems) {
+          const cur = byTitle.get(li.title) ?? { units: 0, revenue: 0 };
+          cur.units += li.quantity;
+          cur.revenue += li.price * li.quantity;
+          byTitle.set(li.title, cur);
         }
       }
       const ranked = [...byTitle.entries()].sort((a, b) => b[1].units - a[1].units);
       return {
         windowDays: days,
-        ordersCounted: res.orders.length,
+        ordersCounted: orders.length,
         bestsellers: ranked.slice(0, 10).map(([title, s]) => ({
           title,
           units: s.units,
@@ -334,7 +325,7 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
         })),
         distinctProductsSold: byTitle.size,
         note:
-          res.orders.length >= 250
+          orders.length >= 250
             ? "capped at the first 250 orders"
             : byTitle.size === 0
               ? "no orders in this window"
@@ -390,24 +381,19 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
     async run(ctx, args) {
       if (!ctx.conn) return { error: "No Shopify store connected." };
       const days = clampInt(args.days, 7, 90, 30);
-      const since = encodeURIComponent(new Date(Date.now() - days * 24 * 3600 * 1000).toISOString());
-      const res = await shopifyGet<{
-        checkouts?: { total_price?: string; created_at?: string; email?: string; line_items?: unknown[] }[];
-      }>(ctx.conn.shop_domain, ctx.conn.access_token, `checkouts.json?limit=250&created_at_min=${since}`);
-      if (!res?.checkouts) return { error: "Couldn't reach the Shopify checkouts API." };
-      const checkouts = res.checkouts;
-      const values = checkouts.map((c) => parseFloat(c.total_price ?? "0") || 0);
-      const total = values.reduce((a, b) => a + b, 0);
+      const checkouts = await fetchAbandonedCheckoutsWindow(ctx.conn, days);
+      if (!checkouts) return { error: "Couldn't reach the Shopify checkouts API." };
+      const total = checkouts.reduce((a, c) => a + c.totalPrice, 0);
       return {
         days,
         count: checkouts.length,
         totalValue: Math.round(total),
         avgValue: checkouts.length ? Math.round(total / checkouts.length) : 0,
-        withEmailCount: checkouts.filter((c) => (c.email ?? "").includes("@")).length,
+        withEmailCount: checkouts.filter((c) => c.hasEmail).length,
         recent: checkouts.slice(0, 10).map((c) => ({
-          createdAt: (c.created_at ?? "").slice(0, 10),
-          value: Math.round(parseFloat(c.total_price ?? "0") || 0),
-          itemCount: c.line_items?.length ?? 0,
+          createdAt: c.createdAt.slice(0, 10),
+          value: Math.round(c.totalPrice),
+          itemCount: c.itemCount,
         })),
         note: checkouts.length >= 250 ? "capped at the first 250 checkouts" : undefined,
       };
