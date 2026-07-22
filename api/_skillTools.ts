@@ -11,7 +11,14 @@
  * not into Shopify. It also pings the team via _email.ts, best-effort.
  */
 import { shopifyGetDetailed, shopifyGraphql, type ShopifyConnection, type ShopifyEnv } from "./_shopify";
-import { fetchOrdersWindow, fetchAbandonedCheckoutsWindow } from "./_shopifyData";
+import {
+  fetchAbandonedCheckoutsWindow,
+  fetchInventoryWatch,
+  fetchLapsedCustomers,
+  fetchOrdersWindow,
+  fetchRecentBuyers,
+  fetchShipQueue,
+} from "./_shopifyData";
 import { fetchOrderStats, stripHtml } from "./_audit";
 import { sendTaskEmail, type EmailEnv } from "./_email";
 
@@ -369,7 +376,7 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
       function: {
         name: "get_abandoned_checkouts",
         description:
-          "Abandoned checkout stats for the last N days: count, total and average value, and how many left an email (recoverable). No customer PII is returned.",
+          "Abandoned checkout stats for the last N days: count, total and average value, how many left an email (recoverable), and which PRODUCTS are abandoned most (ranked, with value at stake). Use for 'how many abandoned carts', 'which product gets abandoned most', 'what's stuck in carts'. No customer PII is returned.",
         parameters: {
           type: "object",
           properties: {
@@ -384,18 +391,131 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
       const checkouts = await fetchAbandonedCheckoutsWindow(ctx.conn, days);
       if (!checkouts) return { error: "Couldn't reach the Shopify checkouts API." };
       const total = checkouts.reduce((a, c) => a + c.totalPrice, 0);
+      // Which products keep getting left behind — the "put a sale on it" signal.
+      const byTitle = new Map<string, { carts: number; units: number }>();
+      for (const c of checkouts) {
+        for (const item of c.items) {
+          const cur = byTitle.get(item.title) ?? { carts: 0, units: 0 };
+          cur.carts += 1;
+          cur.units += item.qty;
+          byTitle.set(item.title, cur);
+        }
+      }
+      const topAbandonedProducts = [...byTitle.entries()]
+        .sort((a, b) => b[1].carts - a[1].carts)
+        .slice(0, 10)
+        .map(([title, s]) => ({ title, cartsAppearedIn: s.carts, units: s.units }));
       return {
         days,
         count: checkouts.length,
         totalValue: Math.round(total),
         avgValue: checkouts.length ? Math.round(total / checkouts.length) : 0,
         withEmailCount: checkouts.filter((c) => c.hasEmail).length,
+        topAbandonedProducts,
         recent: checkouts.slice(0, 10).map((c) => ({
           createdAt: c.createdAt.slice(0, 10),
           value: Math.round(c.totalPrice),
-          itemCount: c.itemCount,
+          items: c.items.map((i) => (i.qty > 1 ? `${i.qty}× ${i.title}` : i.title)).join(", "),
         })),
         note: checkouts.length >= 250 ? "capped at the first 250 checkouts" : undefined,
+      };
+    },
+  },
+
+  get_ship_queue: {
+    schema: {
+      type: "function",
+      function: {
+        name: "get_ship_queue",
+        description:
+          "Open orders waiting to be shipped, oldest first: order number, how long it's been waiting, value, items, payment status, and how many are overdue (>48h). Use for 'what needs shipping', 'any orders waiting', 'am I behind on fulfillment'.",
+        parameters: { type: "object", properties: {} },
+      },
+    },
+    async run(ctx) {
+      if (!ctx.conn) return { error: "No Shopify store connected." };
+      const queue = await fetchShipQueue(ctx.conn);
+      if (!queue) return { error: "Couldn't reach the Shopify orders API." };
+      const waitingHours = (iso: string) =>
+        Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 3_600_000)) || 0;
+      return {
+        count: queue.length,
+        overdueCount: queue.filter((o) => waitingHours(o.createdAt) >= 48).length,
+        totalValue: Math.round(queue.reduce((n, o) => n + o.totalPrice, 0)),
+        orders: queue.slice(0, 20).map((o) => ({
+          order: o.name,
+          waitingHours: waitingHours(o.createdAt),
+          value: Math.round(o.totalPrice),
+          paymentStatus: o.financialStatus,
+          items: o.items.map((i) => (i.qty > 1 ? `${i.qty}× ${i.title}` : i.title)).join(", "),
+        })),
+      };
+    },
+  },
+
+  get_inventory_watch: {
+    schema: {
+      type: "function",
+      function: {
+        name: "get_inventory_watch",
+        description:
+          "Live stock health across active products: which are SOLD OUT (losing sales until restocked) and which are running LOW (5 units or fewer), with per-variant counts. Use for 'anything out of stock', 'what should I restock', 'inventory status'.",
+        parameters: { type: "object", properties: {} },
+      },
+    },
+    async run(ctx) {
+      if (!ctx.conn) return { error: "No Shopify store connected." };
+      const inventory = await fetchInventoryWatch(ctx.conn);
+      if (!inventory) return { error: "Couldn't reach the Shopify products API." };
+      return {
+        productsChecked: inventory.length,
+        soldOut: inventory.filter((p) => p.soldOut).map((p) => p.title),
+        lowStock: inventory
+          .filter((p) => p.lowStock)
+          .map((p) => ({ title: p.title, unitsLeft: p.totalInventory })),
+      };
+    },
+  },
+
+  get_retention_snapshot: {
+    schema: {
+      type: "function",
+      function: {
+        name: "get_retention_snapshot",
+        description:
+          "Customer retention picture: how many past customers have gone quiet (no order in 60-365 days) with their combined lifetime value, which products lapsed customers last bought (ranked), and how many recent buyers (7-30 days) are ready for a review request. Use for 'lapsed customers', 'win-back', 'who can I ask for reviews'. Aggregates only — no names or emails.",
+        parameters: { type: "object", properties: {} },
+      },
+    },
+    async run(ctx) {
+      if (!ctx.conn) return { error: "No Shopify store connected." };
+      // PII fetchers run here, but ONLY aggregates leave this function — the
+      // model (and the chat log) must never see a customer name or email.
+      const [lapsed, buyers] = await Promise.all([
+        fetchLapsedCustomers(ctx.conn, { minDays: 60, maxDays: 365 }),
+        fetchRecentBuyers(ctx.conn, { minDays: 7, maxDays: 30 }),
+      ]);
+      if (lapsed === "access-denied" || buyers === "access-denied") {
+        return {
+          error:
+            "Shopify hasn't granted customer-data access yet — the founder can enable it in the Shopify Partner Dashboard (Protected customer data access).",
+        };
+      }
+      if (!lapsed && !buyers) return { error: "Couldn't reach the Shopify customers API." };
+      const lapsedRows = lapsed ?? [];
+      const byTitle = new Map<string, number>();
+      for (const c of lapsedRows) {
+        for (const item of c.lastItems) byTitle.set(item.title, (byTitle.get(item.title) ?? 0) + 1);
+      }
+      return {
+        lapsedCustomers: lapsedRows.length,
+        lapsedLifetimeValue: Math.round(lapsedRows.reduce((n, c) => n + c.totalSpent, 0)),
+        lapsedLastBought: [...byTitle.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([title, customers]) => ({ title, customers })),
+        recentBuyersForReviews: (buyers ?? []).length,
+        windows: { lapsedDays: "60-365", buyersDays: "7-30" },
       };
     },
   },

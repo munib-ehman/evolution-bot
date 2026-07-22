@@ -41,6 +41,9 @@ const AGENT_TOOL_NAMES = [
   "get_orders_summary",
   "get_abandoned_checkouts",
   "get_latest_audit",
+  "get_ship_queue",
+  "get_inventory_watch",
+  "get_retention_snapshot",
 ] as const;
 
 const PROGRESS_LABELS: Record<string, string> = {
@@ -49,6 +52,9 @@ const PROGRESS_LABELS: Record<string, string> = {
   get_orders_summary: "Pulling your order stats…",
   get_abandoned_checkouts: "Checking your abandoned carts…",
   get_latest_audit: "Reading your latest audit…",
+  get_ship_queue: "Checking what's waiting to ship…",
+  get_inventory_watch: "Checking your stock levels…",
+  get_retention_snapshot: "Looking through your customers…",
 };
 
 /** Tool rounds before we force a plain answer — enough for lookup + follow-up. */
@@ -108,11 +114,12 @@ function validateTurns(raw: unknown): ChatTurn[] | null {
 function buildSystemPrompt(shop: string, catalogBlock: string): string {
   return [
     `You are Evolution, the AI COO for the founder's connected Shopify store "${shop}". You are their store-aware copilot; replies may be spoken aloud.`,
-    `You have TOOLS that fetch the store's REAL data. When a question needs data you don't already have — sales, top sellers, order stats, abandoned carts, audit findings, deeper product detail — CALL the right tool instead of guessing, deflecting, or claiming you lack data. Check your tools before ever saying you can't see something.`,
+    `You have TOOLS that fetch the store's REAL data, live. When a question needs data you don't already have — sales, top sellers, order stats, abandoned carts (including WHICH products get abandoned most), what's waiting to ship, stock levels, lapsed customers, audit findings, deeper product detail — CALL the right tool instead of guessing, deflecting, or claiming you lack data. Check your tools before ever saying you can't see something.`,
     `Every number you state must come from a tool result or the catalog below — NEVER invent figures. If a tool returns an "error" field, say plainly that that data source is unreachable right now and answer with what you have.`,
     `Keep replies SHORT and conversational (1–4 sentences); use a compact list only when the founder asks for a list. No preamble like "Based on the data".`,
     `You do NOT have write access to the store — you cannot change listings, prices, or settings, and you must NEVER promise that you (or anyone) will make a change. When the founder asks you to fix or change something, be the expert guide instead: give exact, actionable help — step-by-step Shopify admin instructions, ready-to-paste description or title copy, concrete recommended settings — grounded in their real store data from your tools.`,
-    `For abandoned-cart recovery specifically, the app has a "Recovery" button at the top: it lists every recoverable cart with a personalized, ready-to-send email for each shopper, which the founder sends from their own inbox. Point them there when they want to win carts back.`,
+    `Don't just report numbers — read them like a COO and suggest the next move. A product topping the abandoned-cart list is a discount/free-shipping candidate; sold-out products with recent demand are urgent restocks; overdue shipments risk bad reviews; lapsed customers who bought a product you still stock are a win-back audience. One concrete suggestion beats three vague ones.`,
+    `The app has action centers as header buttons — point the founder to the right one AFTER answering with data: "Recovery" (every recoverable abandoned cart with a personalized ready-to-send email; they send from their own inbox), "Retention" (win-back emails for lapsed customers + review requests for recent buyers, same send-it-yourself flow), and "Ops" (live operator view: today's pulse, ship queue, inventory watch, real-time alerts for new orders and stockouts). Nothing is sent automatically — the founder always does the sending.`,
     catalogBlock,
   ].join("\n\n");
 }

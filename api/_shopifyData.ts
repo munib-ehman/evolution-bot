@@ -170,6 +170,8 @@ export interface CheckoutRow {
   /** Shopper left an email → recoverable. May undercount if customer data is access-restricted. */
   hasEmail: boolean;
   itemCount: number;
+  /** Product titles only (sampled, first 10) — no customer fields, safe for LLM context. */
+  items: { title: string; qty: number }[];
 }
 
 const CHECKOUTS_QUERY = `query AbandonedCheckoutsWindow($first: Int!, $after: String, $q: String) {
@@ -180,6 +182,7 @@ const CHECKOUTS_QUERY = `query AbandonedCheckoutsWindow($first: Int!, $after: St
       totalPriceSet { shopMoney { amount } }
       lineItemsQuantity
       customer { email }
+      lineItems(first: 10) { nodes { title quantity } }
     }
   }
 }`;
@@ -192,6 +195,7 @@ interface GqlCheckoutsData {
       totalPriceSet?: { shopMoney?: { amount?: string } } | null;
       lineItemsQuantity?: number;
       customer?: { email?: string | null } | null;
+      lineItems?: { nodes?: { title?: string; quantity?: number }[] };
     }[];
   };
 }
@@ -218,6 +222,10 @@ async function fetchCheckoutsGraphql(conn: ShopifyConnection, days: number): Pro
         totalPrice: money(n.totalPriceSet?.shopMoney?.amount),
         hasEmail: (n.customer?.email ?? "").includes("@"),
         itemCount: n.lineItemsQuantity ?? 0,
+        items: (n.lineItems?.nodes ?? []).map((li) => ({
+          title: (li.title ?? "").trim() || "(untitled)",
+          qty: li.quantity ?? 0,
+        })),
       });
     }
     if (!page.pageInfo?.hasNextPage || !page.pageInfo.endCursor) break;
@@ -229,7 +237,12 @@ async function fetchCheckoutsGraphql(conn: ShopifyConnection, days: number): Pro
 async function fetchCheckoutsRest(conn: ShopifyConnection, days: number): Promise<CheckoutRow[] | null> {
   const since = encodeURIComponent(sinceIso(days));
   const res = await shopifyGet<{
-    checkouts?: { total_price?: string; created_at?: string; email?: string; line_items?: unknown[] }[];
+    checkouts?: {
+      total_price?: string;
+      created_at?: string;
+      email?: string;
+      line_items?: { title?: string; quantity?: number }[];
+    }[];
   }>(conn.shop_domain, conn.access_token, `checkouts.json?limit=250&created_at_min=${since}`);
   if (!res?.checkouts) return null;
   return res.checkouts.map((c) => ({
@@ -237,6 +250,10 @@ async function fetchCheckoutsRest(conn: ShopifyConnection, days: number): Promis
     totalPrice: parseFloat(c.total_price ?? "0") || 0,
     hasEmail: (c.email ?? "").includes("@"),
     itemCount: c.line_items?.length ?? 0,
+    items: (c.line_items ?? []).slice(0, 10).map((li) => ({
+      title: (li.title ?? "").trim() || "(untitled)",
+      qty: li.quantity ?? 0,
+    })),
   }));
 }
 
