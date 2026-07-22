@@ -15,6 +15,7 @@ import { ToolsPanel } from "./components/ToolsPanel";
 import { RecoveryPanel } from "./components/RecoveryPanel";
 import { RetentionPanel } from "./components/RetentionPanel";
 import { OpsPanel } from "./components/OpsPanel";
+import { LiveToasts } from "./components/LiveToasts";
 import { UpgradePanel } from "./components/UpgradePanel";
 import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
@@ -563,6 +564,7 @@ export default function App() {
       )}
 
       {authEmail && store && <OpsPanel open={opsOpen} onClose={() => setOpsOpen(false)} />}
+      {authEmail && store && <LiveToasts />}
 
       {authEnabled && authEmail && store === null && splashGone && (
         <ConnectStore onConnected={handleConnected} />

@@ -1270,6 +1270,15 @@ code {
 .ops-ship-row.ops-overdue .recovery-cart-meta { color: #b4231f; }
 .ops-inventory-head { font-size: 13.5px; font-weight: 600; margin: 10px 0 4px; }
 .ops-inventory-head.ops-soldout { color: #b4231f; }
+.ops-event { font-size: 13.5px; margin: 6px 0; }
+.ops-event-time { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+
+/* ── Live toasts (popup notifications, app-level) ── */
+.ops-toasts { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; max-width: min(360px, calc(100vw - 32px)); }
+.ops-toast { display: flex; align-items: center; gap: 8px; background: var(--panel, #fff); border: 1px solid var(--line, rgba(0,0,0,0.1)); border-radius: 12px; padding: 10px 12px; font-size: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.14); animation: ops-toast-in 0.25s ease-out; }
+.ops-toast .link { margin-left: auto; font-size: 16px; line-height: 1; }
+.ops-toast-stock-out { border-color: #b4231f; }
+@keyframes ops-toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
 .recovery-muted { color: var(--muted); font-size: 13.5px; }
 .recovery-stats { font-size: 14.5px; margin: 14px 0 6px; }
 .recovery-sequence, .recovery-carts { margin-top: 16px; }

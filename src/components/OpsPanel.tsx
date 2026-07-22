@@ -16,6 +16,13 @@ import {
   type OpsSnapshot,
   type ShipQueueOrder,
 } from "../lib/ops";
+import { supabase } from "../lib/auth";
+import {
+  enableLiveUpdates,
+  fetchRecentEvents,
+  subscribeToEvents,
+  type StoreEvent,
+} from "../lib/events";
 
 const REFRESH_MS = 60_000;
 /** An unshipped order older than this is flagged as overdue. */
@@ -34,6 +41,14 @@ function waitingLabel(iso: string): string {
   return `${days} day${days > 1 ? "s" : ""}`;
 }
 
+function eventTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const sameDay = new Date().toDateString() === d.toDateString();
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return sameDay ? time : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+}
+
 function updatedLabel(fetchedAt: number, now: number): string {
   const s = Math.max(0, Math.round((now - fetchedAt) / 1000));
   if (s < 5) return "just now";
@@ -47,8 +62,14 @@ export function OpsPanel({ open, onClose }: { open: boolean; onClose: () => void
   const [loading, setLoading] = useState(false);
   const [fetchedAt, setFetchedAt] = useState(0);
   const [now, setNow] = useState(() => Date.now());
+  const [events, setEvents] = useState<StoreEvent[]>([]);
+  const [live, setLive] = useState<{ live: boolean; reason?: string } | null>(null);
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">(() =>
+    typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+  );
   const inFlight = useRef(false);
   const hasData = useRef(false);
+  const liveSetup = useRef(false);
 
   const refresh = useCallback(async (showSpinner: boolean) => {
     if (inFlight.current) return;
@@ -76,6 +97,7 @@ export function OpsPanel({ open, onClose }: { open: boolean; onClose: () => void
   }, []);
 
   // Fetch on open, then poll while open (skipping when the tab is hidden).
+  // Polling is the safety net under the push channel — webhooks can be missed.
   useEffect(() => {
     if (!open) return;
     void refresh(!hasData.current);
@@ -83,6 +105,44 @@ export function OpsPanel({ open, onClose }: { open: boolean; onClose: () => void
       if (!document.hidden) void refresh(false);
     }, REFRESH_MS);
     return () => window.clearInterval(poll);
+  }, [open, refresh]);
+
+  // First open: turn on live push (idempotent webhook registration) and load
+  // the recent feed.
+  useEffect(() => {
+    if (!open || liveSetup.current) return;
+    liveSetup.current = true;
+    void (async () => {
+      const [status, recent] = await Promise.all([enableLiveUpdates(), fetchRecentEvents(20)]);
+      setLive(status);
+      setEvents(recent);
+    })();
+  }, [open]);
+
+  // While open: stream events over the WebSocket — prepend to the feed and
+  // refresh the snapshot immediately so the numbers move with the event.
+  useEffect(() => {
+    if (!open) return;
+    let unsubscribe: (() => void) | null = null;
+    let cancelled = false;
+    void (async () => {
+      if (!supabase) return;
+      const { data } = await supabase.auth.getSession();
+      const userId = data.session?.user?.id;
+      if (!userId || cancelled) return;
+      unsubscribe = subscribeToEvents(
+        userId,
+        (event) => {
+          setEvents((cur) => (cur.some((e) => e.id === event.id) ? cur : [event, ...cur].slice(0, 30)));
+          void refresh(false);
+        },
+        "store-events-ops",
+      );
+    })();
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, [open, refresh]);
 
   // A slow tick so "updated Xs ago" stays honest.
@@ -110,12 +170,27 @@ export function OpsPanel({ open, onClose }: { open: boolean; onClose: () => void
       {snapshot && (
         <p className="ops-live">
           <span className="ops-live-dot" aria-hidden="true" />
-          Live · updated {updatedLabel(fetchedAt, now)} ·{" "}
+          {live?.live ? "Live push on" : "Live"} · updated {updatedLabel(fetchedAt, now)} ·{" "}
           <button type="button" className="link" onClick={() => void refresh(false)}>
             refresh now
           </button>
+          {notifPerm === "default" && (
+            <>
+              {" · "}
+              <button
+                type="button"
+                className="link"
+                onClick={() => {
+                  void Notification.requestPermission().then(setNotifPerm);
+                }}
+              >
+                enable popup alerts
+              </button>
+            </>
+          )}
         </p>
       )}
+      {live && !live.live && live.reason && <p className="recovery-muted">{live.reason}</p>}
 
       {loading && !snapshot && <p className="recovery-muted">Reading your store…</p>}
       {loadError && !snapshot && !loading && <p className="overlay-error">{loadError}</p>}
@@ -136,6 +211,20 @@ export function OpsPanel({ open, onClose }: { open: boolean; onClose: () => void
               <strong>{snapshot.today.abandoned}</strong>
               <span>abandoned today</span>
             </div>
+          </section>
+
+          <section className="recovery-carts">
+            <h3>Live feed</h3>
+            {events.length === 0 && (
+              <p className="recovery-muted">
+                Quiet so far — new orders and stock alerts will appear here the moment they happen.
+              </p>
+            )}
+            {events.map((e) => (
+              <p key={e.id} className="ops-event">
+                <span className="ops-event-time">{eventTime(e.created_at)}</span> {e.title}
+              </p>
+            ))}
           </section>
 
           <section className="recovery-carts">
