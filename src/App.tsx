@@ -14,6 +14,7 @@ import { ConnectStore } from "./components/ConnectStore";
 import { ToolsPanel } from "./components/ToolsPanel";
 import { RecoveryPanel } from "./components/RecoveryPanel";
 import { RetentionPanel } from "./components/RetentionPanel";
+import { OpsPanel } from "./components/OpsPanel";
 import { UpgradePanel } from "./components/UpgradePanel";
 import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
@@ -50,6 +51,7 @@ export default function App() {
   const [tasksOpen, setTasksOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [retentionOpen, setRetentionOpen] = useState(false);
+  const [opsOpen, setOpsOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   useEffect(() => {
@@ -111,6 +113,7 @@ export default function App() {
     setCatalog(null);
     setTasksOpen(false);
     setRetentionOpen(false);
+    setOpsOpen(false);
     a.postAssistantMessage(
       "Your store is disconnected — I no longer have any access to it. Connect this or a different store whenever you're ready and I'll take a fresh look.",
     );
@@ -285,6 +288,21 @@ export default function App() {
                 onClick={() => {
                   setTasksOpen(false);
                   setRetentionOpen(false);
+                  setRecoveryOpen(false);
+                  setOpsOpen((v) => !v);
+                }}
+              >
+                Ops
+              </button>
+            )}
+            {store && (
+              <button
+                type="button"
+                className="tasks-btn"
+                onClick={() => {
+                  setTasksOpen(false);
+                  setRetentionOpen(false);
+                  setOpsOpen(false);
                   setRecoveryOpen((v) => !v);
                 }}
               >
@@ -298,6 +316,7 @@ export default function App() {
                 onClick={() => {
                   setTasksOpen(false);
                   setRecoveryOpen(false);
+                  setOpsOpen(false);
                   setRetentionOpen((v) => !v);
                 }}
               >
@@ -310,6 +329,7 @@ export default function App() {
               onClick={() => {
                 setRecoveryOpen(false);
                 setRetentionOpen(false);
+                setOpsOpen(false);
                 setTasksOpen((v) => !v);
               }}
             >
@@ -541,6 +561,8 @@ export default function App() {
           storeUrl={store.url}
         />
       )}
+
+      {authEmail && store && <OpsPanel open={opsOpen} onClose={() => setOpsOpen(false)} />}
 
       {authEnabled && authEmail && store === null && splashGone && (
         <ConnectStore onConnected={handleConnected} />

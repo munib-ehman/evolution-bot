@@ -710,6 +710,256 @@ export async function fetchRecentBuyers(
 }
 
 // ---------------------------------------------------------------------------
+// Operations: inventory watch + ship queue. Non-PII — product titles,
+// quantities, order numbers only; no customer fields, safe for any surface.
+
+export interface InventoryProduct {
+  title: string;
+  totalInventory: number;
+  /** Every tracked variant at/under zero with oversell denied. */
+  soldOut: boolean;
+  /** Tracked, in stock, but at/under the low-stock threshold. */
+  lowStock: boolean;
+  /** Variant-level detail for the low/out lists (sampled, first 10). */
+  variants: { title: string; qty: number; tracked: boolean }[];
+}
+
+export interface ShipQueueOrder {
+  /** The order number the owner sees in Shopify admin, e.g. "#1001". */
+  name: string;
+  createdAt: string;
+  financialStatus: string;
+  totalPrice: number;
+  items: { title: string; qty: number }[];
+}
+
+const INVENTORY_LOW_THRESHOLD = 5;
+const INVENTORY_PAGE = 25;
+const INVENTORY_CAP = 100;
+
+const INVENTORY_QUERY = `query InventoryWatch($first: Int!, $after: String) {
+  products(first: $first, after: $after, query: "status:active") {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      title
+      totalInventory
+      tracksInventory
+      variants(first: 10) {
+        nodes {
+          title
+          inventoryQuantity
+          inventoryPolicy
+          inventoryItem { tracked }
+        }
+      }
+    }
+  }
+}`;
+
+interface GqlInventoryData {
+  products?: {
+    pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+    nodes?: {
+      title?: string;
+      totalInventory?: number;
+      tracksInventory?: boolean;
+      variants?: {
+        nodes?: {
+          title?: string;
+          inventoryQuantity?: number;
+          inventoryPolicy?: string;
+          inventoryItem?: { tracked?: boolean } | null;
+        }[];
+      };
+    }[];
+  };
+}
+
+function classifyInventory(p: {
+  title: string;
+  totalInventory: number;
+  variants: { title: string; qty: number; tracked: boolean; oversells: boolean }[];
+}): InventoryProduct {
+  const tracked = p.variants.filter((v) => v.tracked);
+  const soldOut =
+    p.variants.length > 0 &&
+    tracked.length === p.variants.length &&
+    tracked.every((v) => v.qty <= 0 && !v.oversells);
+  const lowStock =
+    !soldOut && tracked.length > 0 && p.totalInventory > 0 && p.totalInventory <= INVENTORY_LOW_THRESHOLD;
+  return {
+    title: p.title,
+    totalInventory: p.totalInventory,
+    soldOut,
+    lowStock,
+    variants: p.variants.map(({ title, qty, tracked: t }) => ({ title, qty, tracked: t })),
+  };
+}
+
+async function fetchInventoryGraphql(conn: ShopifyConnection): Promise<InventoryProduct[] | null> {
+  const out: InventoryProduct[] = [];
+  let after: string | null = null;
+  while (out.length < INVENTORY_CAP) {
+    const data: GqlInventoryData | null = await shopifyGraphql<GqlInventoryData>(
+      conn.shop_domain,
+      conn.access_token,
+      INVENTORY_QUERY,
+      { first: Math.min(INVENTORY_PAGE, INVENTORY_CAP - out.length), after },
+    );
+    const page: GqlInventoryData["products"] = data?.products;
+    if (!page?.nodes) return out.length === 0 ? null : out; // partial > nothing
+    for (const n of page.nodes) {
+      out.push(
+        classifyInventory({
+          title: (n.title ?? "").trim() || "(untitled)",
+          totalInventory: n.totalInventory ?? 0,
+          variants: (n.variants?.nodes ?? []).map((v) => ({
+            title: (v.title ?? "").trim(),
+            qty: v.inventoryQuantity ?? 0,
+            tracked: v.inventoryItem?.tracked ?? false,
+            oversells: v.inventoryPolicy === "CONTINUE",
+          })),
+        }),
+      );
+    }
+    if (!page.pageInfo?.hasNextPage || !page.pageInfo.endCursor) break;
+    after = page.pageInfo.endCursor;
+  }
+  return out;
+}
+
+async function fetchInventoryRest(conn: ShopifyConnection): Promise<InventoryProduct[] | null> {
+  const res = await shopifyGet<{
+    products?: {
+      title?: string;
+      status?: string;
+      variants?: {
+        title?: string;
+        inventory_quantity?: number;
+        inventory_policy?: string;
+        inventory_management?: string | null;
+      }[];
+    }[];
+  }>(conn.shop_domain, conn.access_token, "products.json?limit=100&status=active&fields=title,status,variants");
+  if (!res?.products) return null;
+  return res.products.map((p) => {
+    const variants = (p.variants ?? []).map((v) => ({
+      title: (v.title ?? "").trim(),
+      qty: v.inventory_quantity ?? 0,
+      tracked: !!v.inventory_management,
+      oversells: v.inventory_policy === "continue",
+    }));
+    return classifyInventory({
+      title: (p.title ?? "").trim() || "(untitled)",
+      totalInventory: variants.reduce((n, v) => n + (v.tracked ? v.qty : 0), 0),
+      variants,
+    });
+  });
+}
+
+/** Active products with stock classification (capped at 100). Null = both APIs failed. */
+export async function fetchInventoryWatch(conn: ShopifyConnection): Promise<InventoryProduct[] | null> {
+  return (await fetchInventoryGraphql(conn)) ?? (await fetchInventoryRest(conn));
+}
+
+const SHIP_QUEUE_CAP = 50;
+
+const SHIP_QUEUE_QUERY = `query ShipQueue($first: Int!, $after: String) {
+  orders(first: $first, after: $after, query: "fulfillment_status:unshipped", sortKey: CREATED_AT) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      name
+      createdAt
+      cancelledAt
+      displayFinancialStatus
+      currentTotalPriceSet { shopMoney { amount } }
+      lineItems(first: 10) { nodes { title quantity } }
+    }
+  }
+}`;
+
+interface GqlShipQueueData {
+  orders?: {
+    pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+    nodes?: {
+      name?: string;
+      createdAt?: string;
+      cancelledAt?: string | null;
+      displayFinancialStatus?: string | null;
+      currentTotalPriceSet?: { shopMoney?: { amount?: string } } | null;
+      lineItems?: { nodes?: { title?: string; quantity?: number }[] };
+    }[];
+  };
+}
+
+async function fetchShipQueueGraphql(conn: ShopifyConnection): Promise<ShipQueueOrder[] | null> {
+  const out: ShipQueueOrder[] = [];
+  let after: string | null = null;
+  while (out.length < SHIP_QUEUE_CAP) {
+    const data: GqlShipQueueData | null = await shopifyGraphql<GqlShipQueueData>(
+      conn.shop_domain,
+      conn.access_token,
+      SHIP_QUEUE_QUERY,
+      { first: Math.min(25, SHIP_QUEUE_CAP - out.length), after },
+    );
+    const page: GqlShipQueueData["orders"] = data?.orders;
+    if (!page?.nodes) return out.length === 0 ? null : out;
+    for (const n of page.nodes) {
+      if (n.cancelledAt) continue;
+      out.push({
+        name: n.name ?? "",
+        createdAt: n.createdAt ?? "",
+        financialStatus: n.displayFinancialStatus ?? "",
+        totalPrice: money(n.currentTotalPriceSet?.shopMoney?.amount),
+        items: (n.lineItems?.nodes ?? []).map((li) => ({
+          title: (li.title ?? "").trim() || "(untitled)",
+          qty: li.quantity ?? 0,
+        })),
+      });
+    }
+    if (!page.pageInfo?.hasNextPage || !page.pageInfo.endCursor) break;
+    after = page.pageInfo.endCursor;
+  }
+  return out;
+}
+
+async function fetchShipQueueRest(conn: ShopifyConnection): Promise<ShipQueueOrder[] | null> {
+  const res = await shopifyGet<{
+    orders?: {
+      name?: string;
+      created_at?: string;
+      cancelled_at?: string | null;
+      financial_status?: string;
+      total_price?: string;
+      line_items?: { title?: string; quantity?: number }[];
+    }[];
+  }>(
+    conn.shop_domain,
+    conn.access_token,
+    "orders.json?status=open&fulfillment_status=unshipped&limit=50&fields=name,created_at,cancelled_at,financial_status,total_price,line_items",
+  );
+  if (!res?.orders) return null;
+  return res.orders
+    .filter((o) => !o.cancelled_at)
+    .map((o) => ({
+      name: o.name ?? "",
+      createdAt: o.created_at ?? "",
+      financialStatus: (o.financial_status ?? "").toUpperCase(),
+      totalPrice: parseFloat(o.total_price ?? "0") || 0,
+      items: (o.line_items ?? []).map((li) => ({
+        title: (li.title ?? "").trim() || "(untitled)",
+        qty: li.quantity ?? 0,
+      })),
+    }))
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+}
+
+/** Open orders waiting to ship, oldest first (capped at 50). Null = both APIs failed. */
+export async function fetchShipQueue(conn: ShopifyConnection): Promise<ShipQueueOrder[] | null> {
+  return (await fetchShipQueueGraphql(conn)) ?? (await fetchShipQueueRest(conn));
+}
+
+// ---------------------------------------------------------------------------
 // Shop info
 
 /** The store's currency code, or null if both APIs failed. */

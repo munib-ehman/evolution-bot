@@ -1257,6 +1257,19 @@ code {
 .retention-review-link { display: block; margin-top: 10px; }
 .retention-review-link span { display: block; margin-bottom: 4px; }
 .retention-review-link input { width: 100%; }
+
+/* ── Operations Center ── */
+.ops-live { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+.ops-live-dot { width: 8px; height: 8px; border-radius: 50%; background: #2fa66a; animation: ops-pulse 2s ease-in-out infinite; }
+@keyframes ops-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.ops-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+.ops-stat { border: 1px solid var(--line, rgba(0,0,0,0.08)); border-radius: 10px; padding: 10px 12px; text-align: center; }
+.ops-stat strong { display: block; font-size: 18px; }
+.ops-stat span { font-size: 12.5px; color: var(--muted); }
+.ops-overdue-badge { color: #b4231f; font-size: 13px; font-weight: 600; }
+.ops-ship-row.ops-overdue .recovery-cart-meta { color: #b4231f; }
+.ops-inventory-head { font-size: 13.5px; font-weight: 600; margin: 10px 0 4px; }
+.ops-inventory-head.ops-soldout { color: #b4231f; }
 .recovery-muted { color: var(--muted); font-size: 13.5px; }
 .recovery-stats { font-size: 14.5px; margin: 14px 0 6px; }
 .recovery-sequence, .recovery-carts { margin-top: 16px; }
