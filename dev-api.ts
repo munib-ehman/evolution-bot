@@ -22,6 +22,7 @@ import { runShopifyAuthStart, runShopifyCallback, runShopifyDisconnect, type Sho
 import { runSkill, type SkillRunBody } from "./api/_skills";
 import { runStoreCatalog } from "./api/_catalog";
 import { runRecoveryCarts, runRecoveryDraft } from "./api/_recovery";
+import { runRetentionCustomers, runRetentionDraft } from "./api/_retention";
 import { runAgentChat, type AgentChatBody } from "./api/_agentChat";
 import type { SkillEnv } from "./api/_skillTools";
 import { sendTaskEmail } from "./api/_email";
@@ -270,6 +271,42 @@ export function devApi(): Plugin {
           }
           const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
           const { status, body: result } = await runRecoveryDraft(body, auth, skillEnv);
+          res.statusCode = status;
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader("Cache-Control", "no-store");
+          res.end(JSON.stringify(result));
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/retention-customers", (req, res) => {
+        void (async () => {
+          if (req.method !== "GET") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const { status, body } = await runRetentionCustomers(auth, skillEnv);
+          res.statusCode = status;
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader("Cache-Control", "no-store");
+          res.end(JSON.stringify(body));
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/retention-draft", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: { note?: unknown } = {};
+          try {
+            body = JSON.parse(await readBody(req)) as { note?: unknown };
+          } catch {
+            /* empty body is fine */
+          }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const { status, body: result } = await runRetentionDraft(body, auth, skillEnv);
           res.statusCode = status;
           res.setHeader("Content-Type", "application/json");
           res.setHeader("Cache-Control", "no-store");

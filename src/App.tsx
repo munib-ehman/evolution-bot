@@ -13,6 +13,7 @@ import { speechEngine } from "./audio/speechEngine";
 import { ConnectStore } from "./components/ConnectStore";
 import { ToolsPanel } from "./components/ToolsPanel";
 import { RecoveryPanel } from "./components/RecoveryPanel";
+import { RetentionPanel } from "./components/RetentionPanel";
 import { UpgradePanel } from "./components/UpgradePanel";
 import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
@@ -48,6 +49,7 @@ export default function App() {
   const [catalog, setCatalog] = useState<StoreCatalog | null>(null);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [retentionOpen, setRetentionOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   useEffect(() => {
@@ -108,6 +110,7 @@ export default function App() {
     setAudit(null);
     setCatalog(null);
     setTasksOpen(false);
+    setRetentionOpen(false);
     a.postAssistantMessage(
       "Your store is disconnected — I no longer have any access to it. Connect this or a different store whenever you're ready and I'll take a fresh look.",
     );
@@ -281,10 +284,24 @@ export default function App() {
                 className="tasks-btn"
                 onClick={() => {
                   setTasksOpen(false);
+                  setRetentionOpen(false);
                   setRecoveryOpen((v) => !v);
                 }}
               >
                 Recovery
+              </button>
+            )}
+            {store && (
+              <button
+                type="button"
+                className="tasks-btn"
+                onClick={() => {
+                  setTasksOpen(false);
+                  setRecoveryOpen(false);
+                  setRetentionOpen((v) => !v);
+                }}
+              >
+                Retention
               </button>
             )}
             <button
@@ -292,6 +309,7 @@ export default function App() {
               className="tasks-btn"
               onClick={() => {
                 setRecoveryOpen(false);
+                setRetentionOpen(false);
                 setTasksOpen((v) => !v);
               }}
             >
@@ -512,6 +530,15 @@ export default function App() {
           open={recoveryOpen}
           onClose={() => setRecoveryOpen(false)}
           storeName={store.url.replace(/^https?:\/\//, "").replace(/\.myshopify\.com.*$/, "").replace(/\/.*$/, "")}
+        />
+      )}
+
+      {authEmail && store && (
+        <RetentionPanel
+          open={retentionOpen}
+          onClose={() => setRetentionOpen(false)}
+          storeName={store.url.replace(/^https?:\/\//, "").replace(/\.myshopify\.com.*$/, "").replace(/\/.*$/, "")}
+          storeUrl={store.url}
         />
       )}
 

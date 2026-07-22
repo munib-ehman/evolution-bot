@@ -430,6 +430,22 @@ export async function shopifyGraphql<T>(
   query: string,
   variables: Record<string, unknown>,
 ): Promise<T | null> {
+  const { data } = await shopifyGraphqlDetailed<T>(shop, token, query, variables);
+  return data;
+}
+
+/**
+ * Like shopifyGraphql but reports WHY the call failed. `accessDenied` means
+ * Shopify answered ACCESS_DENIED — the app is missing protected-customer-data
+ * access (Partner Dashboard, not an OAuth scope), so retrying or falling back
+ * to REST is pointless and the owner needs to be told exactly what to enable.
+ */
+export async function shopifyGraphqlDetailed<T>(
+  shop: string,
+  token: string,
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<{ data: T | null; accessDenied: boolean }> {
   try {
     const res = await fetch(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
       method: "POST",
@@ -437,11 +453,17 @@ export async function shopifyGraphql<T>(
       body: JSON.stringify({ query, variables }),
       signal: AbortSignal.timeout(8_000),
     });
-    if (!res.ok) return null;
-    const json = (await res.json()) as { data?: T; errors?: unknown[] };
-    if (json.errors?.length || !json.data) return null;
-    return json.data;
+    if (!res.ok) return { data: null, accessDenied: false };
+    const json = (await res.json()) as {
+      data?: T;
+      errors?: { extensions?: { code?: string } }[];
+    };
+    if (json.errors?.length || !json.data) {
+      const denied = (json.errors ?? []).some((e) => e.extensions?.code === "ACCESS_DENIED");
+      return { data: null, accessDenied: denied };
+    }
+    return { data: json.data, accessDenied: false };
   } catch {
-    return null;
+    return { data: null, accessDenied: false };
   }
 }

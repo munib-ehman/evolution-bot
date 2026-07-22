@@ -1252,8 +1252,11 @@ code {
 }
 .store-disclaimer strong { color: var(--ink); }
 
-/* ── Cart Recovery Center ── */
+/* ── Cart Recovery Center + Retention Center ── */
 .recovery-panel { width: min(540px, calc(100vw - 24px)); }
+.retention-review-link { display: block; margin-top: 10px; }
+.retention-review-link span { display: block; margin-bottom: 4px; }
+.retention-review-link input { width: 100%; }
 .recovery-muted { color: var(--muted); font-size: 13.5px; }
 .recovery-stats { font-size: 14.5px; margin: 14px 0 6px; }
 .recovery-sequence, .recovery-carts { margin-top: 16px; }

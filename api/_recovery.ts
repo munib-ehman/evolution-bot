@@ -76,6 +76,21 @@ function jsonResult(status: number, body: Record<string, unknown>) {
   return { status, body };
 }
 
+/**
+ * Shopify refused customer PII outright — the app is missing protected-
+ * customer-data access (a Partner Dashboard toggle, separate from OAuth
+ * scopes). Without this message the failure looks like an outage.
+ */
+export const PROTECTED_DATA_MESSAGE =
+  "Shopify hasn't granted this app access to customer data yet. In your Shopify Partner Dashboard, " +
+  "open your app → API access → Protected customer data access, select \"Protected customer data\" " +
+  "plus the Name and Email fields (reason: app functionality), and save. Access is immediate on " +
+  "development stores.";
+
+export function protectedDataResult() {
+  return jsonResult(403, { error: PROTECTED_DATA_MESSAGE, needsProtectedData: true });
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/recovery-carts
 
@@ -93,6 +108,7 @@ export async function runRecoveryCarts(
     fetchRecoverableCheckouts(conn, WINDOW_DAYS),
     fetchShopCurrency(conn),
   ]);
+  if (carts === "access-denied") return protectedDataResult();
   if (!carts) return jsonResult(502, { error: "Couldn't reach the Shopify checkouts API." });
 
   const withEmail = carts.filter((c) => c.email.includes("@") && c.recoveryUrl);
