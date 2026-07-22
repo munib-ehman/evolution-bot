@@ -13,7 +13,6 @@ Format:
 
 ## Pending
 
-- How to calculate true profit per order (not just revenue)
 - CAC vs LTV for small ecommerce stores: a plain-English guide
 - Why your Shopify conversion rate dropped and how to diagnose it
 - Post-purchase email flows that bring customers back
@@ -80,3 +79,6 @@ Format:
 - [2026-07-21] AI fraud detection for Shopify stores (competitor-trend: Shopify/Chargeflow/fraud-tool blogs pushing AI risk detection for 2026) — /blog/ai-fraud-detection-for-shopify-stores
 - [2026-07-21] Back-to-school marketing for ecommerce stores (competitor-trend: Omnisend/Shopify back-to-school 2026 season coverage) — /blog/back-to-school-marketing-for-ecommerce-stores
 - [2026-07-21] Back in stock alerts: recovering sales you didn't know you lost — /blog/back-in-stock-alerts-recovering-lost-sales
+- [2026-07-22] Shopify Scripts deprecation: what to do now that they've stopped working (competitor-trend: Shopify Scripts end-of-life June 30 2026, widely covered by ecommerce agency/migration blogs) — /blog/shopify-scripts-deprecation-what-to-do
+- [2026-07-22] AI product recommendations for small stores: a practical setup guide (competitor-trend: Shopify/Klaviyo AI personalization push) — /blog/ai-product-recommendations-for-small-stores
+- [2026-07-22] How to calculate true profit per order (not just revenue) — /blog/true-profit-per-order-not-just-revenue
