@@ -10,7 +10,7 @@
  * `file_task` is the one write — into OUR tasks table (the human ops queue),
  * not into Shopify. It also pings the team via _email.ts, best-effort.
  */
-import { shopifyGetDetailed, shopifyGraphql, type ShopifyConnection, type ShopifyEnv } from "./_shopify";
+import { shopifyGraphql, type ShopifyConnection, type ShopifyEnv } from "./_shopify";
 import {
   fetchAbandonedCheckoutsWindow,
   fetchInventoryWatch,
@@ -58,27 +58,7 @@ const clampInt = (v: unknown, min: number, max: number, dflt: number): number =>
 // ---------------------------------------------------------------------------
 // Product digest
 
-interface AdminVariant {
-  price?: string;
-  inventory_quantity?: number;
-  inventory_management?: string | null;
-  inventory_policy?: string;
-}
-interface AdminImage {
-  alt?: string | null;
-}
-interface AdminProduct {
-  id?: number;
-  title?: string;
-  handle?: string;
-  status?: string;
-  body_html?: string | null;
-  tags?: string;
-  images?: AdminImage[];
-  variants?: AdminVariant[];
-}
-
-/** Provider-neutral product shape both fetch paths map into. */
+/** Provider-neutral product shape the fetcher maps into. */
 interface ProductSource {
   title: string;
   status: string;
@@ -181,53 +161,17 @@ async function fetchProductsGraphql(conn: ShopifyConnection, limit: number): Pro
   return out;
 }
 
-/** REST fallback for older apps where products.json still works. */
-async function fetchProductsRest(
-  conn: ShopifyConnection,
-  limit: number,
-): Promise<{ items: ProductSource[] | null; status: number }> {
-  const { status, data } = await shopifyGetDetailed<{ products?: AdminProduct[] }>(
-    conn.shop_domain,
-    conn.access_token,
-    `products.json?limit=${limit}&fields=id,title,handle,status,body_html,tags,images,variants`,
-  );
-  if (!data?.products) return { items: null, status };
-  return {
-    status,
-    items: data.products.map((p) => ({
-      title: p.title ?? "(untitled)",
-      status: p.status ?? "active",
-      descText: stripHtml(p.body_html),
-      imageCount: (p.images ?? []).length,
-      imagesNoAlt: (p.images ?? []).filter((i) => !(i.alt ?? "").trim()).length,
-      variants: (p.variants ?? []).map((v) => ({
-        price: Number.isFinite(parseFloat(v.price ?? "")) ? parseFloat(v.price ?? "") : null,
-        qty: v.inventory_quantity ?? null,
-        tracked: Boolean(v.inventory_management),
-        oversells: v.inventory_policy === "continue",
-      })),
-      tagCount: (p.tags ?? "").split(",").filter((t) => t.trim()).length,
-    })),
-  };
-}
-
 export async function buildProductsDigest(
   conn: ShopifyConnection,
   limit: number,
 ): Promise<{ products: unknown[]; aggregate: Record<string, unknown> } | { error: string }> {
-  let sources = await fetchProductsGraphql(conn, limit);
+  const sources = await fetchProductsGraphql(conn, limit);
   if (!sources) {
-    const rest = await fetchProductsRest(conn, limit);
-    if (!rest.items) {
-      const why =
-        rest.status === 401 || rest.status === 403
-          ? `Shopify rejected the store's access token (HTTP ${rest.status}). Shopify retired old-style tokens, so hit "Reconnect" next to your store in the Tasks panel and this will work again`
-          : rest.status > 0
-            ? `Shopify answered with HTTP ${rest.status}`
-            : "Shopify didn't answer in time";
-      return { error: `Couldn't fetch the store's products — ${why}.` };
-    }
-    sources = rest.items;
+    return {
+      error:
+        "Couldn't fetch the store's products — Shopify didn't answer or rejected the store's access token. " +
+        'If this keeps happening, hit "Reconnect" next to your store in the Tasks panel.',
+    };
   }
 
   const products = sources.slice(0, limit).map((p) => {

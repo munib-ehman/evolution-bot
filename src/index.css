@@ -1027,6 +1027,22 @@ code {
 }
 
 /* ── Magic-link login gate (only shown when Supabase auth is configured) ── */
+/* Embedded (Shopify admin) auto-login state — shown instead of the email
+   form while the App Bridge session token is being exchanged. */
+.embed-connect {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  place-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+  background: var(--cream);
+  font-size: 15px;
+  color: var(--ink, #333);
+}
+
 .login {
   position: fixed;
   inset: 0;

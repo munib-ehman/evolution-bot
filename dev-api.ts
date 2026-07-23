@@ -25,6 +25,8 @@ import { runRecoveryCarts, runRecoveryDraft } from "./api/_recovery";
 import { runRetentionCustomers, runRetentionDraft } from "./api/_retention";
 import { runOpsSnapshot } from "./api/_ops";
 import { handleShopifyWebhook, runOpsLiveSetup } from "./api/_events";
+import { handleShopifyCompliance } from "./api/_compliance";
+import { runShopifySession } from "./api/_embedded";
 import { runAgentChat, type AgentChatBody } from "./api/_agentChat";
 import type { SkillEnv } from "./api/_skillTools";
 import { sendTaskEmail } from "./api/_email";
@@ -331,6 +333,52 @@ export function devApi(): Plugin {
           res.statusCode = status;
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify(body));
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/shopify-compliance", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          const rawBody = await readBody(req);
+          const header = (name: string) =>
+            typeof req.headers[name] === "string" ? (req.headers[name] as string) : null;
+          const { status, body } = await handleShopifyCompliance(
+            rawBody,
+            {
+              topic: header("x-shopify-topic"),
+              shop: header("x-shopify-shop-domain"),
+              hmac: header("x-shopify-hmac-sha256"),
+            },
+            skillEnv,
+          );
+          res.statusCode = status;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify(body));
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/shopify-session", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: { sessionToken?: unknown };
+          try {
+            body = JSON.parse(await readBody(req)) as { sessionToken?: unknown };
+          } catch {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            return res.end(JSON.stringify({ error: "Invalid request body." }));
+          }
+          const { status, body: result } = await runShopifySession(body, auditEnv);
+          res.statusCode = status;
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader("Cache-Control", "no-store");
+          res.end(JSON.stringify(result));
         })().catch((err) => {
           if (!res.headersSent) send(res, 500, String(err));
           else res.end();

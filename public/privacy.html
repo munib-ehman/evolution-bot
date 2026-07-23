@@ -48,7 +48,7 @@
 
     <main class="content">
       <h1>Privacy Policy</h1>
-      <p class="effective">Effective date: July 15, 2026</p>
+      <p class="effective">Effective date: July 15, 2026 · Last updated: July 23, 2026</p>
 
       <p>
         evolution ("we", "us") operates runevolution.io and the evolution service (the
@@ -59,7 +59,7 @@
       <ul>
         <li><strong>Account and contact info:</strong> name, email, and details you give us.</li>
         <li><strong>Store information:</strong> information about your store that you share or connect, which may include store URL, product and order data, customer service content, and analytics, so we can perform the work you ask us to do.</li>
-        <li><strong>Payment info:</strong> processed by our payment provider (Paddle). We do not store full card numbers.</li>
+        <li><strong>Payment info:</strong> processed by our payment providers — Shopify (for subscriptions started from the Shopify App Store, billed on your Shopify invoice) or Paddle (for direct signups). We do not store full card numbers.</li>
         <li><strong>Usage data:</strong> how you use the Service, plus standard log and device data (IP, browser).</li>
         <li><strong>Cookies/analytics:</strong> we use cookies and analytics to run and improve the Service.</li>
       </ul>
@@ -87,14 +87,53 @@
         access at any time.
       </p>
 
-      <h2>5. Data retention and security</h2>
+      <h2>5. Shopify stores</h2>
+      <p>
+        When you install Evolution from the Shopify App Store or connect your Shopify store,
+        we request <strong>read-only</strong> access to products, orders, checkouts, and
+        customers. Here is exactly how that data is handled:
+      </p>
+      <ul>
+        <li><strong>We do not store your customers' personal data.</strong> Customer names,
+          emails, and checkout links are fetched live from Shopify when you open a panel
+          (cart recovery, retention) and are shown only to you, the signed-in store owner,
+          in your browser. They are never written to our database and never included in AI
+          model prompts.</li>
+        <li><strong>What we do store:</strong> your store's domain, an encrypted-at-rest API
+          access token, aggregate audit results (counts and totals — no names or emails),
+          operational event metadata (order numbers, product titles, amounts), and the
+          message templates you write.</li>
+        <li><strong>Mandatory privacy webhooks:</strong> we implement Shopify's
+          <code>customers/data_request</code>, <code>customers/redact</code>, and
+          <code>shop/redact</code> webhooks. Because we hold no customer records there is
+          normally nothing to produce or erase, and we respond to data requests within 30
+          days. When you uninstall the app, Shopify's <code>shop/redact</code> notice
+          triggers deletion of your store's remaining data (connection, events, audit
+          history, templates) within 48 hours of receipt.</li>
+        <li><strong>Uninstalling:</strong> uninstalling the app immediately revokes our API
+          access on Shopify's side and we discard our copy of the access token.</li>
+      </ul>
+
+      <h2>6. Subprocessors</h2>
+      <p>We use a small set of infrastructure providers to run the Service:</p>
+      <ul>
+        <li><strong>Vercel</strong> — application hosting.</li>
+        <li><strong>Supabase</strong> — database and authentication.</li>
+        <li><strong>Groq</strong> — AI model inference. Prompts contain aggregate store
+          metrics and product info only; customer personal data is never sent to model
+          providers.</li>
+        <li><strong>Resend</strong> — transactional email to our team and account emails.</li>
+        <li><strong>Shopify / Paddle</strong> — billing, as described above.</li>
+      </ul>
+
+      <h2>7. Data retention and security</h2>
       <p>
         We keep data only as long as needed to provide the Service and meet legal
         obligations, then delete or anonymize it. We use reasonable technical and
         organizational measures to protect data, though no method is 100% secure.
       </p>
 
-      <h2>6. Your rights</h2>
+      <h2>8. Your rights</h2>
       <p>
         Depending on your location, you may have rights to access, correct, delete, or
         export your data, and to object to certain processing. Email
@@ -102,22 +141,22 @@
         <a href="mailto:muneeb@runevolution.io">muneeb@runevolution.io</a> to make a request.
       </p>
 
-      <h2>7. International users</h2>
+      <h2>9. International users</h2>
       <p>
         We may process data in countries other than yours. By using the Service you consent
         to this, subject to applicable law.
       </p>
 
-      <h2>8. Children</h2>
+      <h2>10. Children</h2>
       <p>The Service is not for anyone under 18. We do not knowingly collect data from children.</p>
 
-      <h2>9. Changes</h2>
+      <h2>11. Changes</h2>
       <p>
         We may update this policy and will post the new effective date. Significant changes
         will be communicated where required.
       </p>
 
-      <h2>10. Contact</h2>
+      <h2>12. Contact</h2>
       <p>
         Questions or requests:
         <a href="mailto:subhan@runevolution.io">subhan@runevolution.io</a> or

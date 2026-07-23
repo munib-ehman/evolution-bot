@@ -2,7 +2,7 @@
  * Shared engine for GET /api/store-products — the signed-in owner's slim live
  * catalog (title + price band + stock flag), served to the chat client so the
  * copilot can answer catalog questions from real data instead of deflecting.
- * Reuses the exact digest builder the skills use (GraphQL, REST fallback);
+ * Reuses the exact digest builder the skills use (GraphQL Admin API only);
  * returns no PII and no description bodies. dev-api.ts runs this same engine.
  */
 import { resolveUserFull } from "./_audit";

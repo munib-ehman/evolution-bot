@@ -1,0 +1,42 @@
+# Shopify app config (managed by the Shopify CLI — `shopify app deploy`
+# pushes this to the Partner Dashboard; `shopify app config link` fills in
+# client_id from the dashboard app).
+#
+# Webhook subscriptions here are APP-LEVEL: Shopify delivers them for every
+# install with no per-shop registration code. The privacy_compliance block is
+# the three mandatory GDPR endpoints App Store review probes automatically.
+
+name = "Evolution"
+client_id = "REPLACE_WITH_SHOPIFY_API_KEY"
+application_url = "https://www.runevolution.io/app"
+embedded = true
+handle = "evolution"
+
+[access_scopes]
+scopes = "read_products,read_orders,read_checkouts,read_customers"
+# Managed installation: Shopify collects scope consent during install, before
+# the app UI ever loads; the embedded app then gets its offline token via
+# token exchange (api/_embedded.ts). The standalone authorization-code flow
+# (api/shopify-auth → shopify-callback) still works alongside it.
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://www.runevolution.io/api/shopify-callback",
+  "http://localhost:5173/api/shopify-callback",
+]
+
+[webhooks]
+api_version = "2026-04"
+
+[[webhooks.subscriptions]]
+topics = ["app/uninstalled", "app_subscriptions/update", "orders/create"]
+uri = "https://www.runevolution.io/api/shopify-webhook"
+
+[webhooks.privacy_compliance]
+customer_data_request_url = "https://www.runevolution.io/api/shopify-compliance"
+customer_deletion_url = "https://www.runevolution.io/api/shopify-compliance"
+shop_deletion_url = "https://www.runevolution.io/api/shopify-compliance"
+
+[pos]
+embedded = false

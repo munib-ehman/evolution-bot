@@ -9,15 +9,16 @@
  *       orders/create additionally triggers an instant inventory check on the
  *       ordered products, so "sold out"/"low stock" events fire the moment an
  *       order empties a shelf (no read_inventory scope or extra topic needed).
- *   runOpsLiveSetup — idempotently registers our webhook subscriptions for
- *       the signed-in owner's store. Called by the Ops panel on open; needs
- *       an https origin, so in local dev it reports live:false instead.
+ *   runOpsLiveSetup — answers whether the live push works for the signed-in
+ *       owner (webhook subscriptions are app-level, declared in
+ *       shopify.app.toml — nothing to register per shop). Called by the Ops
+ *       panel on open; local dev has no https origin so it reports live:false.
  *
  * Events are metadata only (order number, product titles, amounts) — no
  * customer PII is ever written to store_events.
  */
 import { resolveUserFull } from "./_audit";
-import { getConnection, shopifyGraphql, type ShopifyEnv } from "./_shopify";
+import { getConnection, type ShopifyEnv } from "./_shopify";
 import { fetchInventoryWatch } from "./_shopifyData";
 
 function jsonResult(status: number, body: Record<string, unknown>) {
@@ -118,7 +119,7 @@ interface OrderWebhookPayload {
   line_items?: { title?: string; quantity?: number }[];
 }
 
-async function lookupUserByShop(env: ShopifyEnv, shop: string): Promise<string | null> {
+export async function lookupUserByShop(env: ShopifyEnv, shop: string): Promise<string | null> {
   if (!env.supabaseUrl || !env.serviceRoleKey) return null;
   try {
     const res = await fetch(
@@ -152,6 +153,16 @@ export async function handleShopifyWebhook(
   const shop = (headers.shop ?? "").trim().toLowerCase();
   const userId = shop ? await lookupUserByShop(env, shop) : null;
   if (!userId) return jsonResult(200, { ok: true }); // store no longer connected
+
+  if (headers.topic === "app/uninstalled") {
+    await handleAppUninstalled(env, shop, userId);
+    return jsonResult(200, { ok: true });
+  }
+
+  if (headers.topic === "app_subscriptions/update") {
+    await handleSubscriptionUpdate(env, rawBody, userId);
+    return jsonResult(200, { ok: true });
+  }
 
   if (headers.topic === "orders/create") {
     let payload: OrderWebhookPayload = {};
@@ -210,32 +221,102 @@ export async function handleShopifyWebhook(
   return jsonResult(200, { ok: true });
 }
 
-// ---------------------------------------------------------------------------
-// POST /api/ops-live — idempotent webhook registration for the owner's store
-
-const WEBHOOK_TOPICS = ["ORDERS_CREATE"] as const;
-
-const SUBSCRIPTIONS_QUERY = `query OpsWebhooks($first: Int!) {
-  webhookSubscriptions(first: $first) {
-    nodes {
-      topic
-      endpoint { __typename ... on WebhookHttpEndpoint { callbackUrl } }
-    }
-  }
-}`;
-
-const SUBSCRIPTION_CREATE = `mutation OpsWebhookCreate($topic: WebhookSubscriptionTopic!, $sub: WebhookSubscriptionInput!) {
-  webhookSubscriptionCreate(topic: $topic, webhookSubscription: $sub) {
-    webhookSubscription { id }
-    userErrors { field message }
-  }
-}`;
-
-interface GqlSubscriptionsData {
-  webhookSubscriptions?: {
-    nodes?: { topic?: string; endpoint?: { callbackUrl?: string } | null }[];
+/**
+ * app/uninstalled — TOMBSTONE, don't delete. Shopify revoked the token the
+ * moment the merchant uninstalled, so we null our copy and stamp
+ * uninstalled_at, but keep the row: shop/redact arrives up to 48h later and
+ * needs the shop_domain → user_id mapping to know whose data to erase
+ * (see api/_compliance.ts). The visible stores row goes away so the app
+ * shows "not connected", and a Shopify-billed plan drops back to free.
+ */
+async function handleAppUninstalled(env: ShopifyEnv, shop: string, userId: string): Promise<void> {
+  if (!env.supabaseUrl || !env.serviceRoleKey) return;
+  const headers = {
+    apikey: env.serviceRoleKey,
+    Authorization: `Bearer ${env.serviceRoleKey}`,
+    "Content-Type": "application/json",
+    Prefer: "return=minimal",
   };
+  const patchConn = fetch(
+    `${env.supabaseUrl}/rest/v1/shopify_connections?shop_domain=eq.${encodeURIComponent(shop)}`,
+    {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({
+        access_token: null,
+        refresh_token: null,
+        token_expires_at: null,
+        refresh_token_expires_at: null,
+        uninstalled_at: new Date().toISOString(),
+      }),
+      signal: AbortSignal.timeout(6_000),
+    },
+  );
+  const dropStore = fetch(`${env.supabaseUrl}/rest/v1/stores?user_id=eq.${userId}`, {
+    method: "DELETE",
+    headers,
+    signal: AbortSignal.timeout(6_000),
+  });
+  // Only Shopify-billed plans are Shopify's to take away.
+  const downgrade = fetch(
+    `${env.supabaseUrl}/rest/v1/profiles?user_id=eq.${userId}&plan_source=eq.shopify`,
+    {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ plan: "free" }),
+      signal: AbortSignal.timeout(6_000),
+    },
+  );
+  await Promise.all([patchConn, dropStore, downgrade].map((p) => p.catch(() => {})));
 }
+
+/**
+ * app_subscriptions/update — sync Shopify App Pricing state to profiles.plan.
+ * ACTIVE claims the plan for Shopify billing; anything else (CANCELLED,
+ * DECLINED, EXPIRED, FROZEN…) releases it — but ONLY for rows Shopify billing
+ * owns, so a manually- or Paddle-upgraded account can never be downgraded by
+ * a stray Shopify webhook.
+ */
+async function handleSubscriptionUpdate(env: ShopifyEnv, rawBody: string, userId: string): Promise<void> {
+  if (!env.supabaseUrl || !env.serviceRoleKey) return;
+  let status = "";
+  try {
+    const payload = JSON.parse(rawBody) as { app_subscription?: { status?: string } };
+    status = (payload.app_subscription?.status ?? "").toUpperCase();
+  } catch {
+    return;
+  }
+  if (!status) return;
+
+  const active = status === "ACTIVE";
+  const filter = active
+    ? `user_id=eq.${userId}`
+    : `user_id=eq.${userId}&plan_source=eq.shopify`;
+  try {
+    await fetch(`${env.supabaseUrl}/rest/v1/profiles?${filter}`, {
+      method: "PATCH",
+      headers: {
+        apikey: env.serviceRoleKey,
+        Authorization: `Bearer ${env.serviceRoleKey}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify(active ? { plan: "operator", plan_source: "shopify" } : { plan: "free" }),
+      signal: AbortSignal.timeout(6_000),
+    });
+  } catch {
+    /* webhook must still 200 — the next session-token exchange re-syncs */
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/ops-live — is the live push available for this owner?
+//
+// Webhook subscriptions are APP-LEVEL now, declared in shopify.app.toml and
+// delivered for every install by Shopify itself (`shopify app deploy` pushes
+// them) — nothing to register per shop anymore. This endpoint just answers
+// whether the push leg can work: signed in, store connected, https origin
+// (Shopify can't call a localhost webhook, so local dev polls instead).
 
 export async function runOpsLiveSetup(
   authHeader: string | null,
@@ -254,36 +335,5 @@ export async function runOpsLiveSetup(
       reason: "Live push needs the deployed app — local dev falls back to 60s refresh.",
     });
   }
-  const callbackUrl = `${origin}/api/shopify-webhook`;
-
-  const existing = await shopifyGraphql<GqlSubscriptionsData>(
-    conn.shop_domain,
-    conn.access_token,
-    SUBSCRIPTIONS_QUERY,
-    { first: 25 },
-  );
-  if (!existing) return jsonResult(502, { error: "Couldn't read webhook subscriptions." });
-  const have = new Set(
-    (existing.webhookSubscriptions?.nodes ?? [])
-      .filter((n) => n.endpoint?.callbackUrl === callbackUrl)
-      .map((n) => n.topic ?? ""),
-  );
-
-  for (const topic of WEBHOOK_TOPICS) {
-    if (have.has(topic)) continue;
-    const created = await shopifyGraphql<{
-      webhookSubscriptionCreate?: { userErrors?: { message?: string }[] };
-    }>(conn.shop_domain, conn.access_token, SUBSCRIPTION_CREATE, {
-      topic,
-      sub: { callbackUrl, format: "JSON" },
-    });
-    const errs = created?.webhookSubscriptionCreate?.userErrors ?? [];
-    if (!created || errs.length > 0) {
-      return jsonResult(502, {
-        error: `Couldn't register the ${topic} webhook${errs[0]?.message ? `: ${errs[0].message}` : "."}`,
-      });
-    }
-  }
-
   return jsonResult(200, { live: true });
 }

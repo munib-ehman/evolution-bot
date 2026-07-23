@@ -20,6 +20,7 @@ import { UpgradePanel } from "./components/UpgradePanel";
 import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
 import { ensureProfile, getLatestAudit, getPlan, getStore, getStoreCatalog, runAuditAsUser, type AuditReport, type ConnectedStore, type Plan, type StoreCatalog } from "./lib/store";
+import { isEmbedded } from "./lib/embedded";
 import { SKILL_CHIPS, type SkillChip } from "./lib/skills";
 
 type View = "voice" | "chat";
@@ -40,6 +41,7 @@ const STARTERS = [
 export default function App() {
   const a = useAssistant();
   const authEmail = useAuthEmail();
+  const embedded = isEmbedded();
   const warmedRef = useRef(false);
 
   // ── The shell: connected store, plan, audit, panels ───────────────────────
@@ -336,10 +338,16 @@ export default function App() {
             >
               My store
             </button>
-            <span className="badge user" title="Signed in">{authEmail}</span>
-            <button type="button" className="link" onClick={() => void signOut()}>
-              Sign out
-            </button>
+            {/* Inside the Shopify admin the install IS the login — no email
+                identity to show, and signing out would just strand the iframe. */}
+            {!embedded && (
+              <>
+                <span className="badge user" title="Signed in">{authEmail}</span>
+                <button type="button" className="link" onClick={() => void signOut()}>
+                  Sign out
+                </button>
+              </>
+            )}
           </div>
         )}
       </header>
@@ -566,7 +574,9 @@ export default function App() {
       {authEmail && store && <OpsPanel open={opsOpen} onClose={() => setOpsOpen(false)} />}
       {authEmail && store && <LiveToasts />}
 
-      {authEnabled && authEmail && store === null && splashGone && (
+      {/* Embedded installs are connected by construction (the session
+          endpoint created the store row) — never show the connect card there. */}
+      {authEnabled && authEmail && store === null && splashGone && !embedded && (
         <ConnectStore onConnected={handleConnected} />
       )}
 

@@ -381,8 +381,7 @@ export function scoreAudit(findings: AuditFinding[]): number {
  * Order-level trading stats for an arbitrary window — shared by the deep
  * audit (30 days) and the skill engine (up to 90 days). `fetched` is false
  * when the orders API was unreachable (stats are then all zeros).
- * Reads via _shopifyData.ts: GraphQL Admin API first (REST is legacy-blocked
- * for newly created apps), REST fallback for older installs.
+ * Reads via _shopifyData.ts (GraphQL Admin API only — REST is legacy).
  */
 export interface OrderStats {
   currency: string | null;

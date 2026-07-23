@@ -209,6 +209,39 @@ export async function runShopifyCallback(
   if (!token) return fail("token-exchange");
 
   if (!env.supabaseUrl || !env.serviceRoleKey) return fail("no-db");
+  const saved = await saveConnection(env, userId, shop, {
+    access_token: token,
+    scopes,
+    refresh_token: refreshToken,
+    token_expires_at: tokenExpiresAt,
+    refresh_token_expires_at: refreshExpiresAt,
+  });
+  if (!saved) return fail("save");
+
+  return { redirect: "/app?shopify=connected" };
+}
+
+/**
+ * Persist a fresh connection for a user + shop, releasing the shop from any
+ * OTHER user first (shop_domain is UNIQUE — one store, one account; ownership
+ * follows the latest install, e.g. a store transferred to a new owner who
+ * reinstalls). Clears any uninstall tombstone. Also upserts the visible
+ * stores row so the app knows a store is connected. Used by both OAuth
+ * callback (standalone) and token exchange (embedded).
+ */
+export async function saveConnection(
+  env: ShopifyEnv,
+  userId: string,
+  shop: string,
+  fields: {
+    access_token: string;
+    scopes: string;
+    refresh_token: string | null;
+    token_expires_at: string | null;
+    refresh_token_expires_at: string | null;
+  },
+): Promise<boolean> {
+  if (!env.supabaseUrl || !env.serviceRoleKey) return false;
   const headers = {
     apikey: env.serviceRoleKey,
     Authorization: `Bearer ${env.serviceRoleKey}`,
@@ -216,6 +249,31 @@ export async function runShopifyCallback(
     Prefer: "resolution=merge-duplicates,return=minimal",
   };
   try {
+    // Release the shop from any other user (their stores row too), or the
+    // UNIQUE(shop_domain) constraint would reject the upsert below.
+    const others = await fetch(
+      `${env.supabaseUrl}/rest/v1/shopify_connections?shop_domain=eq.${encodeURIComponent(shop)}&user_id=neq.${userId}&select=user_id`,
+      { headers, signal: AbortSignal.timeout(4_000) },
+    );
+    if (others.ok) {
+      const rows = (await others.json()) as { user_id?: string }[];
+      for (const row of rows) {
+        if (!row.user_id) continue;
+        await Promise.all([
+          fetch(`${env.supabaseUrl}/rest/v1/shopify_connections?user_id=eq.${row.user_id}`, {
+            method: "DELETE",
+            headers,
+            signal: AbortSignal.timeout(6_000),
+          }),
+          fetch(`${env.supabaseUrl}/rest/v1/stores?user_id=eq.${row.user_id}`, {
+            method: "DELETE",
+            headers,
+            signal: AbortSignal.timeout(6_000),
+          }),
+        ]);
+      }
+    }
+
     // The token row (service-role-only table — the browser never sees it)…
     const conn = await fetch(`${env.supabaseUrl}/rest/v1/shopify_connections?on_conflict=user_id`, {
       method: "POST",
@@ -223,15 +281,12 @@ export async function runShopifyCallback(
       body: JSON.stringify({
         user_id: userId,
         shop_domain: shop,
-        access_token: token,
-        scopes,
-        refresh_token: refreshToken,
-        token_expires_at: tokenExpiresAt,
-        refresh_token_expires_at: refreshExpiresAt,
+        ...fields,
+        uninstalled_at: null,
       }),
       signal: AbortSignal.timeout(6_000),
     });
-    if (!conn.ok) return fail("save");
+    if (!conn.ok) return false;
     // …and the visible store row, so the app knows a store is connected.
     await fetch(`${env.supabaseUrl}/rest/v1/stores?on_conflict=user_id`, {
       method: "POST",
@@ -239,11 +294,10 @@ export async function runShopifyCallback(
       body: JSON.stringify({ user_id: userId, url: `https://${shop}`, platform: "shopify" }),
       signal: AbortSignal.timeout(6_000),
     });
+    return true;
   } catch {
-    return fail("save");
+    return false;
   }
-
-  return { redirect: "/app?shopify=connected" };
 }
 
 // ---------------------------------------------------------------------------
@@ -281,7 +335,9 @@ export async function getConnection(env: ShopifyEnv, userId: string): Promise<Sh
   } catch {
     return null;
   }
-  if (!conn) return null;
+  // Tombstoned rows (app/uninstalled nulled the token but kept the
+  // shop→user mapping for GDPR webhooks) read as "not connected".
+  if (!conn || !conn.access_token) return null;
 
   const expMs = conn.token_expires_at ? Date.parse(conn.token_expires_at) : NaN;
   const needsRefresh = Number.isFinite(expMs) && expMs - Date.now() < TOKEN_REFRESH_MARGIN_MS;
@@ -390,39 +446,10 @@ export async function runShopifyDisconnect(
   }
 }
 
-/** One Admin API GET, JSON out; null on any failure (audit degrades). */
-export async function shopifyGet<T>(shop: string, token: string, pathAndQuery: string): Promise<T | null> {
-  const { data } = await shopifyGetDetailed<T>(shop, token, pathAndQuery);
-  return data;
-}
-
-/**
- * Like shopifyGet but keeps the HTTP status so callers can say WHY a call
- * failed (401 dead token vs 403 missing access vs 404 endpoint gone —
- * Shopify blocks the REST product endpoints for newly created apps).
- * status 0 = network/timeout.
- */
-export async function shopifyGetDetailed<T>(
-  shop: string,
-  token: string,
-  pathAndQuery: string,
-): Promise<{ status: number; data: T | null }> {
-  try {
-    const res = await fetch(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/${pathAndQuery}`, {
-      headers: { "X-Shopify-Access-Token": token },
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!res.ok) return { status: res.status, data: null };
-    return { status: res.status, data: (await res.json()) as T };
-  } catch {
-    return { status: 0, data: null };
-  }
-}
-
 /**
  * One GraphQL Admin API call. Returns the `data` object, or null on any
- * failure (HTTP error, GraphQL errors, network). GraphQL is the only way
- * new apps may read products — REST products.json is legacy-blocked.
+ * failure (HTTP error, GraphQL errors, network). GraphQL is the ONLY Admin
+ * API the app speaks — REST is legacy and public apps must not use it.
  */
 export async function shopifyGraphql<T>(
   shop: string,

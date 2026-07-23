@@ -1,16 +1,13 @@
 /**
- * Shared store-data fetchers — GraphQL Admin API first, REST fallback.
+ * Shared store-data fetchers — GraphQL Admin API only.
  *
- * Shopify legacy-blocks the REST Admin endpoints (orders.json,
- * checkouts.json, shop.json) for newly created apps — the same wall that
- * forced product reads onto GraphQL. Every reader here speaks GraphQL
- * natively and falls back to REST only for older installs where it still
- * answers. Callers get one normalized shape either way; null means both
- * paths failed (callers degrade, they don't crash).
+ * The REST Admin API is legacy: Shopify blocks its endpoints for newly
+ * created apps and App Store review requires public apps to be built
+ * exclusively on GraphQL, so there are no REST fallbacks here. Callers get
+ * one normalized shape; null means the read failed (callers degrade, they
+ * don't crash).
  */
 import {
-  shopifyGet,
-  shopifyGetDetailed,
   shopifyGraphql,
   shopifyGraphqlDetailed,
   type ShopifyConnection,
@@ -115,50 +112,13 @@ async function fetchOrdersGraphql(
   return out;
 }
 
-interface RestOrder {
-  total_price?: string;
-  created_at?: string;
-  customer?: { id?: number } | null;
-  line_items?: { title?: string; quantity?: number; price?: string }[];
-}
-
-async function fetchOrdersRest(
-  conn: ShopifyConnection,
-  days: number,
-  withItems: boolean,
-): Promise<OrderRow[] | null> {
-  const since = encodeURIComponent(sinceIso(days));
-  const fields = withItems
-    ? "id,total_price,created_at,customer,line_items"
-    : "id,total_price,created_at,customer";
-  const res = await shopifyGet<{ orders?: RestOrder[] }>(
-    conn.shop_domain,
-    conn.access_token,
-    `orders.json?status=any&limit=250&created_at_min=${since}&fields=${fields}`,
-  );
-  if (!res?.orders) return null;
-  return res.orders.map((o) => ({
-    createdAt: o.created_at ?? "",
-    totalPrice: parseFloat(o.total_price ?? "0") || 0,
-    customerId: typeof o.customer?.id === "number" ? String(o.customer.id) : null,
-    lineItems: (o.line_items ?? []).map((li) => ({
-      title: (li.title ?? "").trim() || "(untitled)",
-      quantity: li.quantity ?? 0,
-      price: parseFloat(li.price ?? "0") || 0,
-    })),
-  }));
-}
-
-/** Orders in the last N days (capped at 250, newest first). Null = both APIs failed. */
+/** Orders in the last N days (capped at 250, newest first). Null = read failed. */
 export async function fetchOrdersWindow(
   conn: ShopifyConnection,
   days: number,
   opts: { lineItems?: boolean } = {},
 ): Promise<OrderRow[] | null> {
-  const withItems = opts.lineItems ?? false;
-  return (
-    (await fetchOrdersGraphql(conn, days, withItems)) ?? (await fetchOrdersRest(conn, days, withItems))
-  );
+  return fetchOrdersGraphql(conn, days, opts.lineItems ?? false);
 }
 
 // ---------------------------------------------------------------------------
@@ -234,35 +194,12 @@ async function fetchCheckoutsGraphql(conn: ShopifyConnection, days: number): Pro
   return out;
 }
 
-async function fetchCheckoutsRest(conn: ShopifyConnection, days: number): Promise<CheckoutRow[] | null> {
-  const since = encodeURIComponent(sinceIso(days));
-  const res = await shopifyGet<{
-    checkouts?: {
-      total_price?: string;
-      created_at?: string;
-      email?: string;
-      line_items?: { title?: string; quantity?: number }[];
-    }[];
-  }>(conn.shop_domain, conn.access_token, `checkouts.json?limit=250&created_at_min=${since}`);
-  if (!res?.checkouts) return null;
-  return res.checkouts.map((c) => ({
-    createdAt: c.created_at ?? "",
-    totalPrice: parseFloat(c.total_price ?? "0") || 0,
-    hasEmail: (c.email ?? "").includes("@"),
-    itemCount: c.line_items?.length ?? 0,
-    items: (c.line_items ?? []).slice(0, 10).map((li) => ({
-      title: (li.title ?? "").trim() || "(untitled)",
-      qty: li.quantity ?? 0,
-    })),
-  }));
-}
-
-/** Abandoned checkouts in the last N days (capped at 250). Null = both APIs failed. */
+/** Abandoned checkouts in the last N days (capped at 250). Null = read failed. */
 export async function fetchAbandonedCheckoutsWindow(
   conn: ShopifyConnection,
   days: number,
 ): Promise<CheckoutRow[] | null> {
-  return (await fetchCheckoutsGraphql(conn, days)) ?? (await fetchCheckoutsRest(conn, days));
+  return fetchCheckoutsGraphql(conn, days);
 }
 
 // ---------------------------------------------------------------------------
@@ -349,49 +286,12 @@ async function fetchRecoveryGraphql(
   return out;
 }
 
-async function fetchRecoveryRest(
-  conn: ShopifyConnection,
-  days: number,
-): Promise<PiiResult<RecoverableCart>> {
-  const since = encodeURIComponent(sinceIso(days));
-  const { status, data: res } = await shopifyGetDetailed<{
-    checkouts?: {
-      id?: number;
-      created_at?: string;
-      completed_at?: string | null;
-      total_price?: string;
-      abandoned_checkout_url?: string;
-      email?: string;
-      customer?: { first_name?: string | null } | null;
-      line_items?: { title?: string; quantity?: number }[];
-    }[];
-  }>(conn.shop_domain, conn.access_token, `checkouts.json?limit=250&created_at_min=${since}`);
-  if (status === 403) return "access-denied";
-  if (!res?.checkouts) return null;
-  return res.checkouts
-    .filter((c) => !c.completed_at)
-    .map((c) => ({
-      id: String(c.id ?? ""),
-      createdAt: c.created_at ?? "",
-      totalPrice: parseFloat(c.total_price ?? "0") || 0,
-      recoveryUrl: c.abandoned_checkout_url ?? "",
-      firstName: (c.customer?.first_name ?? "").trim(),
-      email: (c.email ?? "").trim(),
-      items: (c.line_items ?? []).map((li) => ({
-        title: (li.title ?? "").trim() || "(untitled)",
-        qty: li.quantity ?? 0,
-      })),
-    }));
-}
-
 /** Abandoned carts with customer + recovery detail (PII — owner's eyes only). */
 export async function fetchRecoverableCheckouts(
   conn: ShopifyConnection,
   days: number,
 ): Promise<PiiResult<RecoverableCart>> {
-  const gql = await fetchRecoveryGraphql(conn, days);
-  if (gql !== null) return gql; // rows or "access-denied" — REST would 403 on the same wall
-  return fetchRecoveryRest(conn, days);
+  return fetchRecoveryGraphql(conn, days);
 }
 
 // ---------------------------------------------------------------------------
@@ -408,7 +308,7 @@ export interface LapsedCustomer {
   /** Empty when the customer left no email (or access is restricted). */
   email: string;
   lastOrderAt: string;
-  /** Lifetime on the GraphQL path; within the lookback window on REST fallback. */
+  /** Lifetime order count. */
   ordersCount: number;
   totalSpent: number;
   lastItems: { title: string; qty: number }[];
@@ -513,87 +413,12 @@ async function fetchLapsedGraphql(
   return out;
 }
 
-interface RestRetentionOrder {
-  id?: number;
-  created_at?: string;
-  cancelled_at?: string | null;
-  financial_status?: string;
-  total_price?: string;
-  email?: string;
-  customer?: { id?: number; first_name?: string | null } | null;
-  line_items?: { title?: string; quantity?: number }[];
-}
-
-async function fetchRetentionOrdersRest(
-  conn: ShopifyConnection,
-  minDays: number,
-  maxDays: number,
-): Promise<PiiResult<RestRetentionOrder>> {
-  const min = encodeURIComponent(sinceIso(maxDays));
-  const max = minDays > 0 ? `&created_at_max=${encodeURIComponent(sinceIso(minDays))}` : "";
-  const { status, data } = await shopifyGetDetailed<{ orders?: RestRetentionOrder[] }>(
-    conn.shop_domain,
-    conn.access_token,
-    `orders.json?status=any&limit=250&created_at_min=${min}${max}&fields=id,created_at,cancelled_at,financial_status,total_price,email,customer,line_items`,
-  );
-  if (status === 403) return "access-denied";
-  return data?.orders ?? null;
-}
-
-/**
- * REST fallback: customers.json has no last-order DATE, so derive lapsed
- * customers from one 250-order window instead — fine for the small stores
- * this path serves, but ordersCount/totalSpent shrink to within-window.
- */
-async function fetchLapsedRest(
-  conn: ShopifyConnection,
-  minDays: number,
-  maxDays: number,
-): Promise<PiiResult<LapsedCustomer>> {
-  const orders = await fetchRetentionOrdersRest(conn, 0, maxDays);
-  if (orders === "access-denied" || orders === null) return orders;
-  const byCustomer = new Map<string, { latest: RestRetentionOrder; count: number; spent: number }>();
-  for (const o of orders) {
-    if (o.cancelled_at) continue;
-    const key = o.customer?.id != null ? String(o.customer.id) : (o.email ?? "").toLowerCase();
-    if (!key) continue;
-    const cur = byCustomer.get(key);
-    const latest =
-      !cur || Date.parse(o.created_at ?? "") > Date.parse(cur.latest.created_at ?? "") ? o : cur?.latest;
-    byCustomer.set(key, {
-      latest: latest ?? o,
-      count: (cur?.count ?? 0) + 1,
-      spent: (cur?.spent ?? 0) + (parseFloat(o.total_price ?? "0") || 0),
-    });
-  }
-  const out: LapsedCustomer[] = [];
-  for (const [key, c] of byCustomer) {
-    const lastAt = c.latest.created_at ?? "";
-    const age = daysAgo(lastAt);
-    if (!Number.isFinite(age) || age < minDays || age > maxDays) continue;
-    out.push({
-      id: key,
-      firstName: (c.latest.customer?.first_name ?? "").trim(),
-      email: (c.latest.email ?? "").trim(),
-      lastOrderAt: lastAt,
-      ordersCount: c.count,
-      totalSpent: c.spent,
-      lastItems: (c.latest.line_items ?? []).slice(0, 5).map((li) => ({
-        title: (li.title ?? "").trim() || "(untitled)",
-        qty: li.quantity ?? 0,
-      })),
-    });
-  }
-  return out.sort((a, b) => Date.parse(b.lastOrderAt) - Date.parse(a.lastOrderAt));
-}
-
 /** Customers whose last order fell out of the window (PII — owner's eyes only). */
 export async function fetchLapsedCustomers(
   conn: ShopifyConnection,
   opts: { minDays: number; maxDays: number },
 ): Promise<PiiResult<LapsedCustomer>> {
-  const gql = await fetchLapsedGraphql(conn, opts.minDays, opts.maxDays);
-  const rows = gql !== null ? gql : await fetchLapsedRest(conn, opts.minDays, opts.maxDays);
+  const rows = await fetchLapsedGraphql(conn, opts.minDays, opts.maxDays);
   if (rows === "access-denied" || rows === null) return rows;
   // Most recently lapsed first — the easiest customers to win back on top.
   return rows.sort((a, b) => Date.parse(b.lastOrderAt) - Date.parse(a.lastOrderAt));
@@ -688,31 +513,6 @@ async function fetchBuyersGraphql(
   return dedupeBuyers(out);
 }
 
-async function fetchBuyersRest(
-  conn: ShopifyConnection,
-  minDays: number,
-  maxDays: number,
-): Promise<PiiResult<RecentBuyer>> {
-  const orders = await fetchRetentionOrdersRest(conn, minDays, maxDays);
-  if (orders === "access-denied" || orders === null) return orders;
-  const rows: RecentBuyer[] = orders
-    .filter((o) => !o.cancelled_at && !REFUNDED_STATUSES.has(o.financial_status ?? ""))
-    .map((o) => ({
-      orderId: String(o.id ?? ""),
-      customerId: o.customer?.id != null ? String(o.customer.id) : null,
-      firstName: (o.customer?.first_name ?? "").trim(),
-      email: (o.email ?? "").trim(),
-      orderedAt: o.created_at ?? "",
-      totalPrice: parseFloat(o.total_price ?? "0") || 0,
-      items: (o.line_items ?? []).map((li) => ({
-        title: (li.title ?? "").trim() || "(untitled)",
-        qty: li.quantity ?? 0,
-      })),
-    }))
-    .sort((a, b) => Date.parse(b.orderedAt) - Date.parse(a.orderedAt));
-  return dedupeBuyers(rows);
-}
-
 /**
  * Buyers whose order is old enough to have arrived but recent enough to
  * review — one row per customer, latest order wins (PII — owner's eyes only).
@@ -721,9 +521,7 @@ export async function fetchRecentBuyers(
   conn: ShopifyConnection,
   opts: { minDays: number; maxDays: number },
 ): Promise<PiiResult<RecentBuyer>> {
-  const gql = await fetchBuyersGraphql(conn, opts.minDays, opts.maxDays);
-  if (gql !== null) return gql;
-  return fetchBuyersRest(conn, opts.minDays, opts.maxDays);
+  return fetchBuyersGraphql(conn, opts.minDays, opts.maxDays);
 }
 
 // ---------------------------------------------------------------------------
@@ -845,38 +643,9 @@ async function fetchInventoryGraphql(conn: ShopifyConnection): Promise<Inventory
   return out;
 }
 
-async function fetchInventoryRest(conn: ShopifyConnection): Promise<InventoryProduct[] | null> {
-  const res = await shopifyGet<{
-    products?: {
-      title?: string;
-      status?: string;
-      variants?: {
-        title?: string;
-        inventory_quantity?: number;
-        inventory_policy?: string;
-        inventory_management?: string | null;
-      }[];
-    }[];
-  }>(conn.shop_domain, conn.access_token, "products.json?limit=100&status=active&fields=title,status,variants");
-  if (!res?.products) return null;
-  return res.products.map((p) => {
-    const variants = (p.variants ?? []).map((v) => ({
-      title: (v.title ?? "").trim(),
-      qty: v.inventory_quantity ?? 0,
-      tracked: !!v.inventory_management,
-      oversells: v.inventory_policy === "continue",
-    }));
-    return classifyInventory({
-      title: (p.title ?? "").trim() || "(untitled)",
-      totalInventory: variants.reduce((n, v) => n + (v.tracked ? v.qty : 0), 0),
-      variants,
-    });
-  });
-}
-
-/** Active products with stock classification (capped at 100). Null = both APIs failed. */
+/** Active products with stock classification (capped at 100). Null = read failed. */
 export async function fetchInventoryWatch(conn: ShopifyConnection): Promise<InventoryProduct[] | null> {
-  return (await fetchInventoryGraphql(conn)) ?? (await fetchInventoryRest(conn));
+  return fetchInventoryGraphql(conn);
 }
 
 const SHIP_QUEUE_CAP = 50;
@@ -940,46 +709,15 @@ async function fetchShipQueueGraphql(conn: ShopifyConnection): Promise<ShipQueue
   return out;
 }
 
-async function fetchShipQueueRest(conn: ShopifyConnection): Promise<ShipQueueOrder[] | null> {
-  const res = await shopifyGet<{
-    orders?: {
-      name?: string;
-      created_at?: string;
-      cancelled_at?: string | null;
-      financial_status?: string;
-      total_price?: string;
-      line_items?: { title?: string; quantity?: number }[];
-    }[];
-  }>(
-    conn.shop_domain,
-    conn.access_token,
-    "orders.json?status=open&fulfillment_status=unshipped&limit=50&fields=name,created_at,cancelled_at,financial_status,total_price,line_items",
-  );
-  if (!res?.orders) return null;
-  return res.orders
-    .filter((o) => !o.cancelled_at)
-    .map((o) => ({
-      name: o.name ?? "",
-      createdAt: o.created_at ?? "",
-      financialStatus: (o.financial_status ?? "").toUpperCase(),
-      totalPrice: parseFloat(o.total_price ?? "0") || 0,
-      items: (o.line_items ?? []).map((li) => ({
-        title: (li.title ?? "").trim() || "(untitled)",
-        qty: li.quantity ?? 0,
-      })),
-    }))
-    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-}
-
-/** Open orders waiting to ship, oldest first (capped at 50). Null = both APIs failed. */
+/** Open orders waiting to ship, oldest first (capped at 50). Null = read failed. */
 export async function fetchShipQueue(conn: ShopifyConnection): Promise<ShipQueueOrder[] | null> {
-  return (await fetchShipQueueGraphql(conn)) ?? (await fetchShipQueueRest(conn));
+  return fetchShipQueueGraphql(conn);
 }
 
 // ---------------------------------------------------------------------------
 // Shop info
 
-/** The store's currency code, or null if both APIs failed. */
+/** The store's currency code, or null if the read failed. */
 export async function fetchShopCurrency(conn: ShopifyConnection): Promise<string | null> {
   const data = await shopifyGraphql<{ shop?: { currencyCode?: string } }>(
     conn.shop_domain,
@@ -987,11 +725,5 @@ export async function fetchShopCurrency(conn: ShopifyConnection): Promise<string
     "query ShopCurrency { shop { currencyCode } }",
     {},
   );
-  if (data?.shop?.currencyCode) return data.shop.currencyCode;
-  const rest = await shopifyGet<{ shop?: { currency?: string } }>(
-    conn.shop_domain,
-    conn.access_token,
-    "shop.json",
-  );
-  return rest?.shop?.currency ?? null;
+  return data?.shop?.currencyCode ?? null;
 }
