@@ -13,7 +13,6 @@ Format:
 
 ## Pending
 
-- CAC vs LTV for small ecommerce stores: a plain-English guide
 - Why your Shopify conversion rate dropped and how to diagnose it
 - Post-purchase email flows that bring customers back
 - Win-back campaigns: reactivating customers who stopped buying
@@ -82,3 +81,6 @@ Format:
 - [2026-07-22] Shopify Scripts deprecation: what to do now that they've stopped working (competitor-trend: Shopify Scripts end-of-life June 30 2026, widely covered by ecommerce agency/migration blogs) — /blog/shopify-scripts-deprecation-what-to-do
 - [2026-07-22] AI product recommendations for small stores: a practical setup guide (competitor-trend: Shopify/Klaviyo AI personalization push) — /blog/ai-product-recommendations-for-small-stores
 - [2026-07-22] How to calculate true profit per order (not just revenue) — /blog/true-profit-per-order-not-just-revenue
+- [2026-07-23] WhatsApp marketing for Shopify stores: what to automate first (competitor-trend: Klaviyo's new WhatsApp marketing tool launch + WhatsApp automation push across Shopify marketing blogs) — /blog/whatsapp-marketing-for-shopify-stores
+- [2026-07-23] AI customer support pricing: what per-resolution really costs you (competitor-trend: Gorgias/Intercom/Zendesk shift to per-resolution AI support pricing) — /blog/ai-customer-support-pricing-per-resolution
+- [2026-07-23] CAC vs LTV for small ecommerce stores: a plain-English guide — /blog/cac-vs-ltv-small-ecommerce-stores
