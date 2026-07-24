@@ -13,7 +13,6 @@ Format:
 
 ## Pending
 
-- Why your Shopify conversion rate dropped and how to diagnose it
 - Post-purchase email flows that bring customers back
 - Win-back campaigns: reactivating customers who stopped buying
 - How to handle returns without losing the customer
@@ -84,3 +83,6 @@ Format:
 - [2026-07-23] WhatsApp marketing for Shopify stores: what to automate first (competitor-trend: Klaviyo's new WhatsApp marketing tool launch + WhatsApp automation push across Shopify marketing blogs) — /blog/whatsapp-marketing-for-shopify-stores
 - [2026-07-23] AI customer support pricing: what per-resolution really costs you (competitor-trend: Gorgias/Intercom/Zendesk shift to per-resolution AI support pricing) — /blog/ai-customer-support-pricing-per-resolution
 - [2026-07-23] CAC vs LTV for small ecommerce stores: a plain-English guide — /blog/cac-vs-ltv-small-ecommerce-stores
+- [2026-07-24] AI product photography for Shopify stores: a practical guide (competitor-trend: Shopify/Tidio/digitalcommerce360 2026 AI product imagery push) — /blog/ai-product-photography-for-shopify-stores
+- [2026-07-24] Conversational commerce for small stores: turning chat into sales (competitor-trend: Gorgias 2026 Conversational Commerce Trends Report + Klaviyo autonomous AI marketing push) — /blog/conversational-commerce-for-small-stores
+- [2026-07-24] Why your Shopify conversion rate dropped and how to diagnose it — /blog/why-shopify-conversion-rate-dropped-diagnose
