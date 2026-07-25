@@ -13,7 +13,6 @@ Format:
 
 ## Pending
 
-- Post-purchase email flows that bring customers back
 - Win-back campaigns: reactivating customers who stopped buying
 - How to handle returns without losing the customer
 - Free shipping thresholds: how to set yours with real math
@@ -86,3 +85,6 @@ Format:
 - [2026-07-24] AI product photography for Shopify stores: a practical guide (competitor-trend: Shopify/Tidio/digitalcommerce360 2026 AI product imagery push) — /blog/ai-product-photography-for-shopify-stores
 - [2026-07-24] Conversational commerce for small stores: turning chat into sales (competitor-trend: Gorgias 2026 Conversational Commerce Trends Report + Klaviyo autonomous AI marketing push) — /blog/conversational-commerce-for-small-stores
 - [2026-07-24] Why your Shopify conversion rate dropped and how to diagnose it — /blog/why-shopify-conversion-rate-dropped-diagnose
+- [2026-07-25] AI visual search for Shopify stores: getting found when customers search with a photo (competitor-trend: Shopify AI/multimodal push + visual search market growth) — /blog/ai-visual-search-for-shopify-stores
+- [2026-07-25] TikTok Shop live shopping for small stores (competitor-trend: Shopify livestream shopping guides + TikTok Shop live commerce growth) — /blog/tiktok-shop-live-shopping-for-small-stores
+- [2026-07-25] Post-purchase email flows that bring customers back — /blog/post-purchase-email-flows-that-bring-customers-back
