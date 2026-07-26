@@ -13,7 +13,6 @@ Format:
 
 ## Pending
 
-- Win-back campaigns: reactivating customers who stopped buying
 - How to handle returns without losing the customer
 - Free shipping thresholds: how to set yours with real math
 - Product page mistakes that quietly kill conversions
@@ -88,3 +87,6 @@ Format:
 - [2026-07-25] AI visual search for Shopify stores: getting found when customers search with a photo (competitor-trend: Shopify AI/multimodal push + visual search market growth) — /blog/ai-visual-search-for-shopify-stores
 - [2026-07-25] TikTok Shop live shopping for small stores (competitor-trend: Shopify livestream shopping guides + TikTok Shop live commerce growth) — /blog/tiktok-shop-live-shopping-for-small-stores
 - [2026-07-25] Post-purchase email flows that bring customers back — /blog/post-purchase-email-flows-that-bring-customers-back
+- [2026-07-26] AI shopping agents can now buy from your Shopify store: a practical guide (competitor-trend: Shopify/Google Universal Commerce Protocol default-on rollout + agentic checkout growth stats) — /blog/ai-shopping-agents-shopify-store-guide
+- [2026-07-26] Turning Instagram comments and DMs into sales for your Shopify store (competitor-trend: Klaviyo Social Marketing general availability + comment-to-DM conversion data) — /blog/instagram-comments-dms-into-sales-shopify
+- [2026-07-26] Win-back campaigns: how to reactivate customers who stopped buying — /blog/win-back-campaigns-reactivate-customers
