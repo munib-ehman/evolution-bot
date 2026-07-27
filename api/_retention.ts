@@ -17,6 +17,7 @@
  */
 import { GROQ_BASE, CHAT_MODEL_DEFAULT } from "./_shared";
 import { resolveUserFull } from "./_audit";
+import { isOperator, OPERATOR_REQUIRED } from "./_plan";
 import { getConnection, type ShopifyEnv } from "./_shopify";
 import { fetchLapsedCustomers, fetchRecentBuyers, fetchShopCurrency } from "./_shopifyData";
 import { protectedDataResult } from "./_recovery";
@@ -97,6 +98,7 @@ export async function runRetentionCustomers(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResult(401, { error: "Sign in first." });
+  if (!(await isOperator(env, user.id))) return { ...OPERATOR_REQUIRED };
 
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResult(409, { error: "Connect your Shopify store first." });
@@ -172,6 +174,7 @@ export async function runRetentionDraft(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResult(401, { error: "Sign in first." });
+  if (!(await isOperator(env, user.id))) return { ...OPERATOR_REQUIRED };
 
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResult(409, { error: "Connect your Shopify store first." });

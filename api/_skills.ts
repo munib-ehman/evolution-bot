@@ -21,6 +21,7 @@
  */
 import { GROQ_BASE, CHAT_MODEL_DEFAULT, RESEARCH_MODEL_DEFAULT } from "./_shared";
 import { resolveUserFull } from "./_audit";
+import { isOperator, OPERATOR_REQUIRED } from "./_plan";
 import { getConnection, shopifyEnvFromProcess } from "./_shopify";
 import { SKILL_TOOLS, type SkillEnv, type ToolCtx } from "./_skillTools";
 import { sendTaskEmail } from "./_email";
@@ -187,6 +188,9 @@ export async function runSkill(
 
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResponse(401, { error: "Sign in to run skills." });
+  if (!(await isOperator(env, user.id))) {
+    return jsonResponse(OPERATOR_REQUIRED.status, { ...OPERATOR_REQUIRED.body });
+  }
 
   const conn = await getConnection(env, user.id);
   if (skill.kind === "agentic" && !conn) {
