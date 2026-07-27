@@ -686,7 +686,7 @@ export async function runAudit(
     log("warn", "audit", "rate_limited", { authed: Boolean(userId) });
     return {
       status: 429,
-      body: { error: "That's a lot of audits in a row — try again in an hour, or email us and a founder will run one by hand." },
+      body: { error: "That's a lot of audits in a row — try again in an hour, or email us for help." },
     };
   }
 
@@ -709,7 +709,7 @@ export async function runAudit(
   if (!publicSurface && !deep) {
     return {
       status: 422,
-      body: { error: "We couldn't reach that store. Check the URL — or if your store blocks bots, email us and a founder will run the audit by hand." },
+      body: { error: "We couldn't reach that store. Check the URL — or if your store blocks bots, email us for help getting connected." },
     };
   }
 

@@ -97,8 +97,8 @@ const footer = `    <footer class="page-footer">
         <a href="/privacy">Privacy</a>
       </nav>
       <p>
-        evolution — <a href="mailto:subhan@runevolution.io">subhan@runevolution.io</a> ·
-        <a href="mailto:muneeb@runevolution.io">muneeb@runevolution.io</a>
+        Evolution by RunEvolution · Operated by Subhan Ahmed, Pakistan ·
+        <a href="mailto:subhan@runevolution.io">subhan@runevolution.io</a>
       </p>
     </footer>`;
 
