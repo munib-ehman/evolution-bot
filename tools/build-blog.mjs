@@ -96,10 +96,7 @@ const footer = `    <footer class="page-footer">
         <a href="/terms">Terms</a> ·
         <a href="/privacy">Privacy</a>
       </nav>
-      <p>
-        Evolution by RunEvolution · Operated by Subhan Ahmed, Pakistan ·
-        <a href="mailto:subhan@runevolution.io">subhan@runevolution.io</a>
-      </p>
+      <p>Evolution by RunEvolution</p>
     </footer>`;
 
 const head = ({ title, description, url, extra = "" }) => `  <meta charset="UTF-8" />
