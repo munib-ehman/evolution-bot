@@ -88,7 +88,7 @@ export function UpgradePanel({
 
         {plan === "operator" ? (
           <p className="overlay-lede">
-            The operator is on the job — file tasks and Evolution works through them.{" "}
+            Your operator is running — the software executes the busywork and you approve every action.{" "}
             {shopDomain
               ? "Manage or cancel the subscription any time from your Shopify admin."
               : "Cancel anytime from your Polar receipt email, or email us."}
@@ -99,9 +99,11 @@ export function UpgradePanel({
               <strong>$100</strong>/month · cancel anytime
             </p>
             <ul className="plan-list">
-              <li>All six tools, fulfilled for you: product research, cart recovery, support, retention, back-in-stock, true profit.</li>
-              <li>Evolution does the work — you approve, it ships.</li>
-              <li>You only pay when it works. No setup fees.</li>
+              <li>Automated cart recovery</li>
+              <li>Automated customer retention (win-backs + review requests)</li>
+              <li>Fulfillment operations dashboard</li>
+              <li>One dashboard, with your approval on every action</li>
+              <li>Instant access the moment you subscribe. 14-day money-back guarantee.</li>
             </ul>
             {shopDomain === undefined ? null : shopDomain ? (
               // Shopify-connected → Shopify App Pricing is the ONLY checkout
