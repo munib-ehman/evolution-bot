@@ -8,43 +8,19 @@
  *   the app's plan page inside their Shopify admin and the
  *   app_subscriptions/update webhook flips profiles.plan when they approve.
  *
- *   Everyone else gets the Paddle overlay checkout if the client vars are
- *   configured (sandbox or live — same code, only the token changes), and a
- *   contact CTA until then (the team flips profiles.plan by hand).
+ *   Everyone else gets Polar hosted checkout (merchant of record) when the
+ *   server has the Polar vars configured — /api/polar-checkout mints the
+ *   session and the polar-webhook flips profiles.plan on subscription.active.
+ *   Until it's configured, a contact CTA (the team flips the plan by hand).
  */
 import { useEffect, useState } from "react";
 import type { Plan } from "../lib/store";
 import { getShopifyStatus } from "../lib/shopify";
 import { isEmbedded } from "../lib/embedded";
+import { supabase } from "../lib/auth";
 
-const PADDLE_TOKEN = (import.meta.env.VITE_PADDLE_CLIENT_TOKEN ?? "").trim();
-const PADDLE_PRICE_ID = (import.meta.env.VITE_PADDLE_PRICE_ID ?? "").trim();
 /** The app's handle on the Shopify App Store (Partner Dashboard → app URL slug). */
 const SHOPIFY_APP_HANDLE = (import.meta.env.VITE_SHOPIFY_APP_HANDLE ?? "").trim();
-
-declare global {
-  interface Window {
-    Paddle?: {
-      Initialize: (opts: { token: string }) => void;
-      Checkout: { open: (opts: { items: { priceId: string; quantity: number }[] }) => void };
-    };
-  }
-}
-
-let paddleLoaded: Promise<void> | null = null;
-function loadPaddle(): Promise<void> {
-  paddleLoaded ??= new Promise<void>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://cdn.paddle.com/paddle/v2/paddle.js";
-    script.onload = () => {
-      window.Paddle?.Initialize({ token: PADDLE_TOKEN });
-      resolve();
-    };
-    script.onerror = () => reject(new Error("Couldn't load the payment form."));
-    document.head.appendChild(script);
-  });
-  return paddleLoaded;
-}
 
 export function UpgradePanel({
   open,
@@ -58,17 +34,22 @@ export function UpgradePanel({
   email: string | null;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   // undefined = still looking the connection up; null = not connected.
   const [shopDomain, setShopDomain] = useState<string | null | undefined>(undefined);
+  // undefined = probing /api/polar-checkout; false = not deployed/configured.
+  const [polarReady, setPolarReady] = useState<boolean | undefined>(undefined);
 
   useEffect(() => {
     if (!open) return;
     void getShopifyStatus().then((status) => setShopDomain(status?.shop_domain ?? null));
+    void fetch("/api/polar-checkout", { method: "GET" })
+      .then((res) => setPolarReady(res.status === 204))
+      .catch(() => setPolarReady(false));
   }, [open]);
 
   if (!open) return null;
 
-  const paddleReady = Boolean(PADDLE_TOKEN && PADDLE_PRICE_ID);
   const storeHandle = shopDomain ? shopDomain.replace(".myshopify.com", "") : null;
   const shopifyPricingUrl =
     storeHandle && SHOPIFY_APP_HANDLE
@@ -76,11 +57,22 @@ export function UpgradePanel({
       : null;
 
   const checkout = async () => {
+    setBusy(true);
+    setError(null);
     try {
-      await loadPaddle();
-      window.Paddle?.Checkout.open({ items: [{ priceId: PADDLE_PRICE_ID, quantity: 1 }] });
+      const { data } = (await supabase?.auth.getSession()) ?? { data: null };
+      const token = data?.session?.access_token;
+      if (!token) throw new Error("Sign in first, then try again.");
+      const res = await fetch("/api/polar-checkout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!res.ok || !body.url) throw new Error(body.error ?? "Couldn't open checkout.");
+      window.location.href = body.url;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't open checkout.");
+      setBusy(false);
     }
   };
 
@@ -99,7 +91,7 @@ export function UpgradePanel({
             The operator is on the job — file tasks and Evolution works through them.{" "}
             {shopDomain
               ? "Manage or cancel the subscription any time from your Shopify admin."
-              : "Cancel anytime by emailing us."}
+              : "Cancel anytime from your Polar receipt email, or email us."}
           </p>
         ) : (
           <>
@@ -132,11 +124,11 @@ export function UpgradePanel({
                   Email us to activate — we set you up same-day
                 </a>
               )
-            ) : paddleReady ? (
-              <button type="button" className="primary" onClick={() => void checkout()}>
-                Start with the Operator
+            ) : polarReady ? (
+              <button type="button" className="primary" disabled={busy} onClick={() => void checkout()}>
+                {busy ? "Opening checkout…" : "Start with the Operator"}
               </button>
-            ) : (
+            ) : polarReady === undefined ? null : (
               <a
                 className="primary as-link"
                 href={`mailto:muneeb@runevolution.io?subject=Operator%20plan&body=I%20want%20the%20Operator%20plan.%20My%20account%3A%20${encodeURIComponent(email ?? "")}`}

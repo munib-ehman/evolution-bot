@@ -30,6 +30,7 @@ import { handleShopifyWebhook, runOpsLiveSetup } from "./api/_events";
 import { handleShopifyCompliance } from "./api/_compliance";
 import { runShopifySession } from "./api/_embedded";
 import { runAgentChat, type AgentChatBody } from "./api/_agentChat";
+import { runPolarCheckout, handlePolarWebhook, polarConfigured, type PolarEnv } from "./api/_polar";
 import type { SkillEnv } from "./api/_skillTools";
 import { sendTaskEmail } from "./api/_email";
 
@@ -85,6 +86,7 @@ export function devApi(): Plugin {
   let ttsModel = TTS_MODEL_DEFAULT;
   let auditEnv: ShopifyEnv = {};
   let skillEnv: SkillEnv = {};
+  let polarEnv: PolarEnv = {};
 
   return {
     name: "dev-api",
@@ -108,6 +110,13 @@ export function devApi(): Plugin {
         resendKey: (env.RESEND_API_KEY ?? "").trim(),
         resendFrom: (env.RESEND_FROM ?? "").trim(),
         teamEmails: (env.TEAM_NOTIFY_EMAILS ?? "").trim(),
+      };
+      polarEnv = {
+        ...auditEnv,
+        polarToken: (env.POLAR_ACCESS_TOKEN ?? "").trim(),
+        polarProductId: (env.POLAR_PRODUCT_ID ?? "").trim(),
+        polarWebhookSecret: (env.POLAR_WEBHOOK_SECRET ?? "").trim(),
+        polarApiBase: (env.POLAR_API_BASE ?? "").trim() || "https://api.polar.sh",
       };
       if (!key) {
         server.config.logger.warn(
@@ -512,6 +521,47 @@ export function devApi(): Plugin {
             }
           }
           send(res, 204);
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/polar-checkout", (req, res) => {
+        void (async () => {
+          if (req.method === "GET") return send(res, polarConfigured(polarEnv) ? 204 : 503);
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const origin = `http://${req.headers.host ?? "localhost:5173"}`;
+          const { status, body } = await runPolarCheckout(auth, origin, polarEnv);
+          res.statusCode = status;
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader("Cache-Control", "no-store");
+          res.end(JSON.stringify(body));
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/polar-webhook", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          const rawBody = await readBody(req);
+          const header = (name: string) =>
+            typeof req.headers[name] === "string" ? (req.headers[name] as string) : null;
+          const { status, body } = await handlePolarWebhook(
+            rawBody,
+            {
+              id: header("webhook-id"),
+              timestamp: header("webhook-timestamp"),
+              signature: header("webhook-signature"),
+            },
+            polarEnv,
+          );
+          res.statusCode = status;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify(body));
         })().catch((err) => {
           if (!res.headersSent) send(res, 500, String(err));
           else res.end();
