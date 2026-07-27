@@ -7,10 +7,12 @@
 # the three mandatory GDPR endpoints App Store review probes automatically.
 
 name = "Evolution"
-client_id = "REPLACE_WITH_SHOPIFY_API_KEY"
+client_id = "dcc254cec11e1d4056cea1b81bf02f18"
 application_url = "https://www.runevolution.io/app"
 embedded = true
-handle = "evolution"
+# App Store URL slug (apps.shopify.com/runevolution) — "evolution" was taken.
+# Must match VITE_SHOPIFY_APP_HANDLE on Vercel (pricing deep link).
+handle = "runevolution"
 
 [access_scopes]
 scopes = "read_products,read_orders,read_checkouts,read_customers"
