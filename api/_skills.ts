@@ -24,6 +24,7 @@ import { resolveUserFull } from "./_audit";
 import { getConnection, shopifyEnvFromProcess } from "./_shopify";
 import { SKILL_TOOLS, type SkillEnv, type ToolCtx } from "./_skillTools";
 import { sendTaskEmail } from "./_email";
+import { log } from "./_log";
 
 /** Keep ids in lockstep with the client mirror in src/lib/skills.ts. */
 export interface SkillDef {
@@ -327,6 +328,7 @@ async function runAgentic(
   });
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => "");
+    log("error", "skill", "groq_upstream", { skill: skill.label, status: upstream.status });
     // Research runs pull big search contexts through Groq; on tight token
     // windows that surfaces as 413/429. Say "retry" — not Groq's billing copy.
     if (skill.web && (upstream.status === 413 || upstream.status === 429)) {

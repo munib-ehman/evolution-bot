@@ -29,6 +29,7 @@ import {
 import { resolveUserFull } from "./_audit";
 import { getConnection } from "./_shopify";
 import { SKILL_TOOLS, buildProductsDigest, type SkillEnv, type ToolCtx } from "./_skillTools";
+import { log } from "./_log";
 
 /**
  * Tools the chat may call — read-only store data. file_task is deliberately
@@ -200,6 +201,7 @@ export async function runAgentChat(
           });
           if (!res.ok) {
             const detail = await res.text().catch(() => "");
+            log("error", "agent-chat", "groq_upstream", { status: res.status, round });
             controller.enqueue(
               sse({
                 error:
@@ -252,6 +254,7 @@ export async function runAgentChat(
           }
         }
       } catch (err) {
+        log("error", "agent-chat", "run_failed", { reason: String(err).slice(0, 160) });
         controller.enqueue(sse({ error: `Chat failed: ${String(err).slice(0, 160)}` }));
       } finally {
         controller.enqueue(sseDone);

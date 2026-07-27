@@ -11,6 +11,7 @@
  * GROQ_API_KEY — prose falls back to templates).
  */
 import { runAudit } from "./_audit";
+import { clientIpFrom } from "./_ratelimit";
 // The full Shopify env (not just AuditEnv): the deep audit's getConnection
 // needs the app creds to auto-refresh expiring Admin API tokens.
 import { shopifyEnvFromProcess } from "./_shopify";
@@ -35,7 +36,12 @@ export default async function handler(req: Request): Promise<Response> {
     });
   }
 
-  const { status, body } = await runAudit(url, req.headers.get("authorization"), shopifyEnvFromProcess());
+  const { status, body } = await runAudit(
+    url,
+    req.headers.get("authorization"),
+    shopifyEnvFromProcess(),
+    clientIpFrom(req.headers),
+  );
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },

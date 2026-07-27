@@ -14,10 +14,26 @@
  * the local engine.
  */
 import { speechEngine } from "../audio/speechEngine";
+import { supabase } from "../lib/auth";
 import type { SpeakOptions, StreamingSpeaker } from "./kokoro";
 
 /** Mirrors TTS_MAX_CHARS in api/_shared.ts (Orpheus's per-request cap). */
 const MAX_CHARS = 200;
+
+/** POST headers with the signed-in user's bearer (the API requires it). */
+async function ttsHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (supabase) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) headers.Authorization = `Bearer ${token}`;
+    } catch {
+      /* fall through — the request will 401 and the caller falls back */
+    }
+  }
+  return headers;
+}
 
 let availability: Promise<boolean> | null = null;
 
@@ -42,9 +58,12 @@ export function serverTtsAvailable(): Promise<boolean> {
  */
 export async function warmUpServerTts(voice?: string): Promise<void> {
   try {
+    const headers = await ttsHeaders();
+    // Signed out on an auth-gated build: the warm-up would just 401.
+    if (supabase && !headers.Authorization) return;
     await fetch("/api/tts", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ text: "Hi!", voice }),
     });
   } catch {
@@ -112,7 +131,7 @@ export function createServerSpeaker(opts: SpeakOptions = {}): StreamingSpeaker {
         const text = queue.shift()!;
         const res = await fetch("/api/tts", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await ttsHeaders(),
           body: JSON.stringify({ text, voice }),
           signal,
         });

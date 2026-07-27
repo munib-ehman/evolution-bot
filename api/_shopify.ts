@@ -12,6 +12,7 @@
  * asks for read scopes — Evolution can look, not touch.
  */
 import { resolveUser, type AuditEnv } from "./_audit";
+import { log } from "./_log";
 
 export const SHOPIFY_API_VERSION = "2026-04";
 export const SHOPIFY_SCOPES_DEFAULT = "read_products,read_orders,read_checkouts,read_customers";
@@ -157,7 +158,13 @@ export async function runShopifyCallback(
   requestUrl: URL,
   env: ShopifyEnv,
 ): Promise<{ redirect: string }> {
-  const fail = (reason: string) => ({ redirect: `/app?shopify=error&reason=${encodeURIComponent(reason)}` });
+  const fail = (reason: string) => {
+    log("warn", "shopify-callback", "oauth_callback_failed", {
+      reason,
+      shop: requestUrl.searchParams.get("shop"),
+    });
+    return { redirect: `/app?shopify=error&reason=${encodeURIComponent(reason)}` };
+  };
   if (!env.shopifyApiKey || !env.shopifyApiSecret) return fail("not-configured");
 
   const params = requestUrl.searchParams;
@@ -366,14 +373,20 @@ async function refreshConnection(
       }),
       signal: AbortSignal.timeout(8_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      log("error", "shopify", "token_refresh_failed", { shop: conn.shop_domain, status: res.status });
+      return null;
+    }
     const data = (await res.json()) as {
       access_token?: string;
       expires_in?: number;
       refresh_token?: string;
       refresh_token_expires_in?: number;
     };
-    if (!data.access_token) return null;
+    if (!data.access_token) {
+      log("error", "shopify", "token_refresh_failed", { shop: conn.shop_domain, reason: "no-token" });
+      return null;
+    }
 
     const fresh: ShopifyConnection = {
       shop_domain: conn.shop_domain,
@@ -396,9 +409,12 @@ async function refreshConnection(
         refresh_token_expires_at: expiryIso(data.refresh_token_expires_in),
       }),
       signal: AbortSignal.timeout(6_000),
-    }).catch(() => {});
+    }).catch(() => {
+      log("warn", "shopify", "token_persist_failed", { shop: conn.shop_domain });
+    });
     return fresh;
   } catch {
+    log("error", "shopify", "token_refresh_failed", { shop: conn.shop_domain, reason: "network" });
     return null;
   }
 }

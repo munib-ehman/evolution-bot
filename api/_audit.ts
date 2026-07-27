@@ -14,6 +14,8 @@
 import { GROQ_BASE, CHAT_MODEL_DEFAULT } from "./_shared";
 import { getConnection, type ShopifyConnection } from "./_shopify";
 import { fetchOrdersWindow, fetchAbandonedCheckoutsWindow, fetchShopCurrency } from "./_shopifyData";
+import { checkRateLimit, hashKey } from "./_ratelimit";
+import { log } from "./_log";
 
 /** Per-request fetch timeout (homepage and products.json run in parallel). */
 export const AUDIT_FETCH_TIMEOUT_MS = 8_000;
@@ -652,18 +654,45 @@ export async function persistAudit(env: AuditEnv, report: AuditReport, userId: s
 // ---------------------------------------------------------------------------
 // Orchestrator — the whole pipeline, shared verbatim by edge and dev
 
+/** Signed-in owners audit their own store repeatedly while iterating. */
+const AUDIT_LIMIT_USER_PER_HOUR = 30;
+/** Anonymous funnel visitors rarely need more than a handful. */
+const AUDIT_LIMIT_IP_PER_HOUR = 6;
+
 export async function runAudit(
   rawUrl: unknown,
   authHeader: string | null,
   env: AuditEnv,
+  clientIp: string | null,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const normalized = normalizeStoreUrl(rawUrl);
   if ("error" in normalized) return { status: 400, body: { error: normalized.error } };
 
+  const userId = await resolveUser(env, authHeader);
+
+  // Each audit costs storefront fetches + a Groq call + a DB row, and the
+  // endpoint must stay public (it's the lead funnel) — so hit the fixed-window
+  // limiter before any of that. checkRateLimit fails open.
+  const rlKey = userId
+    ? `audit:u:${userId}`
+    : `audit:ip:${await hashKey(clientIp ?? "unknown")}`;
+  const allowed = await checkRateLimit(
+    env,
+    rlKey,
+    3_600,
+    userId ? AUDIT_LIMIT_USER_PER_HOUR : AUDIT_LIMIT_IP_PER_HOUR,
+  );
+  if (!allowed) {
+    log("warn", "audit", "rate_limited", { authed: Boolean(userId) });
+    return {
+      status: 429,
+      body: { error: "That's a lot of audits in a row — try again in an hour, or email us and a founder will run one by hand." },
+    };
+  }
+
   // Public scan and (for signed-in owners with a Shopify connection) the
   // authenticated deep scan run in parallel — neither waits on the other.
   const snapshotPromise = fetchStore(normalized.host);
-  const userId = await resolveUser(env, authHeader);
   const conn = userId ? await getConnection(env, userId) : null;
   const [snapshot, deep] = await Promise.all([
     snapshotPromise,

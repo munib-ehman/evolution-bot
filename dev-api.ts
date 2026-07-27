@@ -18,6 +18,8 @@ import {
   mapVoice,
 } from "./api/_shared";
 import { runAudit, resolveUserFull } from "./api/_audit";
+import { requireUser } from "./api/_auth";
+import { checkRateLimit } from "./api/_ratelimit";
 import { runShopifyAuthStart, runShopifyCallback, runShopifyDisconnect, type ShopifyEnv } from "./api/_shopify";
 import { runSkill, type SkillRunBody } from "./api/_skills";
 import { runStoreCatalog } from "./api/_catalog";
@@ -118,6 +120,13 @@ export function devApi(): Plugin {
           if (req.method === "GET") return send(res, key ? 204 : 503);
           if (req.method !== "POST") return send(res, 405, "Method not allowed");
           if (!key) return send(res, 503, "LLM proxy not configured.");
+          const chatAuthHeader =
+            typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const chatAuth = await requireUser(chatAuthHeader, auditEnv);
+          if (!chatAuth.ok) return send(res, 401, "Sign in to use the assistant.");
+          if (chatAuth.userId && !(await checkRateLimit(auditEnv, `chat:u:${chatAuth.userId}`, 3_600, 120))) {
+            return send(res, 429, "You're sending messages very fast — give it a minute and try again.");
+          }
           let messages: { role: string; content: string }[];
           try {
             const body = JSON.parse(await readBody(req)) as { messages?: unknown };
@@ -142,6 +151,7 @@ export function devApi(): Plugin {
               max_tokens: CHAT_MAX_COMPLETION_TOKENS,
               stream: true,
             }),
+            signal: AbortSignal.timeout(55_000),
           });
           await pipeUpstream(res, upstream, "text/event-stream");
         })().catch((err) => {
@@ -163,7 +173,7 @@ export function devApi(): Plugin {
             return res.end(JSON.stringify({ error: "Invalid request body." }));
           }
           const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
-          const { status, body } = await runAudit(url, auth, auditEnv);
+          const { status, body } = await runAudit(url, auth, auditEnv, req.socket.remoteAddress ?? null);
           res.statusCode = status;
           res.setHeader("Content-Type", "application/json");
           res.setHeader("Cache-Control", "no-store");
@@ -511,6 +521,10 @@ export function devApi(): Plugin {
           if (req.method === "GET") return send(res, key ? 204 : 503);
           if (req.method !== "POST") return send(res, 405, "Method not allowed");
           if (!key) return send(res, 503, "TTS proxy not configured.");
+          const ttsAuthHeader =
+            typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const ttsAuth = await requireUser(ttsAuthHeader, auditEnv);
+          if (!ttsAuth.ok) return send(res, 401, "Sign in to use voice.");
           let text = "";
           let voice: string | undefined;
           try {
@@ -528,6 +542,7 @@ export function devApi(): Plugin {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
             body: JSON.stringify({ model: ttsModel, voice: mapVoice(voice), input: text, response_format: "wav" }),
+            signal: AbortSignal.timeout(30_000),
           });
           await pipeUpstream(res, upstream, "audio/wav");
         })().catch((err) => {

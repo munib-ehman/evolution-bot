@@ -6,6 +6,10 @@
  * into the public bundle). The client sends OpenAI-shaped messages; we
  * forward to Groq with stream:true and pipe the SSE body straight back.
  *
+ * POST requires the caller's Supabase bearer (every production caller sits
+ * behind AuthGate). On a demo deployment with no Supabase configured the
+ * route stays open — that build has no login gate at all.
+ *
  * GET is a health probe: 204 = configured, 503 = key missing.
  */
 import {
@@ -15,8 +19,15 @@ import {
   CHAT_MAX_TOTAL_CHARS,
   CHAT_MAX_COMPLETION_TOKENS,
 } from "./_shared";
+import { requireUser, sameOriginOk } from "./_auth";
+import { checkRateLimit } from "./_ratelimit";
+import { routeLogger } from "./_log";
 
 export const config = { runtime: "edge" };
+
+/** 600 completion tokens finish far sooner; this caps stalls and runaways. */
+export const CHAT_UPSTREAM_TIMEOUT_MS = 55_000;
+export const CHAT_LIMIT_PER_HOUR = 120;
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -36,6 +47,28 @@ export default async function handler(req: Request): Promise<Response> {
   }
   if (!key) {
     return new Response("LLM proxy not configured (missing GROQ_API_KEY).", { status: 503 });
+  }
+
+  const logger = routeLogger("chat");
+  if (!sameOriginOk(req)) {
+    logger.warn("cross_origin_blocked", {});
+    return new Response("Forbidden.", { status: 403 });
+  }
+
+  const authEnv = {
+    supabaseUrl: (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim(),
+    serviceRoleKey: (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim(),
+  };
+  const auth = await requireUser(req.headers.get("authorization"), authEnv);
+  if (!auth.ok) {
+    logger.warn("unauthorized", {});
+    return new Response("Sign in to use the assistant.", { status: 401 });
+  }
+  if (auth.userId && !(await checkRateLimit(authEnv, `chat:u:${auth.userId}`, 3_600, CHAT_LIMIT_PER_HOUR))) {
+    logger.warn("rate_limited", { userId: auth.userId });
+    return new Response("You're sending messages very fast — give it a minute and try again.", {
+      status: 429,
+    });
   }
 
   let messages: ChatMessage[];
@@ -61,23 +94,31 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response("Conversation too large.", { status: 400 });
   }
 
-  const upstream = await fetch(`${GROQ_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: (process.env.GROQ_CHAT_MODEL ?? "").trim() || CHAT_MODEL_DEFAULT,
-      messages,
-      temperature: 0.7,
-      max_tokens: CHAT_MAX_COMPLETION_TOKENS,
-      stream: true,
-    }),
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${GROQ_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: (process.env.GROQ_CHAT_MODEL ?? "").trim() || CHAT_MODEL_DEFAULT,
+        messages,
+        temperature: 0.7,
+        max_tokens: CHAT_MAX_COMPLETION_TOKENS,
+        stream: true,
+      }),
+      signal: AbortSignal.timeout(CHAT_UPSTREAM_TIMEOUT_MS),
+    });
+  } catch {
+    logger.error("groq_upstream", { reason: "timeout_or_network" });
+    return new Response("The assistant took too long to answer — try again.", { status: 504 });
+  }
 
   if (!upstream.ok) {
     const detail = await upstream.text().catch(() => "");
+    logger.error("groq_upstream", { status: upstream.status });
     return new Response(`Upstream LLM error (${upstream.status}). ${detail.slice(0, 200)}`, {
       status: 502,
     });

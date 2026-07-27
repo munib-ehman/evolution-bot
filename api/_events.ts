@@ -20,6 +20,7 @@
 import { resolveUserFull } from "./_audit";
 import { getConnection, type ShopifyEnv } from "./_shopify";
 import { fetchInventoryWatch } from "./_shopifyData";
+import { log } from "./_log";
 
 function jsonResult(status: number, body: Record<string, unknown>) {
   return { status, body };
@@ -75,6 +76,7 @@ async function insertEvents(env: ShopifyEnv, rows: StoreEventInsert[]): Promise<
     });
   } catch {
     /* webhook must still 200 — a lost event is better than a retry storm */
+    log("warn", "webhook", "event_insert_failed", { userId: rows[0]?.user_id, count: rows.length });
   }
 }
 
@@ -148,7 +150,10 @@ export async function handleShopifyWebhook(
   env: ShopifyEnv,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const ok = await verifyWebhookHmac(env.shopifyApiSecret ?? "", rawBody, headers.hmac);
-  if (!ok) return jsonResult(401, { error: "Invalid webhook signature." });
+  if (!ok) {
+    log("warn", "webhook", "hmac_rejected", { topic: headers.topic, shop: headers.shop });
+    return jsonResult(401, { error: "Invalid webhook signature." });
+  }
 
   const shop = (headers.shop ?? "").trim().toLowerCase();
   const userId = shop ? await lookupUserByShop(env, shop) : null;
@@ -267,7 +272,12 @@ async function handleAppUninstalled(env: ShopifyEnv, shop: string, userId: strin
       signal: AbortSignal.timeout(6_000),
     },
   );
-  await Promise.all([patchConn, dropStore, downgrade].map((p) => p.catch(() => {})));
+  const steps = ["tombstone_connection", "drop_store", "downgrade_plan"];
+  await Promise.all(
+    [patchConn, dropStore, downgrade].map((p, i) =>
+      p.catch(() => log("warn", "webhook", "uninstall_step_failed", { shop, step: steps[i] })),
+    ),
+  );
 }
 
 /**
@@ -306,6 +316,7 @@ async function handleSubscriptionUpdate(env: ShopifyEnv, rawBody: string, userId
     });
   } catch {
     /* webhook must still 200 — the next session-token exchange re-syncs */
+    log("warn", "webhook", "plan_sync_failed", { userId, status });
   }
 }
 

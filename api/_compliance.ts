@@ -24,6 +24,7 @@
 import { verifyWebhookHmac, lookupUserByShop } from "./_events";
 import { isProvisionedEmail } from "./_embedded";
 import { sendTaskEmail } from "./_email";
+import { log } from "./_log";
 import type { SkillEnv } from "./_skillTools";
 
 interface CompliancePayload {
@@ -63,6 +64,7 @@ async function logComplianceTask(
       });
     } catch {
       /* email below still goes out */
+      log("warn", "compliance", "task_insert_failed", { topic, shop });
     }
   }
   await sendTaskEmail(env, {
@@ -119,6 +121,7 @@ async function redactShop(env: SkillEnv, shop: string, userId: string): Promise<
     }
   } catch {
     /* connection + data are already gone — user cleanup can be manual */
+    log("warn", "compliance", "auth_user_cleanup_failed", { shop, userId });
   }
 }
 
@@ -128,7 +131,10 @@ export async function handleShopifyCompliance(
   env: SkillEnv,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const ok = await verifyWebhookHmac(env.shopifyApiSecret ?? "", rawBody, headers.hmac);
-  if (!ok) return jsonResult(401, { error: "Invalid webhook signature." });
+  if (!ok) {
+    log("warn", "compliance", "hmac_rejected", { topic: headers.topic, shop: headers.shop });
+    return jsonResult(401, { error: "Invalid webhook signature." });
+  }
 
   let payload: CompliancePayload = {};
   try {

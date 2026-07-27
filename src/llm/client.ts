@@ -11,6 +11,7 @@
  * then it's designed around free tiers (or a fully-local server).
  */
 import type { Message, Product } from "../types";
+import { supabase } from "../lib/auth";
 import { llmConfig, isMockMode } from "./config";
 import { SYSTEM_PROMPT, buildProductContext } from "./systemPrompt";
 import { retrieveRelevant, formatProducts } from "./retrieval";
@@ -85,20 +86,39 @@ export async function getAssistantReply(
 
 type ApiMessage = { role: "system" | "user" | "assistant"; content: string };
 
+/** The signed-in user's access token, when auth is configured. */
+async function sessionToken(): Promise<string | null> {
+  if (!supabase) return null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Call our serverless proxy; throws (and remembers) when it isn't deployed. */
 async function proxyReply(apiMessages: ApiMessage[], options: ChatOptions): Promise<string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = await sessionToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
   const res = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ messages: apiMessages }),
     signal: options.signal,
   });
 
   // 404/405 = not deployed (static host), 503 = deployed but no key. Remember
-  // so later turns skip the probe entirely.
+  // so later turns skip the probe entirely. 401/429 are transient (signed
+  // out / sending too fast) — throw without marking the proxy unusable.
   if (res.status === 404 || res.status === 405 || res.status === 503) {
     chatProxyUsable = false;
     throw new Error(`LLM proxy unavailable (${res.status}).`);
+  }
+  if (res.status === 429) {
+    throw new Error("You're sending messages very fast — give it a minute and try again.");
   }
   if (!res.ok) {
     const detail = await res.text().catch(() => "");

@@ -31,6 +31,7 @@ import {
   shopifyGraphql,
   type ShopifyEnv,
 } from "./_shopify";
+import { log } from "./_log";
 
 /** Synthetic-address domain for users auto-provisioned from a Shopify install. */
 export const PROVISIONED_EMAIL_DOMAIN = "users.runevolution.io";
@@ -319,7 +320,10 @@ export async function runShopifySession(
   }
   const sessionToken = typeof body.sessionToken === "string" ? body.sessionToken : "";
   const shop = sessionToken ? await verifySessionToken(sessionToken, env) : null;
-  if (!shop) return { status: 401, body: { error: "Invalid Shopify session." } };
+  if (!shop) {
+    log("warn", "shopify-session", "embedded_session_failed", { step: "verify-token" });
+    return { status: 401, body: { error: "Invalid Shopify session." } };
+  }
 
   // Who owns this shop? (Tombstoned rows still map shop → user.)
   let userId: string | null = null;
@@ -341,7 +345,10 @@ export async function runShopifySession(
 
   if (userId) {
     email = await getUserEmail(env, userId);
-    if (!email) return { status: 502, body: { error: "Couldn't load your account — try again." } };
+    if (!email) {
+      log("warn", "shopify-session", "embedded_session_failed", { shop, step: "load-account" });
+      return { status: 502, body: { error: "Couldn't load your account — try again." } };
+    }
   } else {
     // First install: provision the account. If the auth user already exists
     // (e.g. connection row was redacted but the user survived), the create
@@ -356,17 +363,26 @@ export async function runShopifySession(
   let fields: Awaited<ReturnType<typeof exchangeSessionToken>> = null;
   if (!existingConn) {
     fields = await exchangeSessionToken(shop, sessionToken, env);
-    if (!fields) return { status: 502, body: { error: "Couldn't connect to your store — reopen the app." } };
+    if (!fields) {
+      log("warn", "shopify-session", "embedded_session_failed", { shop, step: "token-exchange" });
+      return { status: 502, body: { error: "Couldn't connect to your store — reopen the app." } };
+    }
   }
 
   // Mint the login (also resolves userId when the create-user call 422'd).
   const link = await generateMagicLink(env, email);
-  if (!link) return { status: 502, body: { error: "Couldn't sign you in — try again." } };
+  if (!link) {
+    log("warn", "shopify-session", "embedded_session_failed", { shop, step: "magic-link" });
+    return { status: 502, body: { error: "Couldn't sign you in — try again." } };
+  }
   userId = userId ?? link.userId;
 
   if (fields) {
     const saved = await saveConnection(env, userId, shop, fields);
-    if (!saved) return { status: 502, body: { error: "Couldn't save the store connection — try again." } };
+    if (!saved) {
+      log("warn", "shopify-session", "embedded_session_failed", { shop, step: "save-connection" });
+      return { status: 502, body: { error: "Couldn't save the store connection — try again." } };
+    }
   }
   await ensureProfileRow(env, userId, email);
   await syncShopifyPlan(env, userId);

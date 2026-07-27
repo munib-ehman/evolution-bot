@@ -8,6 +8,7 @@
  * changes. Before verification, RESEND_FROM=onboarding@resend.dev works for
  * testing.
  */
+import { log } from "./_log";
 
 export interface EmailEnv {
   resendKey?: string;
@@ -56,8 +57,10 @@ export async function sendTaskEmail(env: EmailEnv, info: TaskEmailInfo): Promise
       }),
       signal: AbortSignal.timeout(6_000),
     });
+    if (!res.ok) log("error", "email", "email_send_failed", { taskId: info.taskId, status: res.status });
     return res.ok;
   } catch {
+    log("error", "email", "email_send_failed", { taskId: info.taskId });
     return false;
   }
 }
