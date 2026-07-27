@@ -337,6 +337,7 @@ export function devApi(): Plugin {
               topic: header("x-shopify-topic"),
               shop: header("x-shopify-shop-domain"),
               hmac: header("x-shopify-hmac-sha256"),
+              webhookId: header("x-shopify-webhook-id"),
             },
             skillEnv,
           );
@@ -361,6 +362,7 @@ export function devApi(): Plugin {
               topic: header("x-shopify-topic"),
               shop: header("x-shopify-shop-domain"),
               hmac: header("x-shopify-hmac-sha256"),
+              webhookId: header("x-shopify-webhook-id"),
             },
             skillEnv,
           );

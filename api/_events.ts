@@ -51,6 +51,48 @@ export async function verifyWebhookHmac(
 }
 
 // ---------------------------------------------------------------------------
+// Idempotency — claim each delivery's X-Shopify-Webhook-Id before processing
+
+/**
+ * True = first time we've seen this delivery (or we can't tell — FAIL-OPEN:
+ * processing a webhook twice is recoverable, dropping one is not). False =
+ * definitively already claimed, skip processing. The claim is an atomic
+ * insert-or-ignore on webhook_events (see supabase/2026-07-27_webhook_events.sql):
+ * with ignore-duplicates + return=representation, a fresh insert echoes the
+ * row back and a duplicate returns an empty array.
+ */
+export async function claimWebhook(
+  env: ShopifyEnv,
+  webhookId: string | null,
+  topic: string | null,
+  shop: string | null,
+): Promise<boolean> {
+  if (!webhookId || !env.supabaseUrl || !env.serviceRoleKey) return true;
+  try {
+    const res = await fetch(`${env.supabaseUrl}/rest/v1/webhook_events?on_conflict=webhook_id`, {
+      method: "POST",
+      headers: {
+        apikey: env.serviceRoleKey,
+        Authorization: `Bearer ${env.serviceRoleKey}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=ignore-duplicates,return=representation",
+      },
+      body: JSON.stringify({ webhook_id: webhookId, topic, shop }),
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (!res.ok) {
+      log("warn", "webhook", "claim_failed", { status: res.status });
+      return true;
+    }
+    const rows = (await res.json()) as unknown[];
+    return rows.length > 0;
+  } catch {
+    log("warn", "webhook", "claim_unreachable", {});
+    return true;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // store_events writes (service role — the browser only ever reads)
 
 interface StoreEventInsert {
@@ -146,13 +188,18 @@ export async function lookupUserByShop(env: ShopifyEnv, shop: string): Promise<s
  */
 export async function handleShopifyWebhook(
   rawBody: string,
-  headers: { topic: string | null; shop: string | null; hmac: string | null },
+  headers: { topic: string | null; shop: string | null; hmac: string | null; webhookId?: string | null },
   env: ShopifyEnv,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const ok = await verifyWebhookHmac(env.shopifyApiSecret ?? "", rawBody, headers.hmac);
   if (!ok) {
     log("warn", "webhook", "hmac_rejected", { topic: headers.topic, shop: headers.shop });
     return jsonResult(401, { error: "Invalid webhook signature." });
+  }
+
+  if (!(await claimWebhook(env, headers.webhookId ?? null, headers.topic, headers.shop))) {
+    log("info", "webhook", "duplicate_skipped", { topic: headers.topic, shop: headers.shop });
+    return jsonResult(200, { ok: true, duplicate: true });
   }
 
   const shop = (headers.shop ?? "").trim().toLowerCase();

@@ -20,6 +20,7 @@ export default async function handler(req: Request): Promise<Response> {
       topic: req.headers.get("x-shopify-topic"),
       shop: req.headers.get("x-shopify-shop-domain"),
       hmac: req.headers.get("x-shopify-hmac-sha256"),
+      webhookId: req.headers.get("x-shopify-webhook-id"),
     },
     shopifyEnvFromProcess(),
   );

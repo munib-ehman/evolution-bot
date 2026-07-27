@@ -21,7 +21,7 @@
  * Shopify retries non-2xx responses, and a redact that finds nothing left IS
  * a success.
  */
-import { verifyWebhookHmac, lookupUserByShop } from "./_events";
+import { verifyWebhookHmac, lookupUserByShop, claimWebhook } from "./_events";
 import { isProvisionedEmail } from "./_embedded";
 import { sendTaskEmail } from "./_email";
 import { log } from "./_log";
@@ -127,13 +127,21 @@ async function redactShop(env: SkillEnv, shop: string, userId: string): Promise<
 
 export async function handleShopifyCompliance(
   rawBody: string,
-  headers: { topic: string | null; shop: string | null; hmac: string | null },
+  headers: { topic: string | null; shop: string | null; hmac: string | null; webhookId?: string | null },
   env: SkillEnv,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const ok = await verifyWebhookHmac(env.shopifyApiSecret ?? "", rawBody, headers.hmac);
   if (!ok) {
     log("warn", "compliance", "hmac_rejected", { topic: headers.topic, shop: headers.shop });
     return jsonResult(401, { error: "Invalid webhook signature." });
+  }
+
+  // Redelivered? The redact/task work already happened — don't file duplicate
+  // ops tasks or re-send team emails. (Handlers stay idempotent regardless;
+  // the claim fails open, so a missed dedupe just repeats no-op-safe work.)
+  if (!(await claimWebhook(env, headers.webhookId ?? null, headers.topic, headers.shop))) {
+    log("info", "compliance", "duplicate_skipped", { topic: headers.topic, shop: headers.shop });
+    return jsonResult(200, { ok: true, duplicate: true });
   }
 
   let payload: CompliancePayload = {};
