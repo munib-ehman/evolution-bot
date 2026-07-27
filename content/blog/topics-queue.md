@@ -13,7 +13,6 @@ Format:
 
 ## Pending
 
-- How to handle returns without losing the customer
 - Free shipping thresholds: how to set yours with real math
 - Product page mistakes that quietly kill conversions
 - How to find your next winning product without gambling on ads
@@ -90,3 +89,6 @@ Format:
 - [2026-07-26] AI shopping agents can now buy from your Shopify store: a practical guide (competitor-trend: Shopify/Google Universal Commerce Protocol default-on rollout + agentic checkout growth stats) — /blog/ai-shopping-agents-shopify-store-guide
 - [2026-07-26] Turning Instagram comments and DMs into sales for your Shopify store (competitor-trend: Klaviyo Social Marketing general availability + comment-to-DM conversion data) — /blog/instagram-comments-dms-into-sales-shopify
 - [2026-07-26] Win-back campaigns: how to reactivate customers who stopped buying — /blog/win-back-campaigns-reactivate-customers
+- [2026-07-27] Product recommendation quiz for Shopify: why it outconverts everything else (competitor-trend: Yotpo/Klaviyo personalization & zero-party data push + product quiz conversion benchmarks) — /blog/product-recommendation-quiz-shopify-conversions
+- [2026-07-27] Shopify email deliverability 2026: meeting Gmail, Yahoo and Microsoft rules (competitor-trend: Klaviyo MAGY sender authentication coverage + Gmail/Yahoo/Microsoft bulk sender enforcement) — /blog/shopify-email-deliverability-gmail-yahoo-requirements
+- [2026-07-27] How to handle returns without losing the customer for good — /blog/returns-without-losing-the-customer
