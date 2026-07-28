@@ -13,7 +13,6 @@ Format:
 
 ## Pending
 
-- Free shipping thresholds: how to set yours with real math
 - Product page mistakes that quietly kill conversions
 - How to find your next winning product without gambling on ads
 - Sourcing products from suppliers: a checklist for small stores
@@ -92,3 +91,6 @@ Format:
 - [2026-07-27] Product recommendation quiz for Shopify: why it outconverts everything else (competitor-trend: Yotpo/Klaviyo personalization & zero-party data push + product quiz conversion benchmarks) — /blog/product-recommendation-quiz-shopify-conversions
 - [2026-07-27] Shopify email deliverability 2026: meeting Gmail, Yahoo and Microsoft rules (competitor-trend: Klaviyo MAGY sender authentication coverage + Gmail/Yahoo/Microsoft bulk sender enforcement) — /blog/shopify-email-deliverability-gmail-yahoo-requirements
 - [2026-07-27] How to handle returns without losing the customer for good — /blog/returns-without-losing-the-customer
+- [2026-07-28] Email open rate benchmarks for Shopify stores in 2026: what's actually good (competitor-trend: Klaviyo/Omnisend/Brevo 2026 email marketing benchmark reports) — /blog/email-open-rate-benchmarks-shopify-store
+- [2026-07-28] Customer scoring for Shopify: predicting who's about to buy or leave (competitor-trend: Omnisend AI predictive "likely to buy" scoring + Shopify/Triple Whale predictive analytics push) — /blog/customer-scoring-predict-who-will-buy-shopify
+- [2026-07-28] Free shipping thresholds: how to set yours with real math — /blog/free-shipping-threshold-how-to-set-yours
