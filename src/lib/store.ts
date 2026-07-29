@@ -30,6 +30,19 @@ export interface AuditStats {
   abandonedValue30: number;
 }
 
+/** Catalog stats from the public /products.json scan. */
+export interface AuditCatalog {
+  products: number;
+  /** True when the 250-product cap was hit — the catalog is likely bigger. */
+  capped: boolean;
+  soldOut: number;
+  thinDescriptions: number;
+  noImages: number;
+  avgImages: number | null;
+  priceMin: number | null;
+  priceMax: number | null;
+}
+
 export interface AuditReport {
   storeUrl: string;
   platform: string;
@@ -40,6 +53,18 @@ export interface AuditReport {
   /** True when the report used the authenticated Shopify (OAuth) data. */
   connected?: boolean;
   stats?: AuditStats;
+  catalog?: AuditCatalog;
+  /** What the scan covered and which tech it saw — the report's receipts. */
+  scanned?: { pages: string[]; detected: string[] };
+  /** Page-by-page verdicts for every URL the crawl fetched. */
+  pages?: AuditPage[];
+}
+
+export interface AuditPage {
+  path: string;
+  kind: "homepage" | "product" | "collection" | "page" | "blog";
+  title: string | null;
+  issues: string[];
 }
 
 export type Plan = "free" | "operator";
@@ -163,7 +188,10 @@ export async function getLatestAudit(): Promise<AuditReport | null> {
  * Re-run the audit as the signed-in user so the saved row is attributed to
  * them (the funnel run was anonymous). Returns the fresh report.
  */
-export async function runAuditAsUser(url: string): Promise<AuditReport | null> {
+/** Like runAuditAsUser, but failures carry the server's actual reason. */
+export async function runAuditAsUserVerbose(
+  url: string,
+): Promise<{ report: AuditReport | null; error: string | null }> {
   try {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (supabase) {
@@ -176,9 +204,36 @@ export async function runAuditAsUser(url: string): Promise<AuditReport | null> {
       headers,
       body: JSON.stringify({ url }),
     });
-    if (!res.ok) return null;
-    return (await res.json()) as AuditReport;
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      return { report: null, error: body.error ?? `The audit couldn't run (error ${res.status}) — try again in a minute.` };
+    }
+    return { report: (await res.json()) as AuditReport, error: null };
   } catch {
-    return null;
+    return { report: null, error: "Couldn't reach the audit service — check your connection and try again." };
   }
+}
+
+export async function runAuditAsUser(url: string): Promise<AuditReport | null> {
+  return (await runAuditAsUserVerbose(url)).report;
+}
+
+/**
+ * Audit-first save: the store row is only written once the audit actually
+ * reached the URL, so a typo'd or admin URL can never get locked in. The
+ * saved URL is the server's normalized one (e.g. admin.shopify.com/store/x
+ * comes back as x.myshopify.com).
+ */
+export async function auditAndSaveStore(url: string): Promise<{
+  store: ConnectedStore | null;
+  report: AuditReport | null;
+  error: string | null;
+}> {
+  const { report, error } = await runAuditAsUserVerbose(url);
+  if (!report) {
+    return { store: null, report: null, error: error ?? "We couldn't scan that URL — double-check it and try again." };
+  }
+  const store = await connectStore(report.storeUrl ?? url, report.platform);
+  if (!store) return { store: null, report, error: "The audit ran, but saving your store failed — try again in a moment." };
+  return { store, report, error: null };
 }

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { authEnabled, supabase } from "../lib/auth";
 import { embeddedSignIn, isEmbedded } from "../lib/embedded";
+import { captureUpgradeIntent } from "../lib/upgradeIntent";
 import { Login } from "./Login";
 
 /** Signed-in email, or null. Read anywhere via useAuthEmail(). */
@@ -22,6 +23,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(null);
   const [embedError, setEmbedError] = useState<string | null>(null);
   const [embedAttempt, setEmbedAttempt] = useState(0);
+
+  // Park a pricing-CTA ?upgrade=1 before the login gate can eat it — the
+  // magic-link redirect drops the query string (see lib/upgradeIntent).
+  useEffect(() => {
+    captureUpgradeIntent();
+  }, []);
 
   useEffect(() => {
     if (!supabase) return;

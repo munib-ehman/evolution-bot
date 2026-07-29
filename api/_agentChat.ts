@@ -27,6 +27,7 @@ import {
   CHAT_MAX_COMPLETION_TOKENS,
 } from "./_shared";
 import { resolveUserFull } from "./_audit";
+import { isOperator, OPERATOR_REQUIRED } from "./_plan";
 import { getConnection } from "./_shopify";
 import { SKILL_TOOLS, buildProductsDigest, type SkillEnv, type ToolCtx } from "./_skillTools";
 import { log } from "./_log";
@@ -166,6 +167,9 @@ export async function runAgentChat(
 
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResponse(401, { error: "Sign in to chat with your store." });
+  if (!(await isOperator(env, user.id))) {
+    return jsonResponse(OPERATOR_REQUIRED.status, { ...OPERATOR_REQUIRED.body });
+  }
 
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResponse(409, { error: "Connect your Shopify store first." });

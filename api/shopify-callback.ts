@@ -7,6 +7,7 @@
  * back into /app. Logic lives in _shopify.ts (shared with dev-api.ts).
  */
 import { runShopifyCallback, shopifyEnvFromProcess } from "./_shopify";
+import { polarEnvFromProcess } from "./_polar";
 
 export const config = { runtime: "edge" };
 
@@ -14,6 +15,10 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method !== "GET") {
     return new Response("Method not allowed", { status: 405 });
   }
-  const { redirect } = await runShopifyCallback(new URL(req.url), shopifyEnvFromProcess());
+  const { redirect } = await runShopifyCallback(
+    new URL(req.url),
+    shopifyEnvFromProcess(),
+    polarEnvFromProcess(),
+  );
   return new Response(null, { status: 302, headers: { Location: redirect } });
 }

@@ -8,6 +8,7 @@
  */
 import { runShopifySession } from "./_embedded";
 import { shopifyEnvFromProcess } from "./_shopify";
+import { polarEnvFromProcess } from "./_polar";
 
 export const config = { runtime: "edge" };
 
@@ -24,7 +25,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: { "Content-Type": "application/json" },
     });
   }
-  const { status, body: result } = await runShopifySession(body, shopifyEnvFromProcess());
+  const { status, body: result } = await runShopifySession(body, shopifyEnvFromProcess(), polarEnvFromProcess());
   return new Response(JSON.stringify(result), {
     status,
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },

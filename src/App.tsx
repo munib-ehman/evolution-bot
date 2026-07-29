@@ -17,10 +17,12 @@ import { RetentionPanel } from "./components/RetentionPanel";
 import { OpsPanel } from "./components/OpsPanel";
 import { LiveToasts } from "./components/LiveToasts";
 import { UpgradePanel } from "./components/UpgradePanel";
+import { FreeHome } from "./components/FreeHome";
 import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
 import { ensureProfile, getLatestAudit, getPlan, getStore, getStoreCatalog, runAuditAsUser, type AuditReport, type ConnectedStore, type Plan, type StoreCatalog } from "./lib/store";
 import { isEmbedded } from "./lib/embedded";
+import { consumeUpgradeIntent } from "./lib/upgradeIntent";
 import { SKILL_CHIPS, type SkillChip } from "./lib/skills";
 
 type View = "voice" | "chat";
@@ -47,7 +49,10 @@ export default function App() {
   // ── The shell: connected store, plan, audit, panels ───────────────────────
   // store: undefined = still loading, null = signed in but not connected yet.
   const [store, setStore] = useState<ConnectedStore | null | undefined>(undefined);
-  const [plan, setPlan] = useState<Plan>("free");
+  // null = still loading — the paywall must not flash the wrong side.
+  const [plan, setPlan] = useState<Plan | null>(null);
+  // Pricing-page CTA (?upgrade=1) auto-opens the upgrade panel on arrival.
+  const [wantUpgrade, setWantUpgrade] = useState(false);
   const [audit, setAudit] = useState<AuditReport | null>(null);
   // The live product list (names + prices) that grounds the chat copilot.
   const [catalog, setCatalog] = useState<StoreCatalog | null>(null);
@@ -56,6 +61,13 @@ export default function App() {
   const [retentionOpen, setRetentionOpen] = useState(false);
   const [opsOpen, setOpsOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+
+  // The pricing CTA must open billing for non-gated accounts too (operators
+  // revisiting, admins whose profile row is still free) — FreeHome handles
+  // the gated case via initialUpgradeOpen.
+  useEffect(() => {
+    if (wantUpgrade) setUpgradeOpen(true);
+  }, [wantUpgrade]);
 
   useEffect(() => {
     if (!authEnabled || !authEmail) return;
@@ -76,8 +88,24 @@ export default function App() {
       // fresh connection so the deep findings land immediately.
       const params = new URLSearchParams(window.location.search);
       const shopifyResult = params.get("shopify");
-      if (shopifyResult) {
+      const upgradeResult = params.get("upgrade");
+      if (shopifyResult || upgradeResult) {
         history.replaceState(null, "", window.location.pathname + window.location.hash);
+      }
+      // The param survives a same-tab arrival; the parked localStorage intent
+      // survives the magic-link login round trip that strips the query.
+      if (upgradeResult === "1" || consumeUpgradeIntent()) setWantUpgrade(true);
+      // Back from Polar checkout: the subscription.active webhook flips the
+      // plan asynchronously — poll briefly so the app unlocks on its own.
+      if (upgradeResult === "success" && p !== "operator") {
+        for (let i = 0; i < 8; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const fresh = await getPlan();
+          if (fresh === "operator") {
+            setPlan(fresh);
+            break;
+          }
+        }
       }
       if (shopifyResult === "connected") {
         const target = s?.url ?? params.get("shop");
@@ -186,14 +214,20 @@ export default function App() {
     }
   };
 
+  // The paywall: signed-in accounts without the Operator plan only get the
+  // free view (audit + product hunt) — the server enforces the same boundary
+  // on every paid API (api/_plan.ts). Admins bypass for internal ops.
+  const gatedFree = authEnabled && !!authEmail && !isAdmin(authEmail) && plan !== "operator";
+
   // Pre-warm the (heavy) Kokoro voice as soon as the app reveals. Behind the
   // login gate every visitor is a committed lead, so the model download starts
   // while they read the greeting instead of stalling their first reply.
   // (After the splash, so it never competes with the avatar for bandwidth.)
+  // Never for gated accounts — the free view has no voice to warm.
   useEffect(() => {
-    if (reveal) ensureWarm();
+    if (reveal && !gatedFree) ensureWarm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reveal]);
+  }, [reveal, gatedFree]);
 
   const handleSend = (text: string) => {
     // Unlock audio during the actual user gesture (before any await) so the
@@ -261,6 +295,23 @@ export default function App() {
   // the admin RLS policies are the real gate (non-admins get zero rows).
   if (location.hash === "#/admin" && isAdmin(authEmail)) {
     return <AdminQueue />;
+  }
+
+  if (gatedFree) {
+    // Plan still loading — hold the splash rather than flash the wrong view.
+    if (plan === null) return <Splash leaving={false} ready={false} />;
+    return (
+      <FreeHome
+        email={authEmail}
+        embedded={embedded}
+        store={store}
+        audit={audit}
+        initialUpgradeOpen={wantUpgrade}
+        onConnected={handleConnected}
+        onDisconnected={handleDisconnected}
+        onAudit={setAudit}
+      />
+    );
   }
 
   return (
@@ -337,6 +388,19 @@ export default function App() {
               }}
             >
               My store
+            </button>
+            <button
+              type="button"
+              className="tasks-btn"
+              onClick={() => {
+                setTasksOpen(false);
+                setRecoveryOpen(false);
+                setRetentionOpen(false);
+                setOpsOpen(false);
+                setUpgradeOpen(true);
+              }}
+            >
+              {plan === "operator" ? "Plan" : "Upgrade"}
             </button>
             {/* Inside the Shopify admin the install IS the login — no email
                 identity to show, and signing out would just strand the iframe. */}
@@ -551,6 +615,7 @@ export default function App() {
           onClose={() => setTasksOpen(false)}
           storeUrl={store?.url ?? null}
           onDisconnected={handleDisconnected}
+          onStoreUpdated={handleConnected}
         />
       )}
 
@@ -575,15 +640,16 @@ export default function App() {
       {authEmail && store && <LiveToasts />}
 
       {/* Embedded installs are connected by construction (the session
-          endpoint created the store row) — never show the connect card there. */}
-      {authEnabled && authEmail && store === null && splashGone && !embedded && (
+          endpoint created the store row) — never show the connect card there.
+          Nor over the billing panel: whoever came to buy sees packages first. */}
+      {authEnabled && authEmail && store === null && splashGone && !embedded && !upgradeOpen && (
         <ConnectStore onConnected={handleConnected} />
       )}
 
       <UpgradePanel
         open={upgradeOpen}
         onClose={() => setUpgradeOpen(false)}
-        plan={plan}
+        plan={plan ?? "free"}
         email={authEmail}
       />
 
