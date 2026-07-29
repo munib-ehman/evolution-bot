@@ -13,7 +13,6 @@ Format:
 
 ## Pending
 
-- Product page mistakes that quietly kill conversions
 - How to find your next winning product without gambling on ads
 - Sourcing products from suppliers: a checklist for small stores
 - Inventory planning for solo store owners: avoiding stockouts and dead stock
@@ -94,3 +93,6 @@ Format:
 - [2026-07-28] Email open rate benchmarks for Shopify stores in 2026: what's actually good (competitor-trend: Klaviyo/Omnisend/Brevo 2026 email marketing benchmark reports) — /blog/email-open-rate-benchmarks-shopify-store
 - [2026-07-28] Customer scoring for Shopify: predicting who's about to buy or leave (competitor-trend: Omnisend AI predictive "likely to buy" scoring + Shopify/Triple Whale predictive analytics push) — /blog/customer-scoring-predict-who-will-buy-shopify
 - [2026-07-28] Free shipping thresholds: how to set yours with real math — /blog/free-shipping-threshold-how-to-set-yours
+- [2026-07-29] Proactive live chat for Shopify stores: catching visitors before they leave (competitor-trend: Tidio live chat/Lyro resolve-rate stats + industry proactive AI chat trigger trend) — /blog/proactive-live-chat-triggers-shopify-stores
+- [2026-07-29] Customer support channels for small stores: which ones you actually need (competitor-trend: Gorgias customer service channels guide + Zendesk/Freshworks 2026 channel strategy coverage) — /blog/customer-support-channels-small-store-guide
+- [2026-07-29] Product page mistakes that quietly kill conversions — /blog/product-page-mistakes-that-kill-conversions
