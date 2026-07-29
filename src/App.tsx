@@ -22,6 +22,7 @@ import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
 import { ensureProfile, getLatestAudit, getPlan, getStore, getStoreCatalog, runAuditAsUser, type AuditReport, type ConnectedStore, type Plan, type StoreCatalog } from "./lib/store";
 import { isEmbedded } from "./lib/embedded";
+import { consumeUpgradeIntent } from "./lib/upgradeIntent";
 import { SKILL_CHIPS, type SkillChip } from "./lib/skills";
 
 type View = "voice" | "chat";
@@ -61,6 +62,13 @@ export default function App() {
   const [opsOpen, setOpsOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
+  // The pricing CTA must open billing for non-gated accounts too (operators
+  // revisiting, admins whose profile row is still free) — FreeHome handles
+  // the gated case via initialUpgradeOpen.
+  useEffect(() => {
+    if (wantUpgrade) setUpgradeOpen(true);
+  }, [wantUpgrade]);
+
   useEffect(() => {
     if (!authEnabled || !authEmail) return;
     ensureProfile();
@@ -84,7 +92,9 @@ export default function App() {
       if (shopifyResult || upgradeResult) {
         history.replaceState(null, "", window.location.pathname + window.location.hash);
       }
-      if (upgradeResult === "1") setWantUpgrade(true);
+      // The param survives a same-tab arrival; the parked localStorage intent
+      // survives the magic-link login round trip that strips the query.
+      if (upgradeResult === "1" || consumeUpgradeIntent()) setWantUpgrade(true);
       // Back from Polar checkout: the subscription.active webhook flips the
       // plan asynchronously — poll briefly so the app unlocks on its own.
       if (upgradeResult === "success" && p !== "operator") {
@@ -379,6 +389,19 @@ export default function App() {
             >
               My store
             </button>
+            <button
+              type="button"
+              className="tasks-btn"
+              onClick={() => {
+                setTasksOpen(false);
+                setRecoveryOpen(false);
+                setRetentionOpen(false);
+                setOpsOpen(false);
+                setUpgradeOpen(true);
+              }}
+            >
+              {plan === "operator" ? "Plan" : "Upgrade"}
+            </button>
             {/* Inside the Shopify admin the install IS the login — no email
                 identity to show, and signing out would just strand the iframe. */}
             {!embedded && (
@@ -592,6 +615,7 @@ export default function App() {
           onClose={() => setTasksOpen(false)}
           storeUrl={store?.url ?? null}
           onDisconnected={handleDisconnected}
+          onStoreUpdated={handleConnected}
         />
       )}
 
@@ -616,8 +640,9 @@ export default function App() {
       {authEmail && store && <LiveToasts />}
 
       {/* Embedded installs are connected by construction (the session
-          endpoint created the store row) — never show the connect card there. */}
-      {authEnabled && authEmail && store === null && splashGone && !embedded && (
+          endpoint created the store row) — never show the connect card there.
+          Nor over the billing panel: whoever came to buy sees packages first. */}
+      {authEnabled && authEmail && store === null && splashGone && !embedded && !upgradeOpen && (
         <ConnectStore onConnected={handleConnected} />
       )}
 

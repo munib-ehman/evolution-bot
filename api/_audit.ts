@@ -51,6 +51,20 @@ export interface AuditStats {
   abandonedValue30: number;
 }
 
+/** Catalog stats computed from public /products.json — no auth needed. */
+export interface AuditCatalog {
+  /** Items returned (the endpoint caps at 250). */
+  products: number;
+  /** True when exactly 250 came back — the real catalog is likely bigger. */
+  capped: boolean;
+  soldOut: number;
+  thinDescriptions: number;
+  noImages: number;
+  avgImages: number | null;
+  priceMin: number | null;
+  priceMax: number | null;
+}
+
 export interface AuditReport {
   storeUrl: string;
   platform: "shopify" | "unknown";
@@ -61,10 +75,17 @@ export interface AuditReport {
   /** True when the report includes authenticated (OAuth) store data. */
   connected?: boolean;
   stats?: AuditStats;
+  /** Public catalog stats — present whenever /products.json was readable. */
+  catalog?: AuditCatalog;
+  /** What the scan covered and which tech it saw — the report's receipts. */
+  scanned?: { pages: string[]; detected: string[] };
+  /** Page-by-page verdicts for every URL the crawl fetched. */
+  pages?: PageAudit[];
 }
 
 interface ShopifyVariant {
   available?: boolean;
+  price?: string;
 }
 interface ShopifyProduct {
   title?: string;
@@ -106,6 +127,21 @@ export function normalizeStoreUrl(raw: unknown): { url: string; host: string } |
   const host = parsed.hostname.toLowerCase();
   if (parsed.username || parsed.password) return { error: "URLs with credentials aren't allowed." };
   if (parsed.port && parsed.port !== "443") return { error: "Only standard https URLs are supported." };
+
+  // Owners often paste their Shopify admin URL instead of the storefront.
+  // admin.shopify.com/store/{handle} names the shop, so translate it; a bare
+  // admin URL gets an explanation of what to paste instead.
+  if (host === "admin.shopify.com") {
+    const m = parsed.pathname.match(/^\/store\/([a-z0-9][a-z0-9-]*)/i);
+    if (m) {
+      const shopHost = `${m[1].toLowerCase()}.myshopify.com`;
+      return { url: `https://${shopHost}`, host: shopHost };
+    }
+    return {
+      error:
+        "That's your Shopify admin, not your storefront. Paste your store's public address — like mystore.com or mystore.myshopify.com.",
+    };
+  }
   if (
     !host.includes(".") ||
     host === "localhost" ||
@@ -143,35 +179,124 @@ async function readCapped(res: Response): Promise<string> {
   return out + decoder.decode();
 }
 
-async function fetchText(url: string): Promise<{ text: string; finalUrl: string } | null> {
+/** Fetch one page, status included — null only on network failure/timeout. */
+async function fetchPage(
+  url: string,
+): Promise<{ status: number; text: string; finalUrl: string } | null> {
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": UA, Accept: "text/html,application/json;q=0.9,*/*;q=0.8" },
       signal: AbortSignal.timeout(AUDIT_FETCH_TIMEOUT_MS),
       redirect: "follow",
     });
-    if (!res.ok) return null;
-    return { text: await readCapped(res), finalUrl: res.url || url };
+    const text = res.ok ? await readCapped(res) : "";
+    return { status: res.status, text, finalUrl: res.url || url };
   } catch {
     return null;
   }
 }
 
-export interface StoreSnapshot {
+async function fetchText(url: string): Promise<{ text: string; finalUrl: string } | null> {
+  const page = await fetchPage(url);
+  if (!page || page.status < 200 || page.status >= 300) return null;
+  return { text: page.text, finalUrl: page.finalUrl };
+}
+
+export type PageKind = "homepage" | "product" | "collection" | "page" | "blog";
+
+/** One crawled page — raw material for the page-by-page audit. */
+export interface CrawledPage {
+  /** Path form for display (e.g. "/products/x"); fetched as https://host+path. */
+  path: string;
+  kind: PageKind;
+  /** 0 = network failure/timeout. */
+  status: number;
   html: string;
-  /** Homepage + a real product page: where apps actually inject scripts. */
+}
+
+/** The per-page verdict that ships in the report. */
+export interface PageAudit {
+  path: string;
+  kind: PageKind;
+  title: string | null;
+  issues: string[];
+}
+
+export interface StoreSnapshot {
+  host: string;
+  html: string;
+  /** Every fetched page's HTML — where apps actually inject scripts. */
   corpus: string;
+  /** All crawled pages beyond the homepage (products, collections, pages…). */
+  crawled: CrawledPage[];
   products: ShopifyProduct[] | null;
   passwordProtected: boolean;
   isShopify: boolean;
   /** Shopify policy pages that resolved (null = not checked / not Shopify). */
   policies: { refund: boolean; shipping: boolean } | null;
+  /** Latest blog-post date (ISO) when a blog feed was found; null date = feed
+   * found but unparseable; undefined = no blog discovered. */
+  blogLatest?: string | null;
 }
+
+/** Pull same-host links out of homepage HTML, bucketed by what they lead to. */
+export function extractLinks(html: string, host: string): {
+  products: string[];
+  collections: string[];
+  contact: string | null;
+  about: string | null;
+  blog: string | null;
+  other: string[];
+} {
+  const products: string[] = [];
+  const collections: string[] = [];
+  const other: string[] = [];
+  let contact: string | null = null;
+  let about: string | null = null;
+  let blog: string | null = null;
+
+  const seen = new Set<string>();
+  for (const m of html.matchAll(/href=["']([^"'#?\s]+)[^"']*["']/gi)) {
+    let raw = m[1];
+    if (/^(mailto:|tel:|javascript:)/i.test(raw)) continue;
+    // Absolute URLs: keep only same-host, reduce to path.
+    if (/^https?:\/\//i.test(raw)) {
+      try {
+        const u = new URL(raw);
+        if (u.hostname.toLowerCase() !== host) continue;
+        raw = u.pathname;
+      } catch {
+        continue;
+      }
+    }
+    if (!raw.startsWith("/")) continue;
+    if (/\.(jpg|jpeg|png|gif|webp|svg|css|js|ico|pdf|xml|json|woff2?)$/i.test(raw)) continue;
+    const path = raw.replace(/\/+$/, "") || "/";
+    if (path === "/" || seen.has(path)) continue;
+    seen.add(path);
+
+    if (/^\/(?:[a-z-]+\/)?products\//i.test(path)) products.push(path);
+    else if (/^\/(?:[a-z-]+\/)?collections\//i.test(path)) collections.push(path);
+    else if (!contact && /contact/i.test(path)) contact = path;
+    else if (!about && /about/i.test(path)) about = path;
+    else if (!blog && /^\/blogs?\//i.test(path)) blog = path;
+    else if (!/\/(cart|account|login|checkout|search|policies)\b/i.test(path)) other.push(path);
+  }
+  return { products, collections, contact, about, blog, other };
+}
+
+/** Wave-2 crawl budget — enough for a real page-by-page report, small enough
+ * to stay polite and inside the edge time budget (all fetches are parallel). */
+const CRAWL_MAX_PRODUCTS = 4;
+const CRAWL_MAX_COLLECTIONS = 2;
+const CRAWL_MAX_OTHER = 2;
 
 /**
  * Fetch the store's public surface in two waves: homepage + /products.json
- * first, then (informed by those) a real product page — most apps only
- * inject scripts there, not on the homepage — and the Shopify policy pages.
+ * first, then — informed by those — a parallel crawl of real pages: product
+ * pages (where apps actually inject scripts), collection pages, contact and
+ * about pages, the blog feed, and the Shopify policy pages. Every crawled
+ * page gets its own entry in the report.
  */
 export async function fetchStore(host: string): Promise<StoreSnapshot> {
   const [homepage, productsRaw] = await Promise.all([
@@ -198,16 +323,50 @@ export async function fetchStore(host: string): Promise<StoreSnapshot> {
     products !== null || /cdn\.shopify\.com|Shopify\.theme|\/cdn\/shop\//i.test(html);
 
   // Wave 2 — only when wave 1 found a live store.
-  let productHtml = "";
+  const crawled: CrawledPage[] = [];
   let policies: StoreSnapshot["policies"] = null;
+  let blogLatest: string | null | undefined;
   if (!passwordProtected && (html || products)) {
-    const firstHandle = products?.find((p) => typeof p.handle === "string")?.handle;
-    const [productPage, refund, shipping] = await Promise.all([
-      firstHandle ? fetchText(`https://${host}/products/${firstHandle}`) : Promise.resolve(null),
+    const links = extractLinks(html, host);
+
+    // Product pages: prefer real handles from products.json (guaranteed to
+    // exist), fall back to product links found on the homepage.
+    const productPaths =
+      products && products.length > 0
+        ? products
+            .filter((p) => typeof p.handle === "string")
+            .slice(0, CRAWL_MAX_PRODUCTS)
+            .map((p) => `/products/${p.handle}`)
+        : links.products.slice(0, CRAWL_MAX_PRODUCTS);
+
+    const targets: { path: string; kind: PageKind }[] = [
+      ...productPaths.map((path) => ({ path, kind: "product" as PageKind })),
+      ...links.collections.slice(0, CRAWL_MAX_COLLECTIONS).map((path) => ({ path, kind: "collection" as PageKind })),
+      ...(links.contact ? [{ path: links.contact, kind: "page" as PageKind }] : []),
+      ...(links.about ? [{ path: links.about, kind: "page" as PageKind }] : []),
+      ...(links.blog ? [{ path: links.blog, kind: "blog" as PageKind }] : []),
+      ...links.other.slice(0, CRAWL_MAX_OTHER).map((path) => ({ path, kind: "page" as PageKind })),
+    ];
+
+    // Shopify blogs expose an Atom feed at /blogs/<name>.atom — the cheapest
+    // honest answer to "when did they last publish?".
+    const blogFeedPath =
+      isShopify && links.blog
+        ? (links.blog.match(/^(\/blogs\/[^/]+)/i)?.[1] ?? links.blog) + ".atom"
+        : null;
+
+    const [pages, refund, shipping, blogFeed] = await Promise.all([
+      Promise.all(targets.map((t) => fetchPage(`https://${host}${t.path}`))),
       isShopify ? fetchText(`https://${host}/policies/refund-policy`) : Promise.resolve(null),
       isShopify ? fetchText(`https://${host}/policies/shipping-policy`) : Promise.resolve(null),
+      blogFeedPath ? fetchText(`https://${host}${blogFeedPath}`) : Promise.resolve(null),
     ]);
-    productHtml = productPage?.text ?? "";
+
+    targets.forEach((t, i) => {
+      const page = pages[i];
+      crawled.push({ path: t.path, kind: t.kind, status: page?.status ?? 0, html: page?.text ?? "" });
+    });
+
     if (isShopify) {
       // Shopify serves a real page only when the policy exists; a missing one
       // redirects home or 404s. ~200 chars of body text = "actually written".
@@ -218,9 +377,26 @@ export async function fetchStore(host: string): Promise<StoreSnapshot> {
         shipping: looksReal(shipping, "shipping-policy"),
       };
     }
+
+    if (links.blog) {
+      const dates = [...(blogFeed?.text ?? "").matchAll(/<(?:updated|published|pubDate)>([^<]+)</gi)]
+        .map((m) => Date.parse(m[1]))
+        .filter((t) => Number.isFinite(t));
+      blogLatest = dates.length > 0 ? new Date(Math.max(...dates)).toISOString() : null;
+    }
   }
 
-  return { html, corpus: html + "\n" + productHtml, products, passwordProtected, isShopify, policies };
+  return {
+    host,
+    html,
+    corpus: [html, ...crawled.map((p) => p.html)].join("\n"),
+    crawled,
+    products,
+    passwordProtected,
+    isShopify,
+    policies,
+    blogLatest,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +410,84 @@ const APP_PATTERNS = {
   pixel: /fbevents\.js|connect\.facebook\.net|gtag\/js|googletagmanager|analytics\.tiktok|snap\.licdn|pintrk/i,
 };
 
+/** Human-readable list of what each negative check actually looked for —
+ * quoted in the finding's evidence so "not detected" reads as a real scan,
+ * not a guess. */
+const APP_CHECKLISTS: Record<keyof typeof APP_PATTERNS, string> = {
+  reviews: "Judge.me, Loox, Yotpo, Stamped, Okendo, Junip, Reviews.io, Trustpilot",
+  emailCapture: "Klaviyo, Omnisend, Privy, Postscript, Attentive, Mailchimp, Sendlane, Drip",
+  upsell: "Rebuy, Zipify, AfterSell, Bold, Candy Rack, SellEasy, UpCart, Honeycomb",
+  support: "Gorgias, Tidio, Zendesk, Intercom, Crisp, Chatra, Re:amaze, tawk.to, Richpanel",
+  pixel: "Meta pixel, Google tag / GA4, TikTok pixel, LinkedIn Insight, Pinterest tag",
+};
+
+/** Named tech we can positively identify — the report's "detected" receipts. */
+const TECH_DETECTORS: { name: string; re: RegExp }[] = [
+  { name: "Klaviyo", re: /klaviyo/i },
+  { name: "Omnisend", re: /omnisend/i },
+  { name: "Privy", re: /privy/i },
+  { name: "Postscript", re: /postscript/i },
+  { name: "Attentive", re: /attentive/i },
+  { name: "Mailchimp", re: /mailchimp/i },
+  { name: "Judge.me", re: /judge\.me|judgeme/i },
+  { name: "Loox", re: /loox/i },
+  { name: "Yotpo", re: /yotpo/i },
+  { name: "Stamped", re: /stamped\.io/i },
+  { name: "Okendo", re: /okendo/i },
+  { name: "Trustpilot", re: /trustpilot/i },
+  { name: "Rebuy", re: /rebuy/i },
+  { name: "Zipify", re: /zipify/i },
+  { name: "Gorgias", re: /gorgias/i },
+  { name: "Tidio", re: /tidio/i },
+  { name: "Zendesk", re: /zendesk/i },
+  { name: "Intercom", re: /intercom/i },
+  { name: "Crisp", re: /crisp\.chat/i },
+  { name: "tawk.to", re: /tawk\.to/i },
+  { name: "Meta pixel", re: /fbevents\.js|connect\.facebook\.net/i },
+  { name: "Google tag / GA4", re: /gtag\/js|googletagmanager/i },
+  { name: "TikTok pixel", re: /analytics\.tiktok/i },
+  { name: "LinkedIn Insight", re: /snap\.licdn/i },
+  { name: "Pinterest tag", re: /pintrk/i },
+  { name: "Shop Pay / express checkout", re: /shopify-payment-button|shop-pay|dynamic-checkout/i },
+];
+
+export function detectTech(corpus: string): string[] {
+  return TECH_DETECTORS.filter((d) => d.re.test(corpus)).map((d) => d.name);
+}
+
+/** Catalog stats from public /products.json — real numbers, no auth. */
+export function computeCatalog(products: ShopifyProduct[] | null): AuditCatalog | undefined {
+  if (!products || products.length === 0) return undefined;
+  const soldOut = products.filter(
+    (p) => (p.variants?.length ?? 0) > 0 && p.variants!.every((v) => v.available === false),
+  ).length;
+  const thin = products.filter((p) => stripHtml(p.body_html).length < 200).length;
+  const noImages = products.filter((p) => (p.images?.length ?? 0) === 0).length;
+  const imageTotal = products.reduce((n, p) => n + (p.images?.length ?? 0), 0);
+
+  let priceMin: number | null = null;
+  let priceMax: number | null = null;
+  for (const p of products) {
+    for (const v of p.variants ?? []) {
+      const price = Number.parseFloat(v.price ?? "");
+      if (!Number.isFinite(price) || price <= 0) continue;
+      priceMin = priceMin === null ? price : Math.min(priceMin, price);
+      priceMax = priceMax === null ? price : Math.max(priceMax, price);
+    }
+  }
+
+  return {
+    products: products.length,
+    capped: products.length >= 250,
+    soldOut,
+    thinDescriptions: thin,
+    noImages,
+    avgImages: products.length > 0 ? Math.round((imageTotal / products.length) * 10) / 10 : null,
+    priceMin,
+    priceMax,
+  };
+}
+
 export function stripHtml(html: string | null | undefined): string {
   return (html ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -243,28 +497,73 @@ function metaContent(html: string, pattern: RegExp): string {
   return tag.match(/content=["']([^"']*)["']/i)?.[1]?.trim() ?? "";
 }
 
-/** Deterministic findings, ranked by impact. The LLM only rewrites prose. */
-export function runChecks(snapshot: StoreSnapshot): AuditFinding[] {
-  const { html, corpus, products, policies } = snapshot;
+/** Deterministic findings, ranked by impact — every one carries evidence
+ * (what was scanned, what was found, the actual numbers). The LLM only
+ * rewrites prose; it never invents facts. */
+export function runChecks(snapshot: StoreSnapshot): {
+  findings: AuditFinding[];
+  checkedWeight: number;
+  pages: PageAudit[];
+} {
+  const { html, corpus, crawled, products, policies, isShopify, blogLatest } = snapshot;
   const findings: AuditFinding[] = [];
+  // Sum of the weights of every check we could actually evaluate — the score
+  // is failed-weight over this, so passing checks earns credit and a store we
+  // could only partially scan isn't judged on checks we never ran.
+  let checkedWeight = 0;
 
+  const livePages = crawled.filter((p) => p.status >= 200 && p.status < 400 && p.html);
+  const productPages = livePages.filter((p) => p.kind === "product");
+  const brokenPages = crawled.filter((p) => p.status >= 400);
+
+  // The pages this scan actually covered — quoted in every "not detected"
+  // finding so absence reads as verified, not guessed. (The homepage can be
+  // empty when only /products.json was reachable.)
+  const pageCount = (html ? 1 : 0) + livePages.length;
+  const scannedLabel =
+    pageCount > 1
+      ? `${pageCount} pages of your site (homepage${productPages.length > 0 ? `, ${productPages.length} product page${productPages.length > 1 ? "s" : ""}` : ""}, and more)`
+      : html
+        ? "your homepage"
+        : "your storefront";
+  const notFound = (category: keyof typeof APP_CHECKLISTS) =>
+    `Scanned ${scannedLabel} for ${APP_CHECKLISTS[category]} — none present.`;
+
+  // App checks — evaluable whenever we had any storefront HTML at all.
+  checkedWeight += 5 + 4 + 4 + 3 + 3;
+
+  const hasEmailInput = /<input[^>]+type=["']email["']/i.test(html);
   if (!APP_PATTERNS.emailCapture.test(corpus)) {
     findings.push({
       id: "no-cart-recovery",
       title: "No cart-recovery or email capture detected",
       impact: 5,
-      detail:
-        "We found no email/SMS marketing app (Klaviyo, Omnisend, Privy, Postscript…) on your storefront. Roughly 7 in 10 carts are abandoned — without recovery emails those sales are simply lost.",
+      detail: hasEmailInput
+        ? "Your homepage has an email signup form, but no marketing platform (Klaviyo, Omnisend…) is behind it — so nothing automatically emails the shoppers who abandon carts. Roughly 7 in 10 carts are abandoned; without recovery emails those sales are simply lost."
+        : "We found no email/SMS marketing app and no email signup form on your storefront. Roughly 7 in 10 carts are abandoned — without capture and recovery emails those sales are simply lost.",
+      evidence: [
+        notFound("emailCapture"),
+        hasEmailInput
+          ? "An email <input> field exists on the homepage, with no automation platform connected to it."
+          : "No email signup field found on the homepage either.",
+      ],
     });
   }
 
-  if (!APP_PATTERNS.reviews.test(corpus)) {
+  const hasRatingSchema = productPages.some((p) => /aggregateRating|"ratingValue"/i.test(p.html));
+  if (!APP_PATTERNS.reviews.test(corpus) && !hasRatingSchema) {
     findings.push({
       id: "no-reviews",
       title: "No customer reviews shown",
       impact: 4,
       detail:
-        "We couldn't detect a reviews app (Judge.me, Loox, Yotpo…). Social proof is one of the highest-leverage conversion levers — stores without visible reviews convert significantly worse.",
+        "No reviews app and no star-rating markup detected. Social proof is one of the highest-leverage conversion levers — stores without visible reviews convert significantly worse.",
+      evidence: [
+        notFound("reviews"),
+        productPages.length > 0
+          ? `No review widget or rating schema (aggregateRating) on ${productPages.map((p) => p.path).join(", ")}.`
+          : "No product page was reachable to check for review widgets.",
+      ],
     });
   }
 
@@ -275,6 +574,7 @@ export function runChecks(snapshot: StoreSnapshot): AuditFinding[] {
       impact: 4,
       detail:
         "No upsell/cross-sell app detected. Post-purchase and in-cart offers are the cheapest way to raise average order value — you're leaving revenue on every order.",
+      evidence: [notFound("upsell")],
     });
   }
 
@@ -284,7 +584,8 @@ export function runChecks(snapshot: StoreSnapshot): AuditFinding[] {
       title: "No live support channel on the storefront",
       impact: 3,
       detail:
-        "No chat widget or helpdesk detected (Gorgias, Tidio, Zendesk…). Pre-sale questions that can't be asked are sales that quietly walk away — especially on mobile.",
+        "No chat widget or helpdesk detected. Pre-sale questions that can't be asked are sales that quietly walk away — especially on mobile.",
+      evidence: [notFound("support")],
     });
   }
 
@@ -294,10 +595,31 @@ export function runChecks(snapshot: StoreSnapshot): AuditFinding[] {
       title: "No marketing or analytics pixel detected",
       impact: 3,
       detail:
-        "We found no Meta pixel, Google tag, or TikTok pixel. Without one you can't retarget visitors or measure which traffic actually buys — every ad dollar flies blind.",
+        "We found no ad or analytics pixel. Without one you can't retarget visitors or measure which traffic actually buys — every ad dollar flies blind.",
+      evidence: [notFound("pixel")],
     });
   }
 
+  // Express checkout — Shopify renders the dynamic checkout button server-side
+  // on product pages, so its absence there is a real signal.
+  const expressRe = /shopify-payment-button|shop-pay|dynamic-checkout/i;
+  if (isShopify && productPages.length > 0) {
+    checkedWeight += 3;
+    if (!productPages.some((p) => expressRe.test(p.html))) {
+      findings.push({
+        id: "no-express-checkout",
+        title: "No express checkout on product pages",
+        impact: 3,
+        detail:
+          "Shop Pay / dynamic checkout buttons aren't enabled on your product pages. One-tap wallets (Shop Pay, PayPal, Apple Pay) remove the checkout form entirely — Shopify reports Shop Pay checkouts convert meaningfully better than regular ones.",
+        evidence: [
+          `Checked ${productPages.map((p) => p.path).join(", ")} for the shopify-payment-button / Shop Pay markup — not present on any of them.`,
+        ],
+      });
+    }
+  }
+
+  if (policies) checkedWeight += 2;
   if (policies && (!policies.refund || !policies.shipping)) {
     const missing = [
       !policies.refund ? "refund policy" : null,
@@ -309,19 +631,33 @@ export function runChecks(snapshot: StoreSnapshot): AuditFinding[] {
       impact: 2,
       detail:
         "Shoppers check policies before trusting a store with their card — and payment processors and ad platforms look for them too. Publishing them is a 20-minute trust win.",
+      evidence: [
+        ...(!policies.refund ? ["/policies/refund-policy returns no written policy."] : []),
+        ...(!policies.shipping ? ["/policies/shipping-policy returns no written policy."] : []),
+      ],
     });
   }
 
   if (products && products.length > 0) {
-    const thin = products.filter((p) => stripHtml(p.body_html).length < 200);
+    checkedWeight += 4 + 3 + 3;
+    const catalogNote = products.length >= 250 ? " (of the first 250 we scanned)" : "";
+
+    const thin = products
+      .map((p) => ({ p, chars: stripHtml(p.body_html).length }))
+      .filter((t) => t.chars < 200);
     if (thin.length > 0) {
+      // Impact scales with prevalence: 1 thin page in a 141-product catalog
+      // is housekeeping; a third of the catalog is a conversion problem.
+      const share = thin.length / products.length;
       findings.push({
         id: "thin-descriptions",
-        title: `Thin product descriptions on ${thin.length} of ${products.length} products`,
-        impact: 4,
+        title: `Thin product descriptions on ${thin.length} of ${products.length} products${catalogNote}`,
+        impact: share >= 0.3 ? 4 : share >= 0.1 ? 3 : 2,
         detail:
-          "These product pages have under ~200 characters of description — not enough to sell the product or rank in search. Every thin page is a landing page that can't close.",
-        evidence: thin.slice(0, 3).map((p) => p.title ?? "(untitled)"),
+          "These product pages have under 200 characters of description — not enough to sell the product or rank in search. Every thin page is a landing page that can't close.",
+        evidence: thin
+          .slice(0, 3)
+          .map((t) => `"${t.p.title ?? "(untitled)"}" — ${t.chars} characters of description`),
       });
     }
 
@@ -329,13 +665,14 @@ export function runChecks(snapshot: StoreSnapshot): AuditFinding[] {
       (p) => (p.variants?.length ?? 0) > 0 && p.variants!.every((v) => v.available === false),
     );
     if (soldOut.length > 0) {
+      const pct = Math.round((soldOut.length / products.length) * 100);
       findings.push({
         id: "sold-out-dead-ends",
-        title: `${soldOut.length} sold-out product${soldOut.length > 1 ? "s" : ""} with no back-in-stock capture`,
-        impact: 3,
+        title: `${soldOut.length} sold-out product${soldOut.length > 1 ? "s" : ""} (${pct}% of the catalog${catalogNote}) with no back-in-stock capture`,
+        impact: soldOut.length / products.length >= 0.2 ? 3 : 2,
         detail:
           "Sold-out product pages are dead ends: shoppers land, see 'sold out', and leave forever. A 'notify me when it's back' form turns that demand into a launch list.",
-        evidence: soldOut.slice(0, 3).map((p) => p.title ?? "(untitled)"),
+        evidence: soldOut.slice(0, 3).map((p) => `"${p.title ?? "(untitled)"}" — every variant unavailable`),
       });
     }
 
@@ -346,34 +683,246 @@ export function runChecks(snapshot: StoreSnapshot): AuditFinding[] {
         title: `${noImages.length} product${noImages.length > 1 ? "s" : ""} without photos`,
         impact: 3,
         detail: "Products without a single image almost never sell online.",
-        evidence: noImages.slice(0, 3).map((p) => p.title ?? "(untitled)"),
+        evidence: noImages.slice(0, 3).map((p) => `"${p.title ?? "(untitled)"}" — 0 images`),
       });
     }
   }
 
   if (html) {
+    // Homepage checks: SEO (2), weight (3), contact (2), social (2).
+    checkedWeight += 2 + 3 + 2 + 2;
+
+    // Client-rendered storefront: the server HTML is a near-empty JS shell.
+    // Everything that only appears after JS runs is invisible to first-pass
+    // search/social crawlers — and to this scan, which the report should say.
+    const bodyText = stripHtml(html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " "));
+    if (bodyText.length < 2000) {
+      checkedWeight += 3;
+      findings.push({
+        id: "client-rendered",
+        title: "Your storefront's HTML is nearly empty — content renders in the browser",
+        impact: 3,
+        detail:
+          "Your server sends a JavaScript shell and builds the page in the visitor's browser. Search engines and link previews (WhatsApp, Instagram) read the raw HTML first — to them your store looks almost blank. Any 'not detected' findings below reflect that same first-pass view.",
+        evidence: [
+          `The homepage HTML contains only ${bodyText.length} characters of visible text.`,
+        ],
+      });
+    }
+
+    const title = (html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? "").trim();
     const description = metaContent(html, /<meta[^>]+name=["']description["'][^>]*>/i);
     const ogImage = metaContent(html, /<meta[^>]+property=["']og:image["'][^>]*>/i);
     const seoProblems: string[] = [];
-    if (description.length < 50) seoProblems.push("missing or very short meta description");
-    if (!ogImage) seoProblems.push("no social-sharing image (og:image)");
+    const seoEvidence: string[] = [];
+    if (title.length < 15) {
+      seoProblems.push("a missing or very short <title> tag");
+      seoEvidence.push(title ? `Title tag: "${title}" (${title.length} characters)` : "No <title> tag found.");
+    }
+    if (description.length < 50) {
+      seoProblems.push("a missing or very short meta description");
+      seoEvidence.push(
+        description
+          ? `Meta description: "${description.slice(0, 80)}${description.length > 80 ? "…" : ""}" (${description.length} characters — search engines show ~155)`
+          : "No meta description found.",
+      );
+    }
+    if (!ogImage) {
+      seoProblems.push("no social-sharing image (og:image)");
+      seoEvidence.push("No og:image tag — links shared on WhatsApp/Instagram/Facebook show no preview image.");
+    }
     if (seoProblems.length > 0) {
       findings.push({
         id: "weak-seo",
         title: "Homepage SEO & social previews need work",
         impact: 2,
-        detail: `Your homepage has ${seoProblems.join(" and ")}. This hurts both search ranking and how your links look when shared.`,
+        detail: `Your homepage has ${seoProblems.join(", ")}. This hurts both search ranking and how your links look when shared.`,
+        evidence: seoEvidence,
+      });
+    }
+
+    // Page weight — we only see HTML (not images/JS payloads), but bloated
+    // markup and script counts are a reliable proxy for slow mobile loads.
+    const htmlKb = Math.round(html.length / 1024);
+    const scriptCount = (html.match(/<script/gi) ?? []).length;
+    if (htmlKb > 700 || scriptCount > 60) {
+      findings.push({
+        id: "heavy-homepage",
+        title: "Homepage is heavy — mobile shoppers feel it",
+        impact: 3,
+        detail:
+          "Every extra second of load time costs conversions, and most of your traffic is on a phone. An app-cleanup pass (uninstalled apps often leave scripts behind) is usually the quickest win.",
+        evidence: [
+          `Homepage HTML: ${htmlKb >= 1024 ? "over 1 MB" : `${htmlKb} KB`} (lean storefronts ship under ~300 KB of HTML).`,
+          `${scriptCount} <script> tags on the homepage.`,
+        ],
+      });
+    }
+
+    const imgTags = html.match(/<img[^>]*>/gi) ?? [];
+    const noAlt = imgTags.filter((t) => !/alt=["'][^"']+["']/i.test(t));
+    if (imgTags.length >= 5) checkedWeight += 2;
+    if (imgTags.length >= 5 && noAlt.length / imgTags.length > 0.4) {
+      findings.push({
+        id: "images-no-alt",
+        title: "Most homepage images have no alt text",
+        impact: 2,
+        detail:
+          "Alt text is how Google understands your product images — and how they surface in image search. Right now most of yours are invisible to it.",
+        evidence: [`${noAlt.length} of ${imgTags.length} homepage <img> tags have no alt text.`],
+      });
+    }
+
+    const contactPageLive = livePages.some((p) => /contact/i.test(p.path));
+    if (!contactPageLive && !/mailto:|tel:|href=["'][^"']*contact/i.test(html)) {
+      findings.push({
+        id: "hard-to-contact",
+        title: "No visible way to contact you",
+        impact: 2,
+        detail:
+          "No contact link, email address, or phone number found on your homepage. Shoppers who can't see a human behind the store trust it less with their card — and ad platforms check for this too.",
+        evidence: ["Scanned the homepage for a contact page link, mailto: or tel: — none found."],
+      });
+    }
+
+    if (!/(instagram|facebook|tiktok|youtube|twitter|pinterest)\.com/i.test(html)) {
+      findings.push({
+        id: "no-social-links",
+        title: "No social profiles linked from the storefront",
+        impact: 2,
+        detail:
+          "No Instagram, TikTok, Facebook, YouTube or Pinterest links found. Shoppers routinely check a store's socials before a first purchase — an active profile is free trust.",
+        evidence: ["Scanned homepage links for instagram.com, tiktok.com, facebook.com, youtube.com, pinterest.com — none found."],
+      });
+    }
+
+  }
+
+  // -- Crawl-wide checks: every one names the exact pages involved. --------
+
+  const schemaRe = /schema\.org\/Product|"@type"\s*:\s*"Product"/i;
+  if (productPages.length > 0) {
+    checkedWeight += 2;
+    const noSchema = productPages.filter((p) => !schemaRe.test(p.html));
+    if (noSchema.length === productPages.length) {
+      findings.push({
+        id: "no-product-schema",
+        title: `No structured data for Google on any of the ${productPages.length} product page${productPages.length > 1 ? "s" : ""} scanned`,
+        impact: 2,
+        detail:
+          "Without Product schema (JSON-LD), Google can't show your price, availability, or stars in search results — competitors with rich snippets take that click.",
+        evidence: noSchema.map((p) => `${p.path} — no schema.org Product markup`),
       });
     }
   }
 
-  return findings.sort((a, b) => b.impact - a.impact);
+  // Product pages that ship without a meta description can't pitch themselves
+  // in search results — Google writes something arbitrary instead.
+  if (productPages.length > 0) {
+    checkedWeight += 2;
+    const noDesc = productPages.filter(
+      (p) => metaContent(p.html, /<meta[^>]+name=["']description["'][^>]*>/i).length < 50,
+    );
+    if (noDesc.length > 0) {
+      findings.push({
+        id: "product-pages-no-meta",
+        title: `${noDesc.length} of ${productPages.length} product pages scanned have no meta description`,
+        impact: 2,
+        detail:
+          "These pages let Google improvise their search snippet instead of pitching the product. A one-line benefit + offer per page is a same-day fix.",
+        evidence: noDesc.map((p) => `${p.path} — missing or under 50 characters`),
+      });
+    }
+  }
+
+  // Broken pages the store itself links to — link rot shoppers actually hit.
+  if (crawled.length >= 3) {
+    checkedWeight += 3;
+    if (brokenPages.length > 0) {
+      findings.push({
+        id: "broken-pages",
+        title: `${brokenPages.length} broken page${brokenPages.length > 1 ? "s" : ""} linked from your own storefront`,
+        impact: 3,
+        detail:
+          "These links are on your site right now and lead shoppers to error pages. Every one is a dead end you're sending your own traffic into.",
+        evidence: brokenPages.map((p) => `${p.path} — HTTP ${p.status}`),
+      });
+    }
+  }
+
+  // Blog freshness — a discovered blog with a readable feed dates itself.
+  if (blogLatest !== undefined && blogLatest !== null) {
+    checkedWeight += 2;
+    const ageDays = Math.floor((Date.now() - Date.parse(blogLatest)) / 86_400_000);
+    if (ageDays > 120) {
+      const months = Math.floor(ageDays / 30);
+      findings.push({
+        id: "stale-blog",
+        title: `Blog has been silent for ${months} months`,
+        impact: 2,
+        detail:
+          "A visibly abandoned blog reads as a visibly abandoned store — and Google notices the silence too. Either publish on a rhythm or remove the dates from view.",
+        evidence: [`Latest post in your blog feed: ${blogLatest.slice(0, 10)}.`],
+      });
+    }
+  }
+
+  return {
+    findings: findings.sort((a, b) => b.impact - a.impact),
+    checkedWeight,
+    pages: buildPageAudits(snapshot),
+  };
 }
 
-/** 100 minus a weight per finding, floored — an honest but motivating number. */
-export function scoreAudit(findings: AuditFinding[]): number {
-  const deduction = findings.reduce((n, f) => n + f.impact * 6, 0);
-  return Math.max(25, Math.min(95, 100 - deduction));
+/** The page-by-page table: one row per URL we fetched, with its verdicts. */
+export function buildPageAudits(snapshot: StoreSnapshot): PageAudit[] {
+  const { html, crawled, isShopify } = snapshot;
+  const audits: PageAudit[] = [];
+
+  const audit = (path: string, kind: PageKind, status: number, pageHtml: string): PageAudit => {
+    const title = (pageHtml.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? "").trim() || null;
+    const issues: string[] = [];
+    if (status === 0) {
+      issues.push("unreachable — the page didn't respond");
+      return { path, kind, title, issues };
+    }
+    if (status >= 400) {
+      issues.push(`broken — returns HTTP ${status}`);
+      return { path, kind, title, issues };
+    }
+    if (!title || title.length < 15) issues.push("missing or very short <title> tag");
+    if (metaContent(pageHtml, /<meta[^>]+name=["']description["'][^>]*>/i).length < 50)
+      issues.push("no meta description");
+    const text = stripHtml(pageHtml.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " "));
+    if (text.length < 300) issues.push(`almost no visible text (${text.length} characters)`);
+    if (kind === "product") {
+      if (!/schema\.org\/Product|"@type"\s*:\s*"Product"/i.test(pageHtml))
+        issues.push("no Product structured data");
+      if (!APP_PATTERNS.reviews.test(pageHtml) && !/aggregateRating|"ratingValue"/i.test(pageHtml))
+        issues.push("no reviews visible");
+      if (isShopify && !/shopify-payment-button|shop-pay|dynamic-checkout/i.test(pageHtml))
+        issues.push("no express checkout");
+    }
+    return { path, kind, title, issues };
+  };
+
+  if (html) audits.push(audit("/", "homepage", 200, html));
+  for (const p of crawled) audits.push(audit(p.path, p.kind, p.status, p.html));
+  return audits;
+}
+
+/**
+ * Failed weight over total weight actually checked — so a well-run store
+ * that passes 14 of 16 checks scores in the 80s instead of being punished
+ * for the audit's thoroughness, and a store we could only partially scan
+ * isn't judged on checks that never ran. Floored/capped to stay honest but
+ * motivating.
+ */
+export function scoreAudit(findings: AuditFinding[], checkedWeight: number): number {
+  if (checkedWeight <= 0) return 50;
+  const failed = findings.reduce((n, f) => n + f.impact, 0);
+  const score = Math.round(100 * (1 - failed / checkedWeight));
+  return Math.max(20, Math.min(98, score));
 }
 
 // ---------------------------------------------------------------------------
@@ -524,7 +1073,14 @@ const TEMPLATE_SUMMARY = (host: string, findings: AuditFinding[]) =>
  */
 export async function writeProse(
   findings: AuditFinding[],
-  meta: { host: string; platform: string; productCount: number | null },
+  meta: {
+    host: string;
+    platform: string;
+    productCount: number | null;
+    catalog?: AuditCatalog;
+    detected?: string[];
+    pagesAudited?: number;
+  },
   env: AuditEnv,
 ): Promise<{ summary: string; findings: AuditFinding[] }> {
   const fallback = { summary: TEMPLATE_SUMMARY(meta.host, findings), findings };
@@ -537,14 +1093,14 @@ export async function writeProse(
       body: JSON.stringify({
         model: env.groqModel || CHAT_MODEL_DEFAULT,
         temperature: 0.4,
-        max_tokens: 700,
+        max_tokens: 1000,
         stream: false,
         response_format: { type: "json_object" },
         messages: [
           {
             role: "system",
             content:
-              'You are Evolution, an AI COO for ecommerce stores, writing a free store audit. Rewrite each finding\'s "detail" to be specific to this store: concrete, direct, founder-to-founder tone, 1–3 sentences, no fluff, mention evidence when given. Also write a 2-sentence "summary" of the audit. Respond ONLY with JSON: {"summary": string, "findings": [{"id": string, "detail": string}]}. Keep every finding id unchanged.',
+              'You are Evolution, an AI COO for ecommerce stores, writing a free store audit. Rewrite each finding\'s "detail" to be specific to this store: concrete, direct, founder-to-founder tone, 1–3 sentences, no fluff. HARD RULES: use ONLY numbers and facts present in the input (titles, counts, sizes, evidence lines, catalog stats) — NEVER invent statistics, percentages, or benchmarks that are not in the input; keep any benchmark that IS in the input. Weave the strongest concrete fact into each detail (e.g. the actual product name, the actual character count, the actual dollar/count figure). Do not repeat the evidence list verbatim — it is shown separately under the finding. Also write a "summary": 2 sentences, leading with the single most expensive problem and one concrete number from the input. Respond ONLY with JSON: {"summary": string, "findings": [{"id": string, "detail": string}]}. Keep every finding id unchanged.',
           },
           {
             role: "user",
@@ -552,6 +1108,9 @@ export async function writeProse(
               store: meta.host,
               platform: meta.platform,
               productCount: meta.productCount,
+              catalogStats: meta.catalog ?? null,
+              techDetectedOnStore: meta.detected ?? [],
+              pagesAudited: meta.pagesAudited ?? 0,
               findings: findings.map((f) => ({
                 id: f.id,
                 title: f.title,
@@ -715,32 +1274,58 @@ export async function runAudit(
 
   // Public checks only when there was a public surface to check — otherwise
   // "no apps detected" would just mean "we saw nothing".
-  let rawFindings = publicSurface && !snapshot.passwordProtected ? runChecks(snapshot) : [];
+  const publicChecks =
+    publicSurface && !snapshot.passwordProtected
+      ? runChecks(snapshot)
+      : { findings: [], checkedWeight: 0, pages: [] as PageAudit[] };
+  let rawFindings = publicChecks.findings;
+  let checkedWeight = publicChecks.checkedWeight;
+  const pageAudits = publicChecks.pages;
   if (deep) {
     // Real abandoned-cart numbers supersede the pattern-guessed version.
     if (deep.findings.some((f) => f.id === "abandoned-carts")) {
       rawFindings = rawFindings.filter((f) => f.id !== "no-cart-recovery");
     }
     rawFindings = [...deep.findings, ...rawFindings].sort((a, b) => b.impact - a.impact);
+    // The two deep checks (abandoned carts: 5, repeat rate: 4) were evaluated.
+    checkedWeight += 9;
   }
 
   const platform = snapshot.isShopify || conn ? "shopify" : "unknown";
   const productCount = snapshot.products?.length ?? null;
+  const catalog = computeCatalog(snapshot.products);
+
+  // The report's receipts: pages covered + tech positively identified.
+  const pages: string[] = pageAudits.map((p) => p.path);
+  if (snapshot.products) pages.push(`/products.json (${snapshot.products.length} products)`);
+  if (snapshot.policies) pages.push("policy pages");
+  const detected = detectTech(snapshot.corpus);
+
   const { summary, findings } = await writeProse(
     rawFindings,
-    { host: normalized.host, platform, productCount },
+    {
+      host: normalized.host,
+      platform,
+      productCount,
+      catalog,
+      detected,
+      pagesAudited: pageAudits.length,
+    },
     env,
   );
 
   const report: AuditReport = {
     storeUrl: normalized.url,
     platform,
-    score: scoreAudit(findings),
+    score: scoreAudit(findings, checkedWeight),
     summary,
     productCount,
     findings,
     connected: Boolean(deep),
     stats: deep?.stats,
+    catalog,
+    scanned: { pages, detected },
+    pages: pageAudits.length > 0 ? pageAudits : undefined,
   };
 
   await persistAudit(env, report, userId);

@@ -7,8 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import {
-  connectStore,
-  runAuditAsUser,
+  auditAndSaveStore,
   PENDING_AUDIT_KEY,
   type ConnectedStore,
   type AuditReport,
@@ -53,17 +52,14 @@ export function ConnectStore({
     setBusy(true);
     setError(null);
 
-    // Re-running the audit signed-in both validates the URL and attributes
-    // the saved report to this account. Template prose keeps it fast enough.
-    const audit = await runAuditAsUser(trimmed);
-    const store = await connectStore(
-      audit?.storeUrl ?? trimmed,
-      audit?.platform,
-    );
+    // Audit-first: the store is only saved once the audit reached the URL,
+    // so a wrong address surfaces here — where it can still be corrected —
+    // instead of after it's locked into the account.
+    const { store, report: audit, error } = await auditAndSaveStore(trimmed);
 
     if (!store) {
       setBusy(false);
-      setError("Couldn't save your store — check the URL and try again.");
+      setError(error ?? "Couldn't save your store — check the URL and try again.");
       return;
     }
     try {

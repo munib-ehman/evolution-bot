@@ -76,6 +76,28 @@
     .finding p { margin: 0; font-size: 15px; }
     .finding .evidence { margin-top: 6px; font-size: 13.5px; color: var(--muted); }
 
+    .stat-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 4px; }
+    .stat-box {
+      background: #fffdf9; border: 1px solid var(--line); border-radius: 14px;
+      padding: 10px 14px; min-width: 108px;
+    }
+    .stat-box span { display: block; font-size: 18px; font-weight: 800; color: var(--ink); }
+    .stat-box label { display: block; margin-top: 2px; font-size: 11.5px; color: var(--muted); }
+    .stat-box.alert { background: #fff0ee; border-color: #ffd9d3; }
+    .stat-box.alert span { color: #c0392b; }
+    .scan-receipts { margin: 8px 0 4px; font-size: 12.5px; color: var(--muted); }
+
+    .page-audits { margin: 14px 0 4px; }
+    .page-audits h3 { margin: 0 0 4px; font-size: 15px; }
+    .page-audit {
+      display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline;
+      padding: 7px 0; border-top: 1px solid var(--line); font-size: 13.5px;
+    }
+    .page-audit a { color: var(--ink); font-weight: 600; text-decoration: none; word-break: break-all; }
+    .page-audit a:hover { text-decoration: underline; }
+    .page-issues { color: #c0392b; }
+    .page-clean { color: #1e8e5a; }
+
     .locked-wrap { position: relative; margin-top: 12px; }
     .locked-list { filter: blur(6px); pointer-events: none; user-select: none; }
     .locked-cta {
@@ -212,6 +234,45 @@
           esc(report.score) + "</div>" +
           "<p><strong>" + esc(report.storeUrl.replace(/^https:\/\//, "")) + "</strong><br />" +
           esc(report.summary) + "</p></div>";
+
+        var cat = report.catalog;
+        if (cat) {
+          var boxes = [
+            '<div class="stat-box"><span>' + esc(cat.products) + (cat.capped ? "+" : "") + "</span><label>products scanned</label></div>",
+          ];
+          if (cat.soldOut > 0)
+            boxes.push('<div class="stat-box alert"><span>' + esc(cat.soldOut) + "</span><label>sold out</label></div>");
+          if (cat.thinDescriptions > 0)
+            boxes.push('<div class="stat-box alert"><span>' + esc(cat.thinDescriptions) + "</span><label>thin descriptions</label></div>");
+          if (cat.avgImages != null)
+            boxes.push('<div class="stat-box"><span>' + esc(cat.avgImages) + "</span><label>photos / product</label></div>");
+          if (cat.priceMin != null && cat.priceMax != null)
+            boxes.push('<div class="stat-box"><span>' + esc(Math.round(cat.priceMin).toLocaleString()) + "–" + esc(Math.round(cat.priceMax).toLocaleString()) + "</span><label>price range</label></div>");
+          html += '<div class="stat-row">' + boxes.join("") + "</div>";
+        }
+
+        if (report.scanned && report.scanned.pages && report.scanned.pages.length) {
+          html +=
+            '<p class="scan-receipts">Scanned ' + report.scanned.pages.map(esc).join(" · ") +
+            (report.scanned.detected && report.scanned.detected.length
+              ? " — detected " + report.scanned.detected.map(esc).join(", ")
+              : "") +
+            ".</p>";
+        }
+
+        if (report.pages && report.pages.length) {
+          html +=
+            '<div class="page-audits"><h3>Page-by-page</h3>' +
+            report.pages.map(function (p) {
+              var href = report.storeUrl + (p.path === "/" ? "" : p.path);
+              var verdict = p.issues && p.issues.length
+                ? '<span class="page-issues">' + p.issues.map(esc).join(" · ") + "</span>"
+                : '<span class="page-clean">✓ no issues found</span>';
+              return '<div class="page-audit"><a href="' + esc(href) + '" target="_blank" rel="noreferrer">' +
+                esc(p.path) + "</a>" + verdict + "</div>";
+            }).join("") +
+            "</div>";
+        }
 
         if (findings.length === 0) {
           html += "<p><strong>No obvious leaks from the outside.</strong> Sign in and connect your store — the deeper checks (abandoned carts, retention, profit) need more than public data.</p>";
