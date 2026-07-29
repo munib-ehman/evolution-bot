@@ -30,7 +30,7 @@ import { handleShopifyWebhook, runOpsLiveSetup } from "./api/_events";
 import { handleShopifyCompliance } from "./api/_compliance";
 import { runShopifySession } from "./api/_embedded";
 import { runAgentChat, type AgentChatBody } from "./api/_agentChat";
-import { runPolarCheckout, handlePolarWebhook, polarConfigured, type PolarEnv } from "./api/_polar";
+import { runPolarCheckout, runPolarPortal, handlePolarWebhook, polarConfigured, type PolarEnv } from "./api/_polar";
 import type { SkillEnv } from "./api/_skillTools";
 import { sendTaskEmail } from "./api/_email";
 
@@ -237,7 +237,7 @@ export function devApi(): Plugin {
       server.middlewares.use("/api/shopify-callback", (req, res) => {
         void (async () => {
           const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost:5173"}`);
-          const { redirect } = await runShopifyCallback(url, auditEnv);
+          const { redirect } = await runShopifyCallback(url, auditEnv, polarEnv);
           res.statusCode = 302;
           res.setHeader("Location", redirect);
           res.end();
@@ -395,7 +395,7 @@ export function devApi(): Plugin {
             res.setHeader("Content-Type", "application/json");
             return res.end(JSON.stringify({ error: "Invalid request body." }));
           }
-          const { status, body: result } = await runShopifySession(body, auditEnv);
+          const { status, body: result } = await runShopifySession(body, auditEnv, polarEnv);
           res.statusCode = status;
           res.setHeader("Content-Type", "application/json");
           res.setHeader("Cache-Control", "no-store");
@@ -534,6 +534,21 @@ export function devApi(): Plugin {
           const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
           const origin = `http://${req.headers.host ?? "localhost:5173"}`;
           const { status, body } = await runPolarCheckout(auth, origin, polarEnv);
+          res.statusCode = status;
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader("Cache-Control", "no-store");
+          res.end(JSON.stringify(body));
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/polar-portal", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const { status, body } = await runPolarPortal(auth, polarEnv);
           res.statusCode = status;
           res.setHeader("Content-Type", "application/json");
           res.setHeader("Cache-Control", "no-store");

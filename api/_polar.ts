@@ -102,6 +102,53 @@ export async function runPolarCheckout(
 }
 
 // ---------------------------------------------------------------------------
+// POST /api/polar-portal — mint a customer-portal session so web-rail
+// subscribers can manage/cancel their subscription themselves (Shopify-rail
+// subscriptions are managed in the Shopify admin instead). Requires the org
+// token to carry the customer_sessions:write scope.
+
+export async function runPolarPortal(
+  authHeader: string | null,
+  env: PolarEnv,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (!env.polarToken) {
+    return { status: 503, body: { error: "Billing isn't configured yet — email us instead." } };
+  }
+  const user = await resolveUserFull(env, authHeader);
+  if (!user) return { status: 401, body: { error: "Sign in first." } };
+
+  try {
+    // external_customer_id is our Supabase user id — checkout sets it, so any
+    // account that ever bought through Polar resolves here.
+    const res = await fetch(`${env.polarApiBase}/v1/customer-sessions/`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.polarToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ external_customer_id: user.id }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      log("warn", "polar-portal", "session_failed", { status: res.status });
+      return {
+        status: 404,
+        body: { error: "No Polar subscription on this account — if you subscribed another way, email us and we'll sort it out." },
+      };
+    }
+    const data = (await res.json()) as { customer_portal_url?: string };
+    if (!data.customer_portal_url) {
+      log("error", "polar-portal", "session_failed", { reason: "no-url" });
+      return { status: 502, body: { error: "Couldn't open the billing portal — try again in a minute." } };
+    }
+    return { status: 200, body: { url: data.customer_portal_url } };
+  } catch {
+    log("error", "polar-portal", "session_failed", { reason: "network" });
+    return { status: 502, body: { error: "Couldn't reach the billing provider — try again." } };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Standard Webhooks signature (https://www.standardwebhooks.com/): HMAC-SHA256
 // over `${id}.${timestamp}.${body}`, keyed with the base64-DECODED whsec_
 // secret; header carries space-separated `v1,<base64sig>` candidates.

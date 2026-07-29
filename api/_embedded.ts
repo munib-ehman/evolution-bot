@@ -31,6 +31,7 @@ import {
   shopifyGraphql,
   type ShopifyEnv,
 } from "./_shopify";
+import { migratePolarToShopify, type PolarMigrateEnv } from "./_polarMigrate";
 import { log } from "./_log";
 
 /** Synthetic-address domain for users auto-provisioned from a Shopify install. */
@@ -314,6 +315,7 @@ export async function syncShopifyPlan(env: ShopifyEnv, userId: string): Promise<
 export async function runShopifySession(
   body: { sessionToken?: unknown },
   env: ShopifyEnv,
+  polarEnv?: PolarMigrateEnv,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   if (!env.shopifyApiKey || !env.shopifyApiSecret || !env.supabaseUrl || !env.serviceRoleKey) {
     return { status: 503, body: { error: "Shopify embedded mode isn't configured." } };
@@ -386,6 +388,10 @@ export async function runShopifySession(
   }
   await ensureProfileRow(env, userId, email);
   await syncShopifyPlan(env, userId);
+  // A store install moves billing to Shopify App Pricing — wind down any
+  // Polar subscription at period end. Runs every session (cheap: one profile
+  // read for non-Polar accounts), which also self-heals a missed migration.
+  if (polarEnv) await migratePolarToShopify(polarEnv, userId);
 
   return { status: 200, body: { token_hash: link.tokenHash, shop } };
 }

@@ -56,25 +56,29 @@ export function UpgradePanel({
       ? `https://admin.shopify.com/store/${storeHandle}/charges/${SHOPIFY_APP_HANDLE}/pricing_plans`
       : null;
 
-  const checkout = async () => {
+  // Checkout and the customer portal are the same dance: authed POST → Polar
+  // hands back a hosted URL → we send the browser there.
+  const openPolar = async (endpoint: string, failMsg: string) => {
     setBusy(true);
     setError(null);
     try {
       const { data } = (await supabase?.auth.getSession()) ?? { data: null };
       const token = data?.session?.access_token;
       if (!token) throw new Error("Sign in first, then try again.");
-      const res = await fetch("/api/polar-checkout", {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
       const body = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-      if (!res.ok || !body.url) throw new Error(body.error ?? "Couldn't open checkout.");
+      if (!res.ok || !body.url) throw new Error(body.error ?? failMsg);
       window.location.href = body.url;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't open checkout.");
+      setError(err instanceof Error ? err.message : failMsg);
       setBusy(false);
     }
   };
+  const checkout = () => openPolar("/api/polar-checkout", "Couldn't open checkout.");
+  const portal = () => openPolar("/api/polar-portal", "Couldn't open the billing portal.");
 
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Upgrade">
@@ -87,12 +91,31 @@ export function UpgradePanel({
         </header>
 
         {plan === "operator" ? (
-          <p className="overlay-lede">
-            Your operator is running — the software executes the busywork and you approve every action.{" "}
-            {shopDomain
-              ? "Manage or cancel the subscription any time from your Shopify admin."
-              : "Cancel anytime from your Polar receipt email, or email us."}
-          </p>
+          <>
+            <p className="overlay-lede">
+              Your operator is running — the software executes the busywork and you approve every action.{" "}
+              {shopDomain
+                ? "Manage or cancel the subscription any time from your Shopify admin."
+                : "Manage or cancel the subscription any time below."}
+            </p>
+            {shopDomain === undefined ? null : shopDomain ? (
+              shopifyPricingUrl && (
+                <a
+                  className="primary as-link"
+                  href={shopifyPricingUrl}
+                  target={isEmbedded() ? "_top" : "_blank"}
+                  rel="noreferrer"
+                >
+                  Manage your plan in Shopify
+                </a>
+              )
+            ) : (
+              <button type="button" className="primary" disabled={busy} onClick={() => void portal()}>
+                {busy ? "Opening the billing portal…" : "Manage subscription"}
+              </button>
+            )}
+            {error && <p className="overlay-error">{error}</p>}
+          </>
         ) : (
           <>
             <p className="plan-price">
