@@ -13,7 +13,6 @@ Format:
 
 ## Pending
 
-- How to find your next winning product without gambling on ads
 - Sourcing products from suppliers: a checklist for small stores
 - Inventory planning for solo store owners: avoiding stockouts and dead stock
 - Email list building for ecommerce without annoying popups
@@ -96,3 +95,6 @@ Format:
 - [2026-07-29] Proactive live chat for Shopify stores: catching visitors before they leave (competitor-trend: Tidio live chat/Lyro resolve-rate stats + industry proactive AI chat trigger trend) — /blog/proactive-live-chat-triggers-shopify-stores
 - [2026-07-29] Customer support channels for small stores: which ones you actually need (competitor-trend: Gorgias customer service channels guide + Zendesk/Freshworks 2026 channel strategy coverage) — /blog/customer-support-channels-small-store-guide
 - [2026-07-29] Product page mistakes that quietly kill conversions — /blog/product-page-mistakes-that-kill-conversions
+- [2026-07-30] Countdown timers for Shopify: urgency marketing that doesn't feel fake (competitor-trend: Omnisend's new Tickvio countdown-timer integration + 2026 urgency-marketing conversion data) — /blog/countdown-timers-shopify-urgency-marketing
+- [2026-07-30] Google Trends SEO for Shopify stores: catching demand while it spikes (competitor-trend: Yotpo's "Google Trends for SEO: The Velocity Playbook" + 2026 ecommerce SEO trend coverage) — /blog/google-trends-seo-for-shopify-stores
+- [2026-07-30] How to find your next winning product without gambling on ads — /blog/find-winning-product-without-gambling-on-ads
