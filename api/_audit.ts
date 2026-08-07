@@ -100,6 +100,9 @@ export interface AuditEnv {
   groqModel?: string;
   /** Web-search-capable model for research skills (GROQ_RESEARCH_MODEL). */
   groqResearchModel?: string;
+  /** Comma-separated founder/admin emails (ADMIN_EMAILS) — server-side
+   * feature-limit bypasses. Distinct from VITE_ADMIN_EMAILS (client UI). */
+  adminEmails?: string;
   supabaseUrl?: string;
   serviceRoleKey?: string;
 }
@@ -196,7 +199,7 @@ async function fetchPage(
   }
 }
 
-async function fetchText(url: string): Promise<{ text: string; finalUrl: string } | null> {
+export async function fetchText(url: string): Promise<{ text: string; finalUrl: string } | null> {
   const page = await fetchPage(url);
   if (!page || page.status < 200 || page.status >= 300) return null;
   return { text: page.text, finalUrl: page.finalUrl };

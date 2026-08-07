@@ -1610,6 +1610,30 @@ code {
 /* The audit's receipts line — what was scanned and which tech was found. */
 .scan-receipts { margin: -8px 0 18px; font-size: 12px; color: var(--muted); }
 
+/* Product hunt cards. */
+.hunt-product { padding: 16px 0 4px; border-top: 1px solid var(--line); }
+.hunt-product h4 { margin: 0 0 4px; font-size: 15.5px; color: var(--ink); }
+.hunt-hook { margin: 0 0 8px; font-size: 13.5px; font-weight: 600; color: var(--g2); }
+.hunt-why { margin: 0 0 12px; font-size: 14px; color: var(--ink2); }
+.hunt-block { margin: 0 0 12px; font-size: 13.5px; }
+.hunt-block strong { display: block; margin-bottom: 4px; color: var(--ink); }
+.hunt-block ul { margin: 0; padding-left: 18px; color: var(--ink2); }
+.hunt-block li { margin: 3px 0; }
+.hunt-block a { color: var(--g2); font-weight: 600; }
+.hunt-listing {
+  margin: 0 0 12px; padding: 10px 14px;
+  background: var(--cream); border: 1px solid var(--line); border-radius: 14px;
+  font-size: 13.5px;
+}
+.hunt-listing summary { cursor: pointer; font-weight: 700; color: var(--ink); }
+.hunt-listing-title { margin: 10px 0 6px; }
+.hunt-listing ul { margin: 0 0 8px; padding-left: 18px; color: var(--ink2); }
+.hunt-listing p { margin: 0 0 8px; color: var(--ink2); }
+.hunt-fit { margin: 0 0 8px; font-size: 13px; color: var(--ink2); font-style: italic; }
+.hunt-sources { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+.hunt-sources a { color: var(--muted); }
+.hunt-progress { margin: 10px 0 0; font-size: 13px; color: var(--ink2); }
+
 /* Page-by-page audit table. */
 .page-audits { margin: 0 0 18px; }
 .page-audits h4 { margin: 0 0 6px; font-size: 13.5px; color: var(--ink2); }

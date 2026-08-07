@@ -1,7 +1,7 @@
 /**
  * The free-plan home — what a signed-in account sees before subscribing.
  *
- * Free tier: the automated store audit, plus the upcoming product-hunt drop
+ * Free tier: the automated store audit, plus a live product hunt
  * (three winning product ideas for the store's niche). The operator dashboard
  * — chat, skills, recovery, retention, ops — unlocks with the Operator plan;
  * the paid APIs enforce the same boundary server-side (api/_plan.ts), so this
@@ -10,6 +10,7 @@
 import { useState } from "react";
 import { ButterflyIcon } from "./icons";
 import { ConnectStore } from "./ConnectStore";
+import { ProductHunt } from "./ProductHunt";
 import { ToolsPanel } from "./ToolsPanel";
 import { UpgradePanel } from "./UpgradePanel";
 import { signOut } from "../lib/auth";
@@ -270,16 +271,7 @@ export function FreeHome({
               {auditError && <p className="overlay-error">{auditError}</p>}
             </section>
 
-            <section className="card free-card">
-              <div className="free-card-head">
-                <h3>Product hunt</h3>
-                <span className="soon-badge">coming soon</span>
-              </div>
-              <p className="free-card-body">
-                Three winning product ideas for your niche, researched from
-                live market data — landing in the free plan.
-              </p>
-            </section>
+            <ProductHunt storeUrl={store?.url ?? null} />
           </div>
 
           <aside className="card operator-card">

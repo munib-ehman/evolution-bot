@@ -18,6 +18,7 @@ import {
   mapVoice,
 } from "./api/_shared";
 import { runAudit, resolveUserFull } from "./api/_audit";
+import { runProductHunt } from "./api/_productHunt";
 import { requireUser } from "./api/_auth";
 import { checkRateLimit } from "./api/_ratelimit";
 import { runShopifyAuthStart, runShopifyCallback, runShopifyDisconnect, type ShopifyEnv } from "./api/_shopify";
@@ -99,6 +100,9 @@ export function devApi(): Plugin {
         groqKey: key,
         groqModel: (env.GROQ_CHAT_MODEL ?? "").trim(),
         groqResearchModel: (env.GROQ_RESEARCH_MODEL ?? "").trim(),
+        // Server-side admin bypasses fall back to the client admin list so
+        // local dev needs no extra var.
+        adminEmails: (env.ADMIN_EMAILS ?? env.VITE_ADMIN_EMAILS ?? "").trim(),
         supabaseUrl: (env.SUPABASE_URL ?? env.VITE_SUPABASE_URL ?? "").trim(),
         serviceRoleKey: (env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim(),
         shopifyApiKey: (env.SHOPIFY_API_KEY ?? "").trim(),
@@ -262,6 +266,26 @@ export function devApi(): Plugin {
           const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
           const origin = `http://${req.headers.host ?? "localhost:5173"}`;
           await pipeResponse(res, await runSkill(body, auth, origin, skillEnv));
+        })().catch((err) => {
+          if (!res.headersSent) send(res, 500, String(err));
+          else res.end();
+        });
+      });
+
+      server.middlewares.use("/api/product-hunt", (req, res) => {
+        void (async () => {
+          if (req.method === "GET") return send(res, 204);
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: { url?: unknown };
+          try {
+            body = JSON.parse(await readBody(req)) as { url?: unknown };
+          } catch {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            return res.end(JSON.stringify({ error: "Invalid request body." }));
+          }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runProductHunt(body, auth, auditEnv));
         })().catch((err) => {
           if (!res.headersSent) send(res, 500, String(err));
           else res.end();
