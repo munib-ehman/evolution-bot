@@ -167,7 +167,7 @@ Write research notes in markdown:
 export async function researchCall(
   digest: CatalogDigest,
   env: AuditEnv,
-): Promise<string | null> {
+): Promise<{ content: string | null; failure: ResearchFailure }> {
   try {
     const res = await fetch(`${GROQ_BASE}/chat/completions`, {
       method: "POST",
@@ -196,15 +196,51 @@ export async function researchCall(
       signal: AbortSignal.timeout(RESEARCH_TIMEOUT_MS),
     });
     if (!res.ok) {
-      log("warn", "hunt", "research_upstream_error", { status: res.status });
-      return null;
+      const detail = (await res.json().catch(() => null)) as {
+        error?: { code?: string; type?: string };
+      } | null;
+      const code = detail?.error?.code ?? detail?.error?.type ?? "unknown";
+      log("warn", "hunt", "research_upstream_error", { status: res.status, code });
+      return {
+        content: null,
+        failure:
+          res.status === 401 || res.status === 403
+            ? "auth"
+            : res.status === 429
+              ? "rate_limit"
+              : res.status === 413
+                ? "payload"
+                : "upstream",
+      };
     }
     const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    return data.choices?.[0]?.message?.content ?? null;
+    const content = data.choices?.[0]?.message?.content ?? null;
+    return { content, failure: content ? null : "empty" };
   } catch (err) {
     log("warn", "hunt", "research_failed", { err: String(err) });
-    return null;
+    return {
+      content: null,
+      failure: err instanceof DOMException && err.name === "TimeoutError" ? "timeout" : "upstream",
+    };
   }
+}
+
+type ResearchFailure = "auth" | "rate_limit" | "payload" | "timeout" | "upstream" | "empty" | null;
+
+function researchFailureMessage(failure: ResearchFailure): string {
+  if (failure === "auth") {
+    return "Live research is temporarily unavailable because its service credentials need attention. We've logged the issue — please try again later.";
+  }
+  if (failure === "rate_limit") {
+    return "Live research is busy right now — give it about 60 seconds and run it again.";
+  }
+  if (failure === "payload") {
+    return "The research provider rejected this catalog as too large. We've logged the issue — please try again later.";
+  }
+  if (failure === "timeout") {
+    return "Live research took too long to respond — give it a minute and run it again.";
+  }
+  return "Live research couldn't complete this run — give it about 60 seconds and try again.";
 }
 
 /** Stage B: the chat model structures the research notes into the schema.
@@ -437,15 +473,20 @@ export async function executeHunt(
 
   // One retry: compound sometimes skips its search tool and refuses in a
   // sentence, or loops — a fresh call almost always recovers.
-  let raw = await researchCall(digest, env);
+  let research = await researchCall(digest, env);
+  let raw = research.content;
   if (raw) raw = trimDegenerateTail(raw);
+  if (!raw && (research.failure === "auth" || research.failure === "rate_limit" || research.failure === "payload")) {
+    return { report: null, error: researchFailureMessage(research.failure) };
+  }
   if (!raw || raw.length < 900) {
     progress("First pass came back thin — hunting again…");
-    raw = await researchCall(digest, env);
+    research = await researchCall(digest, env);
+    raw = research.content;
     if (raw) raw = trimDegenerateTail(raw);
   }
   if (!raw || raw.length < 300) {
-    return { report: null, error: "Live research is at capacity this minute — give it about 60 seconds and run it again." };
+    return { report: null, error: researchFailureMessage(research.failure) };
   }
 
   progress("Structuring the findings…");

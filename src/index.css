@@ -1690,6 +1690,14 @@ code {
 
 /* The one paid plan — a gradient-framed pricing card that owns the right rail. */
 .operator-card {
+  position: sticky;
+  top: 18px;
+  align-self: start;
+  max-height: calc(100vh - 36px);
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
   padding: 30px 28px;
   border: 1.5px solid transparent;
   background:
@@ -1742,6 +1750,11 @@ code {
 @media (max-width: 900px) {
   .free-layout { grid-template-columns: 1fr; }
   /* Selling card first on small screens — it's why most visitors are here. */
-  .operator-card { order: -1; }
+  .operator-card {
+    position: static;
+    order: -1;
+    max-height: none;
+    overflow-y: visible;
+  }
   .free-home { padding: 18px 12px 60px; }
 }
