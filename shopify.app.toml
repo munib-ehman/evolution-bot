@@ -1,6 +1,7 @@
-# Shopify app config (managed by the Shopify CLI — `shopify app deploy`
-# pushes this to the Partner Dashboard; `shopify app config link` fills in
-# client_id from the dashboard app).
+# Production Shopify app configuration. `shopify app deploy` creates a new app
+# version and synchronizes this configuration with the linked Dev Dashboard app.
+# A TOML file cannot create the initial Dashboard app by itself: use
+# `shopify app config link` once, then keep the generated client_id below.
 #
 # Webhook subscriptions here are APP-LEVEL: Shopify delivers them for every
 # install with no per-shop registration code. The privacy_compliance block is
@@ -10,6 +11,7 @@ name = "Evolution"
 client_id = "dcc254cec11e1d4056cea1b81bf02f18"
 application_url = "https://www.runevolution.io/app"
 embedded = true
+extension_directories = []
 # App Store URL slug (apps.shopify.com/runevolution) — "evolution" was taken.
 # Must match VITE_SHOPIFY_APP_HANDLE on Vercel (pricing deep link).
 handle = "runevolution"
@@ -27,6 +29,11 @@ redirect_urls = [
   "https://www.runevolution.io/api/shopify-callback",
   "http://localhost:5173/api/shopify-callback",
 ]
+
+[build]
+# Never let `shopify app dev` replace the production URL with a temporary
+# tunnel. Use a separate development config if tunnel URL updates are wanted.
+automatically_update_urls_on_dev = false
 
 [webhooks]
 api_version = "2026-04"

@@ -82,12 +82,22 @@ Set the OAuth redirect URL to:
 https://<your-domain>/api/shopify-callback
 ```
 
-The repository's `shopify.app.toml` defines the constrained v1.1 write scopes, embedded behavior, ordinary webhook subscriptions, and privacy-compliance endpoints. Review its domain and handle, then push it with the Shopify CLI:
+The repository's `shopify.app.toml` defines the constrained v1.1 write scopes, embedded behavior, ordinary webhook subscriptions, and privacy-compliance endpoints. It is already linked through its `client_id`. A TOML file cannot create the initial Dev Dashboard app by itself.
+
+For a new app, authenticate Shopify CLI and create/link the app once:
 
 ```bash
+shopify auth login
 shopify app config link
+```
+
+Choose **Create a new app** when prompted. Shopify CLI writes the resulting `client_id` into the selected TOML configuration. After that, review the production domain and handle and deploy every configuration change with:
+
+```bash
 shopify app deploy
 ```
+
+`shopify app deploy` synchronizes Shopify configuration and creates a new app version; it does not deploy the Vercel application itself.
 
 Required webhook endpoints:
 
@@ -97,6 +107,18 @@ POST https://<your-domain>/api/shopify-compliance
 ```
 
 Write scopes power v1.1's merchant-approved action cards. Existing stores must reconnect after scope changes; never execute a Shopify mutation outside the persisted proposal and approval flow.
+
+### Generate the Vercel cron secret
+
+`CRON_SECRET` does not come from Shopify. Generate your own random secret and save it as a server-only Vercel environment variable. For example:
+
+```powershell
+$bytes = New-Object byte[] 48
+[Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+[Convert]::ToBase64String($bytes)
+```
+
+Copy the single output value to **Vercel → Project Settings → Environment Variables**, name it `CRON_SECRET`, select **Production**, and redeploy. Alternatively, run `vercel env add CRON_SECRET production`. Do not add the real value to `.env.example` or commit it. Vercel automatically sends it as `Authorization: Bearer <CRON_SECRET>` when invoking `/api/action-metrics`.
 
 ## 5. Configure web billing with Polar
 
