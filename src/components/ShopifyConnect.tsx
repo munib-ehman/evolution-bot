@@ -70,8 +70,9 @@ export function ShopifyConnect({
     return (
       <div className="shopify-connected">
         <p>
-          ✓ Shopify connected: <strong>{status.shop_domain}</strong> — read-only access; your
-          audits and skills use real store data.{" "}
+          ✓ Shopify connected: <strong>{status.shop_domain}</strong> — {status.capabilities.operatorReady
+            ? "Evolution can prepare changes and applies them only after your approval."
+            : "audits and skills use real store data; reconnect once to enable approved store actions."}{" "}
           <button type="button" className="link" onClick={() => void reconnect()} disabled={busy}>
             {busy ? "Working…" : "Reconnect"}
           </button>

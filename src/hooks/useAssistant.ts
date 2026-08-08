@@ -221,6 +221,16 @@ export function useAssistant() {
         }
       };
 
+      const onAction = (action: import("../lib/actions").ShopifyActionProposal) => {
+        if (controller.signal.aborted) return;
+        if (!bubbleShown) {
+          bubbleShown = true;
+          appendMessage({ id: assistantId, role: "assistant", content: "", pending: true, action });
+        } else {
+          updateMessage(assistantId, { action });
+        }
+      };
+
       try {
         // Store connected → the agentic path: the model can pull real store
         // data itself. Falls back to the generic brain when the agent is
@@ -233,6 +243,7 @@ export function useAssistant() {
               signal: controller.signal,
               onProgress,
               onToken,
+              onAction,
             });
           } catch (err) {
             if (controller.signal.aborted) {

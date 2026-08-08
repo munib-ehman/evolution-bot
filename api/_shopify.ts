@@ -16,7 +16,8 @@ import { migratePolarToShopify, type PolarMigrateEnv } from "./_polarMigrate";
 import { log } from "./_log";
 
 export const SHOPIFY_API_VERSION = "2026-04";
-export const SHOPIFY_SCOPES_DEFAULT = "read_products,read_orders,read_checkouts,read_customers";
+export const SHOPIFY_SCOPES_DEFAULT =
+  "write_products,write_files,write_discounts,read_orders,read_checkouts,read_customers";
 /** OAuth states older than this are refused (stops replayed links). */
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
@@ -29,6 +30,7 @@ export interface ShopifyEnv extends AuditEnv {
 export interface ShopifyConnection {
   shop_domain: string;
   access_token: string;
+  scopes?: string | null;
   /** Expiring-token fields (null on legacy rows, which Shopify now rejects). */
   refresh_token?: string | null;
   token_expires_at?: string | null;
@@ -337,7 +339,7 @@ export async function getConnection(env: ShopifyEnv, userId: string): Promise<Sh
   let conn: ShopifyConnection | null = null;
   try {
     const res = await fetch(
-      `${env.supabaseUrl}/rest/v1/shopify_connections?user_id=eq.${userId}&select=shop_domain,access_token,refresh_token,token_expires_at`,
+      `${env.supabaseUrl}/rest/v1/shopify_connections?user_id=eq.${userId}&select=shop_domain,access_token,scopes,refresh_token,token_expires_at`,
       {
         headers: { apikey: env.serviceRoleKey, Authorization: `Bearer ${env.serviceRoleKey}` },
         signal: AbortSignal.timeout(4_000),

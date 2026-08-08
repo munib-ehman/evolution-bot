@@ -63,7 +63,7 @@ Create or link the Shopify Partner app and configure:
 ```dotenv
 SHOPIFY_API_KEY=
 SHOPIFY_API_SECRET=
-SHOPIFY_SCOPES=read_products,read_orders,read_checkouts,read_customers
+SHOPIFY_SCOPES=write_products,write_files,write_discounts,read_orders,read_checkouts,read_customers
 VITE_SHOPIFY_API_KEY=
 VITE_SHOPIFY_APP_HANDLE=runevolution
 ```
@@ -82,7 +82,7 @@ Set the OAuth redirect URL to:
 https://<your-domain>/api/shopify-callback
 ```
 
-The repository's `shopify.app.toml` defines read-only scopes, embedded behavior, ordinary webhook subscriptions, and privacy-compliance endpoints. Review its domain and handle, then push it with the Shopify CLI:
+The repository's `shopify.app.toml` defines the constrained v1.1 write scopes, embedded behavior, ordinary webhook subscriptions, and privacy-compliance endpoints. Review its domain and handle, then push it with the Shopify CLI:
 
 ```bash
 shopify app config link
@@ -96,7 +96,7 @@ POST https://<your-domain>/api/shopify-webhook
 POST https://<your-domain>/api/shopify-compliance
 ```
 
-Do not add write scopes unless the product behavior and approval model are intentionally changed.
+Write scopes power v1.1's merchant-approved action cards. Existing stores must reconnect after scope changes; never execute a Shopify mutation outside the persisted proposal and approval flow.
 
 ## 5. Configure web billing with Polar
 

@@ -12,6 +12,7 @@
  */
 import { supabase } from "../lib/auth";
 import type { Message } from "../types";
+import type { ShopifyActionProposal } from "../lib/actions";
 
 export class AgentChatError extends Error {
   constructor(
@@ -28,6 +29,7 @@ export interface AgentChatOptions {
   signal?: AbortSignal;
   onProgress?: (label: string) => void;
   onToken?: (text: string) => void;
+  onAction?: (action: ShopifyActionProposal) => void;
 }
 
 /** Server rebuilds the system prompt; send user/assistant turns only. */
@@ -89,6 +91,7 @@ export async function runAgentChat(history: Message[], opts: AgentChatOptions = 
           progress?: string;
           error?: string;
           choices?: { delta?: { content?: string } }[];
+          action?: ShopifyActionProposal;
         };
         try {
           json = JSON.parse(payload);
@@ -99,6 +102,7 @@ export async function runAgentChat(history: Message[], opts: AgentChatOptions = 
           throw new AgentChatError(500, json.error, reply.length > 0);
         }
         if (typeof json.progress === "string") opts.onProgress?.(json.progress);
+        if (json.action) opts.onAction?.(json.action);
         const delta = json.choices?.[0]?.delta?.content;
         if (delta) {
           reply += delta;

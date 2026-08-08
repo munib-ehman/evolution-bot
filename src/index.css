@@ -1747,6 +1747,24 @@ code {
   color: var(--muted);
 }
 
+/* v1.1 persisted Shopify approval cards. */
+.action-center { width: min(560px, calc(100vw - 24px)); }
+.action-list { display: grid; gap: 12px; }
+.action-card {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--card);
+}
+.action-card-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.action-card-head span { font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--muted); }
+.action-card p { margin: 8px 0; font-size: 13.5px; color: var(--ink2); }
+.action-card ul { margin: 8px 0 12px; padding-left: 20px; font-size: 13px; color: var(--ink2); }
+.action-warning { font-weight: 700; color: #8a6414 !important; }
+.action-card-buttons { display: flex; gap: 12px; align-items: center; }
+.action-succeeded, .action-undone { border-color: #b9dfcc; }
+.action-failed, .action-partial, .action-stale { border-color: #efc1b9; }
+
 @media (max-width: 900px) {
   .free-layout { grid-template-columns: 1fr; }
   /* Selling card first on small screens — it's why most visitors are here. */

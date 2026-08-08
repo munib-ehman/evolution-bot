@@ -34,6 +34,15 @@ import { runAgentChat, type AgentChatBody } from "./api/_agentChat";
 import { runPolarCheckout, runPolarPortal, handlePolarWebhook, polarConfigured, type PolarEnv } from "./api/_polar";
 import type { SkillEnv } from "./api/_skillTools";
 import { sendTaskEmail } from "./api/_email";
+import {
+  runActionPropose,
+  runActionExecute,
+  runActionUndo,
+  runActionHistory,
+  runActionMetrics,
+  type ActionEnv,
+  type ActionProposeBody,
+} from "./api/_actions";
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -88,6 +97,7 @@ export function devApi(): Plugin {
   let auditEnv: ShopifyEnv = {};
   let skillEnv: SkillEnv = {};
   let polarEnv: PolarEnv = {};
+  let actionEnv: ActionEnv = {};
 
   return {
     name: "dev-api",
@@ -122,6 +132,7 @@ export function devApi(): Plugin {
         polarWebhookSecret: (env.POLAR_WEBHOOK_SECRET ?? "").trim(),
         polarApiBase: (env.POLAR_API_BASE ?? "").trim() || "https://api.polar.sh",
       };
+      actionEnv = { ...auditEnv, cronSecret: (env.CRON_SECRET ?? "").trim() };
       if (!key) {
         server.config.logger.warn(
           "[dev-api] GROQ_API_KEY not set in .env — /api/chat and /api/tts will report unconfigured (the app falls back to mock replies and the in-browser voice).",
@@ -486,6 +497,55 @@ export function devApi(): Plugin {
           if (!res.headersSent) send(res, 500, String(err));
           else res.end();
         });
+      });
+
+      server.middlewares.use("/api/action-propose", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: ActionProposeBody;
+          try { body = JSON.parse(await readBody(req)) as ActionProposeBody; }
+          catch { return send(res, 400, "Invalid request body."); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionPropose(body, auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/action-execute", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let actionId: unknown;
+          try { actionId = (JSON.parse(await readBody(req)) as { actionId?: unknown }).actionId; }
+          catch { return send(res, 400, "Invalid request body."); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionExecute(actionId, auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/action-undo", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let actionId: unknown;
+          try { actionId = (JSON.parse(await readBody(req)) as { actionId?: unknown }).actionId; }
+          catch { return send(res, 400, "Invalid request body."); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionUndo(actionId, auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/action-history", (req, res) => {
+        void (async () => {
+          if (req.method !== "GET") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionHistory(auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/action-metrics", (req, res) => {
+        void (async () => {
+          if (req.method !== "GET" && req.method !== "POST") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionMetrics(auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
       });
 
       server.middlewares.use("/api/store-products", (req, res) => {

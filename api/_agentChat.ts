@@ -29,8 +29,9 @@ import {
 import { resolveUserFull } from "./_audit";
 import { isOperator, OPERATOR_REQUIRED } from "./_plan";
 import { getConnection } from "./_shopify";
-import { SKILL_TOOLS, buildProductsDigest, type SkillEnv, type ToolCtx } from "./_skillTools";
+import { SKILL_TOOLS, buildProductsDigest, type SkillEnv, type ToolCtx, type ToolSchema } from "./_skillTools";
 import { log } from "./_log";
+import { runActionPropose } from "./_actions";
 
 /**
  * Tools the chat may call — read-only store data. file_task is deliberately
@@ -46,7 +47,108 @@ const AGENT_TOOL_NAMES = [
   "get_ship_queue",
   "get_inventory_watch",
   "get_retention_snapshot",
+  "prepare_product_updates",
+  "prepare_product_draft",
+  "prepare_collection",
+  "prepare_discount",
 ] as const;
+
+const PROPOSAL_SCHEMAS: Record<string, ToolSchema> = {
+  prepare_product_updates: {
+    type: "function",
+    function: {
+      name: "prepare_product_updates",
+      description: "Prepare, but never execute, a merchant approval card for 1-10 product listing updates. Use only when the founder requests a concrete change.",
+      parameters: {
+        type: "object",
+        properties: {
+          summary: { type: "string" },
+          items: {
+            type: "array", minItems: 1, maxItems: 10,
+            items: {
+              type: "object",
+              properties: {
+                productId: { type: "string" }, title: { type: "string" }, descriptionHtml: { type: "string" },
+                seoTitle: { type: "string" }, seoDescription: { type: "string" }, tags: { type: "array", items: { type: "string" } },
+              },
+              required: ["productId"],
+            },
+          },
+        },
+        required: ["summary", "items"],
+      },
+    },
+  },
+  prepare_product_draft: {
+    type: "function",
+    function: {
+      name: "prepare_product_draft",
+      description: "Prepare an approval card to create an unpublished Shopify draft product. Never publish it.",
+      parameters: {
+        type: "object",
+        properties: {
+          summary: { type: "string" },
+          product: {
+            type: "object",
+            properties: {
+              title: { type: "string" }, descriptionHtml: { type: "string" }, vendor: { type: "string" },
+              productType: { type: "string" }, tags: { type: "array", items: { type: "string" } },
+            },
+            required: ["title"],
+          },
+        },
+        required: ["summary", "product"],
+      },
+    },
+  },
+  prepare_collection: {
+    type: "function",
+    function: {
+      name: "prepare_collection",
+      description: "Prepare an approval card to create or update a Shopify collection and selected product membership.",
+      parameters: {
+        type: "object",
+        properties: {
+          summary: { type: "string" },
+          collection: {
+            type: "object",
+            properties: {
+              id: { type: "string" }, title: { type: "string" }, descriptionHtml: { type: "string" }, handle: { type: "string" },
+              sortOrder: { type: "string" }, products: { type: "array", items: { type: "string" } },
+              seo: { type: "object", properties: { title: { type: "string" }, description: { type: "string" } } },
+            },
+            required: ["title"],
+          },
+        },
+        required: ["summary", "collection"],
+      },
+    },
+  },
+  prepare_discount: {
+    type: "function",
+    function: {
+      name: "prepare_discount",
+      description: "Prepare an approval card for a safe Shopify code or automatic discount. Never execute it.",
+      parameters: {
+        type: "object",
+        properties: {
+          summary: { type: "string" }, automatic: { type: "boolean" },
+          discount: {
+            type: "object",
+            properties: {
+              title: { type: "string" }, code: { type: "string" }, valueType: { type: "string", enum: ["percentage", "fixed", "free_shipping"] },
+              value: { type: "number" }, startsAt: { type: "string" }, endsAt: { type: ["string", "null"] },
+              minimumSubtotal: { type: ["number", "null"] }, usageLimit: { type: ["number", "null"] }, appliesOncePerCustomer: { type: "boolean" },
+              productIds: { type: "array", items: { type: "string" } },
+            },
+            required: ["title", "valueType", "startsAt"],
+          },
+        },
+        required: ["summary", "automatic", "discount"],
+      },
+    },
+  },
+};
 
 const PROGRESS_LABELS: Record<string, string> = {
   get_products: "Reading your catalog…",
@@ -57,6 +159,10 @@ const PROGRESS_LABELS: Record<string, string> = {
   get_ship_queue: "Checking what's waiting to ship…",
   get_inventory_watch: "Checking your stock levels…",
   get_retention_snapshot: "Looking through your customers…",
+  prepare_product_updates: "Preparing product changes for your approval…",
+  prepare_product_draft: "Preparing an unpublished product draft…",
+  prepare_collection: "Preparing the collection change…",
+  prepare_discount: "Preparing the promotion for your approval…",
 };
 
 /** Tool rounds before we force a plain answer — enough for lookup + follow-up. */
@@ -119,7 +225,7 @@ function buildSystemPrompt(shop: string, catalogBlock: string): string {
     `You have TOOLS that fetch the store's REAL data, live. When a question needs data you don't already have — sales, top sellers, order stats, abandoned carts (including WHICH products get abandoned most), what's waiting to ship, stock levels, lapsed customers, audit findings, deeper product detail — CALL the right tool instead of guessing, deflecting, or claiming you lack data. Check your tools before ever saying you can't see something.`,
     `Every number you state must come from a tool result or the catalog below — NEVER invent figures. If a tool returns an "error" field, say plainly that that data source is unreachable right now and answer with what you have.`,
     `Keep replies SHORT and conversational (1–4 sentences); use a compact list only when the founder asks for a list. No preamble like "Based on the data".`,
-    `You do NOT have write access to the store — you cannot change listings, prices, or settings, and you must NEVER promise that you (or anyone) will make a change. When the founder asks you to fix or change something, be the expert guide instead: give exact, actionable help — step-by-step Shopify admin instructions, ready-to-paste description or title copy, concrete recommended settings — grounded in their real store data from your tools.`,
+    `You can PREPARE Shopify action proposals when the founder asks for a concrete supported change. Proposal tools never execute; they create a before-and-after approval card. Tell the founder to review and click Approve and apply. Never claim a change is live until the action result says it succeeded. You cannot change prices, inventory, fulfillment, customers, themes, or publish products.`,
     `Don't just report numbers — read them like a COO and suggest the next move. A product topping the abandoned-cart list is a discount/free-shipping candidate; sold-out products with recent demand are urgent restocks; overdue shipments risk bad reviews; lapsed customers who bought a product you still stock are a win-back audience. One concrete suggestion beats three vague ones.`,
     `The app has action centers as header buttons — point the founder to the right one AFTER answering with data: "Recovery" (every recoverable abandoned cart with a personalized ready-to-send email; they send from their own inbox), "Retention" (win-back emails for lapsed customers + review requests for recent buyers, same send-it-yourself flow), and "Ops" (live operator view: today's pulse, ship queue, inventory watch, real-time alerts for new orders and stockouts). Nothing is sent automatically — the founder always does the sending.`,
     catalogBlock,
@@ -133,6 +239,7 @@ async function buildCatalogBlock(ctx: ToolCtx): Promise<string> {
     return `The catalog couldn't be fetched right now (${digest.error}). Use get_products if the founder asks about products.`;
   }
   const products = digest.products as {
+    id: string;
     title: string;
     soldOut: boolean;
     priceMin: number | null;
@@ -145,7 +252,7 @@ async function buildCatalogBlock(ctx: ToolCtx): Promise<string> {
         : p.priceMax == null || p.priceMax === p.priceMin
           ? `$${p.priceMin}`
           : `$${p.priceMin}-$${p.priceMax}`;
-    return `${i + 1}. ${p.title} — ${price}${p.soldOut ? " (sold out)" : ""}`;
+    return `${i + 1}. ${p.title} [${p.id}] — ${price}${p.soldOut ? " (sold out)" : ""}`;
   });
   const total = typeof digest.aggregate.total === "number" ? digest.aggregate.total : products.length;
   return (
@@ -177,7 +284,7 @@ export async function runAgentChat(
   const ctx: ToolCtx = { env, userId: user.id, userEmail: user.email, conn, origin };
   const shop = conn.shop_domain.replace(".myshopify.com", "");
   const model = env.groqModel || CHAT_MODEL_DEFAULT;
-  const tools = AGENT_TOOL_NAMES.map((n) => SKILL_TOOLS[n].schema);
+  const tools = AGENT_TOOL_NAMES.map((n) => PROPOSAL_SCHEMAS[n] ?? SKILL_TOOLS[n].schema);
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -238,12 +345,13 @@ export async function runAgentChat(
           convo.push({ role: "assistant", content: msg.content ?? null, tool_calls: calls });
           for (const call of calls) {
             const name = call.function.name;
-            const tool = (AGENT_TOOL_NAMES as readonly string[]).includes(name)
+            const isProposal = Boolean(PROPOSAL_SCHEMAS[name]);
+            const tool = !isProposal && (AGENT_TOOL_NAMES as readonly string[]).includes(name)
               ? SKILL_TOOLS[name]
               : null;
             progress(PROGRESS_LABELS[name] ?? "Checking your store data…");
             let result: unknown;
-            if (!tool) {
+            if (!tool && !isProposal) {
               result = { error: `Unknown tool: ${name}` };
             } else {
               let args: Record<string, unknown> = {};
@@ -252,7 +360,21 @@ export async function runAgentChat(
               } catch {
                 /* run with defaults */
               }
-              result = await tool.run(ctx, args).catch((err) => ({ error: String(err).slice(0, 200) }));
+              if (isProposal) {
+                const proposalBody = name === "prepare_product_updates"
+                  ? { kind: "product_update", ...args }
+                  : name === "prepare_product_draft"
+                    ? { kind: "product_draft_create", ...args }
+                    : name === "prepare_collection"
+                      ? { kind: "collection_upsert", ...args }
+                      : { kind: args.automatic ? "discount_automatic_create" : "discount_code_create", ...args };
+                const response = await runActionPropose(proposalBody, authHeader, env);
+                result = await response.json();
+                const action = (result as { action?: unknown }).action;
+                if (action) controller.enqueue(sse({ action }));
+              } else {
+                result = await tool!.run(ctx, args).catch((err) => ({ error: String(err).slice(0, 200) }));
+              }
             }
             convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
           }

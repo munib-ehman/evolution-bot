@@ -21,6 +21,8 @@ export interface Message {
   progress?: string;
   /** Offer a "Queue this fix" action under a finished report. */
   escalate?: { taskTool: string; note: string };
+  /** Persisted Shopify proposal. The model can prepare it but cannot execute it. */
+  action?: import("./lib/actions").ShopifyActionProposal;
 }
 
 /** Speech-to-text engine choice, selectable in Settings. */

@@ -15,6 +15,7 @@ import { ToolsPanel } from "./components/ToolsPanel";
 import { RecoveryPanel } from "./components/RecoveryPanel";
 import { RetentionPanel } from "./components/RetentionPanel";
 import { OpsPanel } from "./components/OpsPanel";
+import { ActionCenter } from "./components/ActionCenter";
 import { LiveToasts } from "./components/LiveToasts";
 import { UpgradePanel } from "./components/UpgradePanel";
 import { FreeHome } from "./components/FreeHome";
@@ -60,6 +61,7 @@ export default function App() {
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [retentionOpen, setRetentionOpen] = useState(false);
   const [opsOpen, setOpsOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   // The pricing CTA must open billing for non-gated accounts too (operators
@@ -115,8 +117,8 @@ export default function App() {
           const stats = fresh.stats;
           a.postAssistantMessage(
             stats
-              ? `Shopify is connected — I can see your real numbers now (read-only: I never edit or write anything on your store). Last 30 days: ${stats.orders30} orders, ${stats.abandoned30} abandoned checkouts. Your audit is updated — ask me anything about your store.`
-              : "Shopify is connected! I re-ran your audit with the deeper access — ask me anything about your store. And just so you know: my access is read-only, I never change anything in your store.",
+              ? `Shopify is connected — I can see your real numbers now. Last 30 days: ${stats.orders30} orders, ${stats.abandoned30} abandoned checkouts. I can also prepare store changes for your approval.`
+              : "Shopify is connected! I re-ran your audit with deeper access. I can prepare store changes, and nothing is applied until you approve it.",
           );
         } else {
           a.postAssistantMessage("Shopify is connected! Your next audit will use your real store data.");
@@ -145,6 +147,7 @@ export default function App() {
     setTasksOpen(false);
     setRetentionOpen(false);
     setOpsOpen(false);
+    setActionsOpen(false);
     a.postAssistantMessage(
       "Your store is disconnected — I no longer have any access to it. Connect this or a different store whenever you're ready and I'll take a fresh look.",
     );
@@ -156,8 +159,8 @@ export default function App() {
     void getStoreCatalog().then(setCatalog);
     a.postAssistantMessage(
       fresh
-        ? `Your store is connected! I ran your audit: ${fresh.score} out of 100. ${fresh.summary} Ask me anything — I can see your real data now (read-only: I never change anything in your store).`
-        : "Your store is connected! Ask me anything — I can see your real data now (read-only: I never change anything in your store).",
+        ? `Your store is connected! I ran your audit: ${fresh.score} out of 100. ${fresh.summary} Ask me anything, or ask me to prepare a concrete store change for your approval.`
+        : "Your store is connected! Ask me anything, or ask me to prepare a concrete store change for your approval.",
     );
   };
 
@@ -343,6 +346,22 @@ export default function App() {
                   setTasksOpen(false);
                   setRetentionOpen(false);
                   setRecoveryOpen(false);
+                  setOpsOpen(false);
+                  setActionsOpen((v) => !v);
+                }}
+              >
+                Actions
+              </button>
+            )}
+            {store && (
+              <button
+                type="button"
+                className="tasks-btn"
+                onClick={() => {
+                  setTasksOpen(false);
+                  setActionsOpen(false);
+                  setRetentionOpen(false);
+                  setRecoveryOpen(false);
                   setOpsOpen((v) => !v);
                 }}
               >
@@ -355,6 +374,7 @@ export default function App() {
                 className="tasks-btn"
                 onClick={() => {
                   setTasksOpen(false);
+                  setActionsOpen(false);
                   setRetentionOpen(false);
                   setOpsOpen(false);
                   setRecoveryOpen((v) => !v);
@@ -369,6 +389,7 @@ export default function App() {
                 className="tasks-btn"
                 onClick={() => {
                   setTasksOpen(false);
+                  setActionsOpen(false);
                   setRecoveryOpen(false);
                   setOpsOpen(false);
                   setRetentionOpen((v) => !v);
@@ -382,6 +403,7 @@ export default function App() {
               className="tasks-btn"
               onClick={() => {
                 setRecoveryOpen(false);
+                setActionsOpen(false);
                 setRetentionOpen(false);
                 setOpsOpen(false);
                 setTasksOpen((v) => !v);
@@ -394,6 +416,7 @@ export default function App() {
               className="tasks-btn"
               onClick={() => {
                 setTasksOpen(false);
+                setActionsOpen(false);
                 setRecoveryOpen(false);
                 setRetentionOpen(false);
                 setOpsOpen(false);
@@ -637,6 +660,7 @@ export default function App() {
       )}
 
       {authEmail && store && <OpsPanel open={opsOpen} onClose={() => setOpsOpen(false)} />}
+      {authEmail && store && <ActionCenter open={actionsOpen} onClose={() => setActionsOpen(false)} />}
       {authEmail && store && <LiveToasts />}
 
       {/* Embedded installs are connected by construction (the session

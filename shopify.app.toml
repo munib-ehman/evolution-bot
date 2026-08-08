@@ -15,7 +15,7 @@ embedded = true
 handle = "runevolution"
 
 [access_scopes]
-scopes = "read_products,read_orders,read_checkouts,read_customers"
+scopes = "write_products,write_files,write_discounts,read_orders,read_checkouts,read_customers"
 # Managed installation: Shopify collects scope consent during install, before
 # the app UI ever loads; the embedded app then gets its offline token via
 # token exchange (api/_embedded.ts). The standalone authorization-code flow

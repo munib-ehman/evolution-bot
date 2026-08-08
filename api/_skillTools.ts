@@ -60,6 +60,7 @@ const clampInt = (v: unknown, min: number, max: number, dflt: number): number =>
 
 /** Provider-neutral product shape the fetcher maps into. */
 interface ProductSource {
+  id: string;
   title: string;
   status: string;
   descText: string;
@@ -86,6 +87,7 @@ const PRODUCTS_QUERY = `query ProductAudit($first: Int!, $after: String) {
   products(first: $first, after: $after) {
     pageInfo { hasNextPage endCursor }
     nodes {
+      id
       title
       status
       descriptionHtml
@@ -108,6 +110,7 @@ interface GqlProductsData {
   products?: {
     pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
     nodes?: {
+      id?: string;
       title?: string;
       status?: string;
       descriptionHtml?: string | null;
@@ -141,6 +144,7 @@ async function fetchProductsGraphql(conn: ShopifyConnection, limit: number): Pro
     for (const n of productsPage.nodes) {
       const media = n.media?.nodes ?? [];
       out.push({
+        id: n.id ?? "",
         title: n.title ?? "(untitled)",
         status: (n.status ?? "ACTIVE").toLowerCase(),
         descText: stripHtml(n.descriptionHtml),
@@ -177,6 +181,7 @@ export async function buildProductsDigest(
   const products = sources.slice(0, limit).map((p) => {
     const prices = p.variants.map((v) => v.price).filter((n): n is number => n !== null);
     return {
+      id: p.id,
       title: p.title.slice(0, 60),
       status: p.status,
       descChars: p.descText.length,

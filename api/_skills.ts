@@ -50,7 +50,7 @@ export interface SkillDef {
 }
 
 const ESCALATION_LINE =
-  "End the report with exactly one short closing line inviting the founder to ask you in chat for a step-by-step walkthrough or ready-to-paste copy for any fix above. Do NOT promise that Evolution or anyone will make the changes — there is no write access to the store yet.";
+  "End the report with exactly one short closing line inviting the founder to ask you in chat to prepare an approval card for any supported product, collection, or discount fix above. Never claim a change is live before the founder approves it and execution succeeds.";
 
 export const SKILLS: Record<string, SkillDef> = {
   product_audit: {
@@ -260,11 +260,10 @@ async function runConcierge(
     origin: ctx.origin,
   });
   controller.enqueue(sse({ meta: { taskId: result.taskId, emailed } }));
-  // Advisory era: no write access anywhere yet, so never promise the work
-  // will be done. The request is still logged internally for tracking.
-  // (The emailed flag is internal plumbing — never surfaced in this copy.)
+  // Concierge work remains separate from direct, merchant-approved Shopify
+  // actions. The emailed flag is internal plumbing and stays server-side.
   const confirmation =
-    "Noted — I've logged this request. I can't make changes to your store yet, but ask me in chat and I'll give you exact steps or ready-to-paste copy to get it done yourself.";
+    "Noted — I've logged this request. For supported product, collection, or discount work, ask me in chat and I'll prepare a Shopify approval card for you.";
   controller.enqueue(sse({ choices: [{ delta: { content: confirmation } }] }));
 }
 

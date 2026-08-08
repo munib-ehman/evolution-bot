@@ -97,10 +97,8 @@ export function ToolsPanel({
       {shopifyConnect && <ShopifyConnect storeUrl={storeUrl} onDisconnected={onDisconnected} />}
 
       <p className="store-disclaimer">
-        <strong>Read-only, by design.</strong> Evolution never edits or writes anything on your
-        store. The connection only lets us read your data — products, orders, abandoned checkouts —
-        so we can analyse your store properly and give you advice based on real numbers, not
-        guesses.
+        <strong>You stay in control.</strong> Evolution reads your store to prepare concrete work.
+        A store change runs only after you review its before-and-after preview and approve it.
       </p>
     </aside>
   );

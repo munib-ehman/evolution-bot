@@ -8,7 +8,29 @@ import { supabase } from "./auth";
 export interface ShopifyStatus {
   shop_domain: string;
   connected_at: string;
+  scopes: string | null;
+  capabilities: ShopifyCapabilities;
 }
+
+export interface ShopifyCapabilities {
+  canEditProducts: boolean;
+  canEditFiles: boolean;
+  canManageDiscounts: boolean;
+  operatorReady: boolean;
+}
+
+const capabilitiesFromScopes = (raw: string | null | undefined): ShopifyCapabilities => {
+  const scopes = new Set((raw ?? "").split(",").map((s) => s.trim()).filter(Boolean));
+  const canEditProducts = scopes.has("write_products");
+  const canEditFiles = scopes.has("write_files");
+  const canManageDiscounts = scopes.has("write_discounts");
+  return {
+    canEditProducts,
+    canEditFiles,
+    canManageDiscounts,
+    operatorReady: canEditProducts && canEditFiles && canManageDiscounts,
+  };
+};
 
 /** Is Shopify connect configured on the server at all? (Partner app keys set.) */
 export async function shopifyConnectAvailable(): Promise<boolean> {
@@ -28,9 +50,11 @@ export async function getShopifyStatus(): Promise<ShopifyStatus | null> {
     // so a `select *` would be rejected outright.
     const { data } = await supabase
       .from("shopify_connections")
-      .select("shop_domain, connected_at")
+      .select("shop_domain, scopes, connected_at")
       .maybeSingle();
-    return (data as ShopifyStatus | null) ?? null;
+    if (!data) return null;
+    const row = data as Omit<ShopifyStatus, "capabilities">;
+    return { ...row, capabilities: capabilitiesFromScopes(row.scopes) };
   } catch {
     return null;
   }

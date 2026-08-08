@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { Message } from "../types";
 import type { AssistantStatus } from "../hooks/useAssistant";
 import { renderMarkdown } from "../lib/markdown";
+import { ActionCard } from "./ActionCard";
 
 interface Props {
   messages: Message[];
@@ -43,6 +44,7 @@ export function MessageList({ messages, status, onEscalate }: Props) {
         ) : (
           <div key={m.id} className={`bubble ${m.role}`}>
             {m.content}
+            {m.action && <ActionCard initial={m.action} />}
           </div>
         ),
       )}
