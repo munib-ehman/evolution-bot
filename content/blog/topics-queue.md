@@ -13,7 +13,6 @@ Format:
 
 ## Pending
 
-- Sourcing products from suppliers: a checklist for small stores
 - Inventory planning for solo store owners: avoiding stockouts and dead stock
 - Email list building for ecommerce without annoying popups
 - Welcome email series: the highest ROI automation you're not using
@@ -55,6 +54,7 @@ Format:
 
 ## Written
 
+- [2026-08-08] Sourcing products from suppliers: a checklist for small stores — /blog/sourcing-products-from-suppliers-checklist
 - [2026-07-17] How to reduce abandoned checkouts on Shopify without discounting — /blog/reduce-abandoned-checkouts-shopify
 - [2026-07-18] Abandoned cart email sequence that actually converts: timing, copy, examples — /blog/abandoned-cart-email-sequence-that-converts
 - [2026-07-18] SMS vs email for cart recovery: what works for small stores — /blog/sms-vs-email-cart-recovery
