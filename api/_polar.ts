@@ -20,7 +20,6 @@
 import { resolveUserFull, type AuditEnv } from "./_audit";
 import { getConnection } from "./_shopify";
 import { log } from "./_log";
-import { validateEvent, WebhookVerificationError } from "@polar-sh/sdk/webhooks";
 
 export interface PolarEnv extends AuditEnv {
   polarToken?: string;
@@ -150,8 +149,13 @@ export async function runPolarPortal(
 }
 
 // ---------------------------------------------------------------------------
-// Use Polar's official validator because it performs Polar's provider-specific
-// secret conversion before Standard Webhooks verification.
+// Standard Webhooks verification implemented with Web Crypto so this module
+// remains compatible with Vercel's Edge runtime. Polar's SDK treats the
+// configured secret as UTF-8 bytes (including the `whsec_` prefix), rather
+// than base64-decoding the suffix.
+
+const TIMESTAMP_TOLERANCE_SECS = 5 * 60;
+const encoder = new TextEncoder();
 
 export async function verifyPolarSignature(
   secret: string,
@@ -159,13 +163,37 @@ export async function verifyPolarSignature(
   rawBody: string,
 ): Promise<boolean> {
   if (!secret || !headers.id || !headers.timestamp || !headers.signature) return false;
+
+  const ts = Number(headers.timestamp);
+  if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > TIMESTAMP_TOLERANCE_SECS) {
+    return false;
+  }
+
   try {
-    validateEvent(rawBody, {
-      "webhook-id": headers.id,
-      "webhook-timestamp": headers.timestamp,
-      "webhook-signature": headers.signature,
-    }, secret);
-    return true;
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const signature = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      encoder.encode(`${headers.id}.${headers.timestamp}.${rawBody}`),
+    );
+    const expected = btoa(String.fromCharCode(...new Uint8Array(signature)));
+
+    for (const candidate of headers.signature.split(" ")) {
+      const [version, value] = candidate.split(",", 2);
+      if (version !== "v1" || !value || value.length !== expected.length) continue;
+      let diff = 0;
+      for (let i = 0; i < expected.length; i++) {
+        diff |= expected.charCodeAt(i) ^ value.charCodeAt(i);
+      }
+      if (diff === 0) return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -200,23 +228,15 @@ export async function handlePolarWebhook(
   if (!env.polarWebhookSecret) {
     return { status: 503, body: { error: "Polar webhook secret not configured." } };
   }
-  if (!headers.id || !headers.timestamp || !headers.signature) {
+  if (!(await verifyPolarSignature(env.polarWebhookSecret, headers, rawBody))) {
     log("warn", "polar-webhook", "signature_rejected", {});
     return { status: 401, body: { error: "Invalid webhook signature." } };
   }
 
-  let payload: PolarWebhookPayload;
+  let payload: PolarWebhookPayload = {};
   try {
-    payload = validateEvent(rawBody, {
-      "webhook-id": headers.id,
-      "webhook-timestamp": headers.timestamp,
-      "webhook-signature": headers.signature,
-    }, env.polarWebhookSecret) as PolarWebhookPayload;
-  } catch (error) {
-    if (error instanceof WebhookVerificationError) {
-      log("warn", "polar-webhook", "signature_rejected", {});
-      return { status: 401, body: { error: "Invalid webhook signature." } };
-    }
+    payload = JSON.parse(rawBody) as PolarWebhookPayload;
+  } catch {
     log("warn", "polar-webhook", "payload_rejected", {});
     return { status: 400, body: { error: "Invalid webhook payload." } };
   }
