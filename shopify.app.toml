@@ -1,51 +1,40 @@
-# Production Shopify app configuration. `shopify app deploy` creates a new app
-# version and synchronizes this configuration with the linked Dev Dashboard app.
-# A TOML file cannot create the initial Dashboard app by itself: use
-# `shopify app config link` once, then keep the generated client_id below.
-#
-# Webhook subscriptions here are APP-LEVEL: Shopify delivers them for every
-# install with no per-shop registration code. The privacy_compliance block is
-# the three mandatory GDPR endpoints App Store review probes automatically.
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-name = "Evolution"
 client_id = "dcc254cec11e1d4056cea1b81bf02f18"
+extension_directories = [ ]
+name = "Evolution"
 application_url = "https://www.runevolution.io/app"
 embedded = true
-extension_directories = []
-# App Store URL slug (apps.shopify.com/runevolution) — "evolution" was taken.
-# Must match VITE_SHOPIFY_APP_HANDLE on Vercel (pricing deep link).
 handle = "runevolution"
 
-[access_scopes]
-scopes = "write_products,write_files,write_discounts,read_orders,read_checkouts,read_customers"
-# Managed installation: Shopify collects scope consent during install, before
-# the app UI ever loads; the embedded app then gets its offline token via
-# token exchange (api/_embedded.ts). The standalone authorization-code flow
-# (api/shopify-auth → shopify-callback) still works alongside it.
-use_legacy_install_flow = false
-
-[auth]
-redirect_urls = [
-  "https://www.runevolution.io/api/shopify-callback",
-  "http://localhost:5173/api/shopify-callback",
-]
-
 [build]
-# Never let `shopify app dev` replace the production URL with a temporary
-# tunnel. Use a separate development config if tunnel URL updates are wanted.
 automatically_update_urls_on_dev = false
 
 [webhooks]
 api_version = "2026-04"
 
-[[webhooks.subscriptions]]
-topics = ["app/uninstalled", "app_subscriptions/update", "orders/create"]
-uri = "https://www.runevolution.io/api/shopify-webhook"
+  [[webhooks.subscriptions]]
+  uri = "https://www.runevolution.io/api/shopify-compliance"
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
 
-[webhooks.privacy_compliance]
-customer_data_request_url = "https://www.runevolution.io/api/shopify-compliance"
-customer_deletion_url = "https://www.runevolution.io/api/shopify-compliance"
-shop_deletion_url = "https://www.runevolution.io/api/shopify-compliance"
+  [[webhooks.subscriptions]]
+  uri = "https://www.runevolution.io/api/shopify-webhook"
+  topics = [
+  "app_subscriptions/update",
+  "app/uninstalled",
+  "orders/create"
+]
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "write_products,write_files,write_discounts,read_orders,read_checkouts,read_customers"
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://www.runevolution.io/api/shopify-callback",
+  "http://localhost:5173/api/shopify-callback"
+]
 
 [pos]
 embedded = false
