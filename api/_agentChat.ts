@@ -232,6 +232,19 @@ function buildSystemPrompt(shop: string, catalogBlock: string): string {
   ].join("\n\n");
 }
 
+function forcedProposalTool(turns: ChatTurn[]): keyof typeof PROPOSAL_SCHEMAS | null {
+  const latest = turns.at(-1)?.content.toLowerCase() ?? "";
+  const context = turns.slice(-4).map((turn) => turn.content.toLowerCase()).join("\n");
+  const directAction = /\b(add|create|apply|update|change|fix|prepare|recreate|do)\b.*\b(store|shop|product|listing|collection|discount|promotion|card)\b/.test(latest)
+    || /\b(where|how)\b.*\b(approve|approval|card)\b/.test(latest)
+    || /\b(add|apply|do|create)\s+(this|that|these|it)\b/.test(latest);
+  if (!directAction) return null;
+  if (/\b(discount|promotion|coupon|free shipping)\b/.test(context)) return "prepare_discount";
+  if (/\bcollection\b/.test(context)) return "prepare_collection";
+  if (/\b(draft product|winning product|recommended product|add this|add these|new product)\b/.test(context)) return "prepare_product_draft";
+  return "prepare_product_updates";
+}
+
 async function buildCatalogBlock(ctx: ToolCtx): Promise<string> {
   if (!ctx.conn) return "No catalog available.";
   const digest = await buildProductsDigest(ctx.conn, 100);
@@ -285,6 +298,7 @@ export async function runAgentChat(
   const shop = conn.shop_domain.replace(".myshopify.com", "");
   const model = env.groqModel || CHAT_MODEL_DEFAULT;
   const tools = AGENT_TOOL_NAMES.map((n) => PROPOSAL_SCHEMAS[n] ?? SKILL_TOOLS[n].schema);
+  const forcedTool = forcedProposalTool(turns);
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -306,7 +320,12 @@ export async function runAgentChat(
               messages: convo,
               temperature: 0.4,
               max_tokens: CHAT_MAX_COMPLETION_TOKENS,
-              ...(lastRound ? {} : { tools, tool_choice: "auto" }),
+              ...(lastRound ? {} : {
+                tools,
+                tool_choice: round === 0 && forcedTool
+                  ? { type: "function", function: { name: forcedTool } }
+                  : "auto",
+              }),
             }),
             signal: AbortSignal.timeout(GROQ_TIMEOUT_MS),
           });
