@@ -23,7 +23,7 @@ export async function runStoreCatalog(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return { status: 401, body: { error: "Sign in first." } };
-  if (!(await isOperator(env, user.id))) return { ...OPERATOR_REQUIRED };
+  if (!(await isOperator(env, user.id, user.email))) return { ...OPERATOR_REQUIRED };
 
   const conn = await getConnection(env, user.id);
   if (!conn) return { status: 409, body: { error: "No Shopify store connected." } };

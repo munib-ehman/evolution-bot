@@ -13,6 +13,7 @@
 import { supabase } from "../lib/auth";
 import type { Message } from "../types";
 import type { ShopifyActionProposal } from "../lib/actions";
+import type { RecoveryCampaignProposal } from "../lib/recovery";
 
 export class AgentChatError extends Error {
   constructor(
@@ -30,6 +31,7 @@ export interface AgentChatOptions {
   onProgress?: (label: string) => void;
   onToken?: (text: string) => void;
   onAction?: (action: ShopifyActionProposal) => void;
+  onRecoveryProposal?: (proposal: RecoveryCampaignProposal) => void;
 }
 
 /** Server rebuilds the system prompt; send user/assistant turns only. */
@@ -92,6 +94,7 @@ export async function runAgentChat(history: Message[], opts: AgentChatOptions = 
           error?: string;
           choices?: { delta?: { content?: string } }[];
           action?: ShopifyActionProposal;
+          recoveryProposal?: RecoveryCampaignProposal;
         };
         try {
           json = JSON.parse(payload);
@@ -103,6 +106,7 @@ export async function runAgentChat(history: Message[], opts: AgentChatOptions = 
         }
         if (typeof json.progress === "string") opts.onProgress?.(json.progress);
         if (json.action) opts.onAction?.(json.action);
+        if (json.recoveryProposal) opts.onRecoveryProposal?.(json.recoveryProposal);
         const delta = json.choices?.[0]?.delta?.content;
         if (delta) {
           reply += delta;

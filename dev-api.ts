@@ -34,6 +34,8 @@ import { runAgentChat, type AgentChatBody } from "./api/_agentChat";
 import { runPolarCheckout, runPolarPortal, handlePolarWebhook, polarConfigured, type PolarEnv } from "./api/_polar";
 import type { SkillEnv } from "./api/_skillTools";
 import { sendTaskEmail } from "./api/_email";
+import { runEmailDeliveryCheck, runEmailDeliveryGet, runEmailDeliverySave, runEmailDeliveryTest, type EmailDeliveryEnv } from "./api/_emailDelivery";
+import { processRecoveryDeliveries, runRecoveryCampaignAction, runRecoveryUnsubscribe, runResendWebhook, type RecoveryCampaignEnv } from "./api/_recoveryCampaigns";
 import {
   runActionPropose,
   runActionExecute,
@@ -98,6 +100,8 @@ export function devApi(): Plugin {
   let skillEnv: SkillEnv = {};
   let polarEnv: PolarEnv = {};
   let actionEnv: ActionEnv = {};
+  let emailDeliveryEnv: EmailDeliveryEnv = {};
+  let recoveryCampaignEnv: RecoveryCampaignEnv = {};
 
   return {
     name: "dev-api",
@@ -133,6 +137,8 @@ export function devApi(): Plugin {
         polarApiBase: (env.POLAR_API_BASE ?? "").trim() || "https://api.polar.sh",
       };
       actionEnv = { ...auditEnv, cronSecret: (env.CRON_SECRET ?? "").trim() };
+      emailDeliveryEnv = { ...auditEnv, resendKey: (env.RESEND_API_KEY ?? "").trim(), encryptionKey: (env.EMAIL_CREDENTIAL_ENCRYPTION_KEY ?? "").trim(), sharedSendingDomain: (env.RESEND_SHARED_DOMAIN ?? "runevolution.io").trim(), sharedFromAddress: (env.RESEND_SHARED_FROM_ADDRESS ?? "info@runevolution.io").trim() };
+      recoveryCampaignEnv = { ...emailDeliveryEnv, ...auditEnv, cronSecret: (env.CRON_SECRET ?? "").trim(), recoveryTestMode: /^(1|true|yes)$/i.test(env.RECOVERY_TEST_MODE ?? ""), recoveryTestRecipient: (env.RECOVERY_TEST_RECIPIENT ?? "").trim(), monthlyEmailLimit: Number(env.RECOVERY_MONTHLY_LIMIT ?? 400) || 400 };
       if (!key) {
         server.config.logger.warn(
           "[dev-api] GROQ_API_KEY not set in .env — /api/chat and /api/tts will report unconfigured (the app falls back to mock replies and the in-browser voice).",
@@ -497,6 +503,54 @@ export function devApi(): Plugin {
           if (!res.headersSent) send(res, 500, String(err));
           else res.end();
         });
+      });
+
+      server.middlewares.use("/api/email-delivery-settings", (req, res) => {
+        void (async () => {
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          if (req.method === "GET") return pipeResponse(res, await runEmailDeliveryGet(auth, emailDeliveryEnv));
+          if (req.method === "POST") {
+            const body = JSON.parse(await readBody(req) || "{}") as Record<string, unknown>;
+            if (body.action === "check") return pipeResponse(res, await runEmailDeliveryCheck(auth, emailDeliveryEnv));
+            if (body.action === "test") return pipeResponse(res, await runEmailDeliveryTest(auth, emailDeliveryEnv));
+            return pipeResponse(res, await runEmailDeliverySave(body, auth, emailDeliveryEnv));
+          }
+          return send(res, 405, "Method not allowed");
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/recovery-campaign", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const body = JSON.parse(await readBody(req) || "{}") as Record<string, unknown>;
+          return pipeResponse(res, await runRecoveryCampaignAction(body, auth, recoveryCampaignEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/recovery-deliver", (req, res) => {
+        void (async () => {
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
+          if (!recoveryCampaignEnv.cronSecret || auth !== `Bearer ${recoveryCampaignEnv.cronSecret}`) return send(res, 401, "Unauthorized");
+          res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(await processRecoveryDeliveries(recoveryCampaignEnv)));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/recovery-unsubscribe", (req, res) => {
+        void (async () => {
+          const origin = `http://${req.headers.host ?? "127.0.0.1:5173"}`;
+          const request = new Request(`${origin}${req.url ?? ""}`, { method: req.method ?? "GET" });
+          return pipeResponse(res, await runRecoveryUnsubscribe(request, recoveryCampaignEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/resend-webhook", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          const raw = await readBody(req);
+          const request = new Request(`http://${req.headers.host ?? "127.0.0.1:5173"}/api/resend-webhook`, { method: "POST", headers: req.headers as Record<string, string>, body: raw });
+          return pipeResponse(res, await runResendWebhook(request, recoveryCampaignEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
       });
 
       server.middlewares.use("/api/action-propose", (req, res) => {

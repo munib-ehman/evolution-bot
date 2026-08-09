@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Message, Product, Settings } from "../types";
 import { getAssistantReply, isMockMode } from "../llm/client";
-import { createSpeaker, stopSpeaking, warmUpVoice, DEFAULT_VOICE, type ModelProgress } from "../tts";
+import { createSpeaker, stopSpeaking, warmUpVoice, DEFAULT_VOICE, type ModelProgress, type StreamingSpeaker } from "../tts";
 import { lat } from "../lib/latency";
 import { WebSpeechRecognizer, webSpeechSupported } from "../stt/webSpeech";
 import { LocalRecorder } from "../stt/transformersStt";
@@ -78,6 +78,7 @@ export function useAssistant() {
   const settingsRef = useRef<Settings>(settings);
   settingsRef.current = settings;
   const abortRef = useRef<AbortController | null>(null);
+  const activeSpeakerRef = useRef<StreamingSpeaker | null>(null);
   const recognizerRef = useRef<WebSpeechRecognizer | null>(null);
   const recorderRef = useRef<LocalRecorder | null>(null);
   // Lets `send` re-arm the mic for the hands-free talk-mode loop without a
@@ -104,8 +105,8 @@ export function useAssistant() {
         id: newId(),
         role: "assistant",
         content: isMockMode
-          ? "Hey, welcome to Evolution! I'm your AI copilot — tap the mic and ask about your catalog or hand me a task. Prefer typing? Switch anytime."
-          : "Welcome to Evolution! I'm your AI copilot. Tap the mic and tell me what to take off your plate today.",
+          ? "Hey, I’m your Marketing Manager. I’m monitoring your store for email revenue opportunities. Ask me to recover carts, win back customers, or plan a campaign—nothing sends without your approval."
+          : "Welcome to Evolution. I’m your Marketing Manager—tell me what email outcome you want, and I’ll build the campaign with you.",
       },
     ]);
   }, []);
@@ -117,6 +118,15 @@ export function useAssistant() {
       return next;
     });
   }, []);
+
+  const toggleSound = useCallback(() => {
+    const enabled = settingsRef.current.ttsEngine !== "off" && !settingsRef.current.textOnly;
+    activeSpeakerRef.current?.cancel();
+    activeSpeakerRef.current = null;
+    stopSpeaking();
+    updateSettings(enabled ? { ttsEngine: "off" } : { ttsEngine: "kokoro", textOnly: false });
+    if (enabled) setStatus((current) => current === "speaking" ? "idle" : current);
+  }, [updateSettings]);
 
   const appendMessage = useCallback((msg: Message) => {
     setMessages((prev) => [...prev, msg]);
@@ -182,6 +192,7 @@ export function useAssistant() {
             },
           })
         : null;
+      activeSpeakerRef.current = speaker;
 
       // The reply bubble streams in as the model writes, batched so a fast
       // token stream doesn't thrash React (or starve the avatar's render loop).
@@ -231,6 +242,16 @@ export function useAssistant() {
         }
       };
 
+      const onRecoveryProposal = (recoveryProposal: import("../lib/recovery").RecoveryCampaignProposal) => {
+        if (controller.signal.aborted) return;
+        if (!bubbleShown) {
+          bubbleShown = true;
+          appendMessage({ id: assistantId, role: "assistant", content: "", pending: true, recoveryProposal });
+        } else {
+          updateMessage(assistantId, { recoveryProposal });
+        }
+      };
+
       try {
         // Store connected → the agentic path: the model can pull real store
         // data itself. Falls back to the generic brain when the agent is
@@ -244,13 +265,17 @@ export function useAssistant() {
               onProgress,
               onToken,
               onAction,
+              onRecoveryProposal,
             });
           } catch (err) {
             if (controller.signal.aborted) {
               speaker?.cancel();
               return;
             }
-            if (err instanceof AgentChatError && err.streamedSomething) throw err;
+            // A connected-store request must never fall back to the generic,
+            // tool-less model after an agent error. That model can describe
+            // actions but cannot perform them, which creates false success.
+            if (err instanceof AgentChatError) throw err;
             console.warn("[assistant] agent chat unavailable, using the generic brain:", err);
           }
         }
@@ -278,6 +303,7 @@ export function useAssistant() {
           await speaker.finish();
           lat.mark("speakDone");
         }
+        if (activeSpeakerRef.current === speaker) activeSpeakerRef.current = null;
         if (!controller.signal.aborted) updateMessage(assistantId, { pending: false, progress: undefined });
 
         // Hands-free conversation: if this turn came in BY VOICE, re-open the mic
@@ -298,6 +324,7 @@ export function useAssistant() {
         }
       } catch (err) {
         speaker?.cancel();
+        if (activeSpeakerRef.current === speaker) activeSpeakerRef.current = null;
         if (paintTimer !== null) window.clearTimeout(paintTimer);
         if (controller.signal.aborted) return;
         console.error("[assistant] reply failed:", err);
@@ -550,6 +577,7 @@ export function useAssistant() {
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      activeSpeakerRef.current?.cancel();
       stopSpeaking();
       recognizerRef.current?.abort();
       recorderRef.current?.abort();
@@ -569,6 +597,7 @@ export function useAssistant() {
     catalogReady,
     settings,
     updateSettings,
+    toggleSound,
     avatarFellBack,
     setAvatarFellBack,
     send,

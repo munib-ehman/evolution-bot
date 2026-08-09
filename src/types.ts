@@ -23,6 +23,8 @@ export interface Message {
   escalate?: { taskTool: string; note: string };
   /** Persisted Shopify proposal. The model can prepare it but cannot execute it. */
   action?: import("./lib/actions").ShopifyActionProposal;
+  /** Customer-specific cart recovery work waiting for merchant approval. */
+  recoveryProposal?: import("./lib/recovery").RecoveryCampaignProposal;
 }
 
 /** Speech-to-text engine choice, selectable in Settings. */

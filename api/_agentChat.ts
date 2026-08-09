@@ -9,8 +9,8 @@
  * per question type. The design rule is unchanged: tools compute every
  * number in code; the model orchestrates and narrates.
  *
- * Flow per turn: auth → prefetch a compact catalog block (cheap, makes
- * catalog questions instant) → up to MAX_TOOL_ROUNDS Groq calls with
+ * Flow per turn: auth → load compact durable/recent memory → select only the
+ * relevant tools → up to MAX_TOOL_ROUNDS Groq calls with
  * tool_choice auto, executing SKILL_TOOLS between rounds → the final answer
  * is emitted through the same SSE protocol the skills use, so the client's
  * parser and the voice pipeline work unchanged:
@@ -32,6 +32,7 @@ import { getConnection } from "./_shopify";
 import { SKILL_TOOLS, buildProductsDigest, type SkillEnv, type ToolCtx, type ToolSchema } from "./_skillTools";
 import { log } from "./_log";
 import { runActionPropose } from "./_actions";
+import { runRecoveryCarts, runRecoveryDraft } from "./_recovery";
 
 /**
  * Tools the chat may call — read-only store data. file_task is deliberately
@@ -47,6 +48,8 @@ const AGENT_TOOL_NAMES = [
   "get_ship_queue",
   "get_inventory_watch",
   "get_retention_snapshot",
+  "remember_business_fact",
+  "create_recovery_campaign",
   "prepare_product_updates",
   "prepare_product_draft",
   "prepare_collection",
@@ -54,6 +57,35 @@ const AGENT_TOOL_NAMES = [
 ] as const;
 
 const PROPOSAL_SCHEMAS: Record<string, ToolSchema> = {
+  remember_business_fact: {
+    type: "function",
+    function: {
+      name: "remember_business_fact",
+      description: "Persist a durable merchant business preference or decision that the merchant explicitly stated or explicitly asked you to remember. Never store customer PII, credentials, transient requests, or facts inferred without confirmation.",
+      parameters: {
+        type: "object",
+        properties: {
+          category: { type: "string", enum: ["brand", "audience", "campaign", "policy", "preference", "business"] },
+          content: { type: "string", description: "A concise standalone fact, maximum 500 characters." },
+        },
+        required: ["category", "content"],
+      },
+    },
+  },
+  create_recovery_campaign: {
+    type: "function",
+    function: {
+      name: "create_recovery_campaign",
+      description: "Create and persist an approval-ready three-email abandoned-checkout recovery campaign draft. This never sends email and never enables an automation.",
+      parameters: {
+        type: "object",
+        properties: {
+          note: { type: "string", description: "Merchant instructions for tone, timing, incentives, or exclusions. State 'no discount' when requested." },
+        },
+        required: ["note"],
+      },
+    },
+  },
   prepare_product_updates: {
     type: "function",
     function: {
@@ -159,17 +191,19 @@ const PROGRESS_LABELS: Record<string, string> = {
   get_ship_queue: "Checking what's waiting to ship…",
   get_inventory_watch: "Checking your stock levels…",
   get_retention_snapshot: "Looking through your customers…",
+  remember_business_fact: "Saving that to your store memory…",
+  create_recovery_campaign: "Creating and saving your recovery draft…",
   prepare_product_updates: "Preparing product changes for your approval…",
   prepare_product_draft: "Preparing an unpublished product draft…",
   prepare_collection: "Preparing the collection change…",
   prepare_discount: "Preparing the promotion for your approval…",
 };
 
-/** Tool rounds before we force a plain answer — enough for lookup + follow-up. */
-const MAX_TOOL_ROUNDS = 4;
+/** One tool-selection round plus one answer round. Clear commands bypass both. */
+const MAX_TOOL_ROUNDS = 2;
 const GROQ_TIMEOUT_MS = 25_000;
 /** Client history is advisory; the server enforces its own tighter cap. */
-const MAX_HISTORY_TURNS = 12;
+const MAX_HISTORY_TURNS = 6;
 
 export interface AgentChatBody {
   messages?: unknown;
@@ -219,20 +253,118 @@ function validateTurns(raw: unknown): ChatTurn[] | null {
   return turns.slice(-MAX_HISTORY_TURNS);
 }
 
-function buildSystemPrompt(shop: string, catalogBlock: string): string {
+const memoryHeaders = (env: SkillEnv): Record<string, string> => {
+  const key = env.serviceRoleKey ?? "";
+  return { apikey: key, ...(key.startsWith("sb_secret_") ? {} : { Authorization: `Bearer ${key}` }), "Content-Type": "application/json", "User-Agent": "EvolutionBackend/1.0" };
+};
+
+async function loadPersistentContext(env: SkillEnv, userId: string, current: ChatTurn[]): Promise<string> {
+  if (!env.supabaseUrl || !env.serviceRoleKey) return "No persistent memory is configured yet.";
+  try {
+    const headers = memoryHeaders(env);
+    const [memoryRes, chatRes] = await Promise.all([
+      fetch(`${env.supabaseUrl}/rest/v1/agent_memories?user_id=eq.${encodeURIComponent(userId)}&select=category,content,updated_at&order=updated_at.desc&limit=12`, { headers }),
+      fetch(`${env.supabaseUrl}/rest/v1/chat_messages?user_id=eq.${encodeURIComponent(userId)}&select=role,content,created_at&order=created_at.desc&limit=10`, { headers }),
+    ]);
+    const memories = memoryRes.ok ? await memoryRes.json() as { category: string; content: string }[] : [];
+    const recent = chatRes.ok ? await chatRes.json() as { role: string; content: string }[] : [];
+    const currentKeys = new Set(current.map((turn) => `${turn.role}:${turn.content}`));
+    const previous = recent
+      .filter((turn) => (turn.role === "user" || turn.role === "assistant") && !currentKeys.has(`${turn.role}:${turn.content}`))
+      .reverse()
+      .map((turn) => `${turn.role}: ${turn.content.slice(0, 350)}`)
+      .join("\n")
+      .slice(-2_400);
+    const facts = memories.map((memory) => `- [${memory.category}] ${memory.content.slice(0, 300)}`).join("\n");
+    return [
+      "DURABLE MERCHANT MEMORY (explicit facts; authoritative until changed):",
+      facts || "- No explicit durable facts saved yet.",
+      "RECENT PRIOR-CONVERSATION CONTEXT (may be stale; verify live numbers with tools):",
+      previous || "- No earlier conversation context available.",
+    ].join("\n");
+  } catch {
+    return "Persistent memory is temporarily unavailable. Do not pretend you remembered prior sessions.";
+  }
+}
+
+async function rememberBusinessFact(env: SkillEnv, userId: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (!env.supabaseUrl || !env.serviceRoleKey) return { error: "Persistent memory is not configured." };
+  const allowed = new Set(["brand", "audience", "campaign", "policy", "preference", "business"]);
+  const category = typeof args.category === "string" && allowed.has(args.category) ? args.category : "preference";
+  const content = typeof args.content === "string" ? args.content.trim().slice(0, 500) : "";
+  if (!content) return { error: "Memory content is required." };
+  const res = await fetch(`${env.supabaseUrl}/rest/v1/agent_memories?on_conflict=user_id,category,content`, {
+    method: "POST",
+    headers: { ...memoryHeaders(env), Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify({ user_id: userId, category, content, source: "explicit_chat", updated_at: new Date().toISOString() }),
+  });
+  if (!res.ok) return { error: "I couldn't save that memory right now." };
+  return { saved: true, category, content };
+}
+
+async function createRecoveryCampaign(
+  env: SkillEnv,
+  userId: string,
+  authHeader: string | null,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const note = typeof args.note === "string" ? args.note.slice(0, 500) : "";
+  const draft = await runRecoveryDraft({ note }, authHeader, env);
+  if (draft.status !== 200 || !Array.isArray(draft.body.touches)) return draft.body;
+  const audience = await runRecoveryCarts(authHeader, env);
+  if (audience.status !== 200 || !Array.isArray(audience.body.carts)) return audience.body;
+  const carts = audience.body.carts as { totalPrice?: number }[];
+  const connection = await getConnection(env, userId);
+  if (!env.supabaseUrl || !env.serviceRoleKey) {
+    return { error: "The campaign was generated but persistent campaign storage is not configured." };
+  }
+  const saved = await fetch(`${env.supabaseUrl}/rest/v1/recovery_sequences?on_conflict=user_id`, {
+    method: "POST",
+    headers: { ...memoryHeaders(env), Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ user_id: userId, touches: draft.body.touches, updated_at: new Date().toISOString() }),
+  });
+  if (!saved.ok) return { error: "The recovery emails were generated but couldn't be saved. Nothing was sent." };
+  const totalValue = carts.reduce((sum, cart) => sum + (Number(cart.totalPrice) || 0), 0);
+  const campaignSaved = await fetch(`${env.supabaseUrl}/rest/v1/recovery_campaigns?select=id`, {
+    method: "POST",
+    headers: { ...memoryHeaders(env), Prefer: "return=representation" },
+    body: JSON.stringify({ user_id: userId, status: "proposed", touches: draft.body.touches, cart_count: carts.length, total_value: totalValue, currency: typeof audience.body.currency === "string" ? audience.body.currency : null }),
+  });
+  if (!campaignSaved.ok) return { error: "The draft was generated, but the campaign queue is not installed. Run the recovery campaign migration." };
+  const campaignId = ((await campaignSaved.json()) as { id?: string }[])[0]?.id;
+  if (!campaignId) return { error: "The campaign could not be persisted." };
+  return {
+    id: campaignId,
+    created: true,
+    status: "draft",
+    sent: false,
+    campaignType: "abandoned_checkout_recovery",
+    touches: draft.body.touches,
+    cartCount: carts.length,
+    totalValue,
+    currency: typeof audience.body.currency === "string" ? audience.body.currency : null,
+    storeName: connection?.shop_domain.replace(/\.myshopify\.com$/i, "") ?? "your store",
+    nextStep: "The merchant can approve this proposal to schedule the live recovery sequence.",
+  };
+}
+
+function buildSystemPrompt(shop: string, catalogBlock: string, persistentContext: string): string {
   return [
     `You are Evolution, the AI COO for the founder's connected Shopify store "${shop}". You are their store-aware copilot; replies may be spoken aloud.`,
     `You have TOOLS that fetch the store's REAL data, live. When a question needs data you don't already have — sales, top sellers, order stats, abandoned carts (including WHICH products get abandoned most), what's waiting to ship, stock levels, lapsed customers, audit findings, deeper product detail — CALL the right tool instead of guessing, deflecting, or claiming you lack data. Check your tools before ever saying you can't see something.`,
-    `Every number you state must come from a tool result or the catalog below — NEVER invent figures. If a tool returns an "error" field, say plainly that that data source is unreachable right now and answer with what you have.`,
+    `Every number you state must come from a tool result or the catalog below — NEVER invent figures. If a tool returns an "error" field, say plainly that that data source is unreachable right now and answer with what you have. Never infer or guess a product identity from a checkout total or price.`,
+    `When the merchant asks to create, build, prepare, or draft an abandoned-checkout campaign, call create_recovery_campaign. Follow-up confirmations such as "okay create", "do it", or "go ahead" refer to that campaign and must call the tool rather than narrating. The tool creates a saved draft only; clearly distinguish CREATED AS DRAFT from SENT. Never say "I've prepared" unless the tool returned created=true.`,
     `Keep replies SHORT and conversational (1–4 sentences); use a compact list only when the founder asks for a list. No preamble like "Based on the data".`,
     `You can PREPARE Shopify action proposals when the founder asks for a concrete supported change. If they say add, create, apply, update, fix, or "do this in my store", you MUST call the matching prepare_* tool instead of repeating the recommendation or merely explaining it. Treat "this", "that", and "these" as referring to the products or changes in the immediately preceding conversation. For a recommended product that is not already in their catalog, call prepare_product_draft. Proposal tools never execute; they create a before-and-after approval card. Tell the founder to review and click Approve and apply. Never claim a change is live until the action result says it succeeded. You cannot change prices, inventory, fulfillment, customers, themes, or publish products.`,
     `Don't just report numbers — read them like a COO and suggest the next move. A product topping the abandoned-cart list is a discount/free-shipping candidate; sold-out products with recent demand are urgent restocks; overdue shipments risk bad reviews; lapsed customers who bought a product you still stock are a win-back audience. One concrete suggestion beats three vague ones.`,
-    `The app has action centers as header buttons — point the founder to the right one AFTER answering with data: "Recovery" (every recoverable abandoned cart with a personalized ready-to-send email; they send from their own inbox), "Retention" (win-back emails for lapsed customers + review requests for recent buyers, same send-it-yourself flow), and "Ops" (live operator view: today's pulse, ship queue, inventory watch, real-time alerts for new orders and stockouts). Nothing is sent automatically — the founder always does the sending.`,
+    `The Marketing Manager workspace contains abandoned-cart recovery, win-back campaigns, and one-time email campaigns. Chat and visible controls operate the same saved campaign state. Sending is not connected yet: drafts may be created and edited, but never claim an email was sent, scheduled, or enabled.`,
+    `Use persistent memory carefully. If the merchant explicitly says "remember", "always", "our policy is", or states a durable business preference or decision, call remember_business_fact. Never save customer PII, credentials, payment data, access tokens, or a one-off request. Never claim something was saved unless the tool confirms it. Live Shopify tool data always wins over stale conversation context.`,
+    persistentContext,
     catalogBlock,
   ].join("\n\n");
 }
 
-function forcedProposalTool(turns: ChatTurn[]): keyof typeof PROPOSAL_SCHEMAS | null {
+function forcedProposalTool(turns: ChatTurn[]): (typeof AGENT_TOOL_NAMES)[number] | null {
   const latest = turns.at(-1)?.content.toLowerCase() ?? "";
   const context = turns.slice(-4).map((turn) => turn.content.toLowerCase()).join("\n");
   const directAction = /\b(add|create|apply|update|change|fix|prepare|recreate|do)\b.*\b(store|shop|product|listing|collection|discount|promotion|card)\b/.test(latest)
@@ -243,6 +375,41 @@ function forcedProposalTool(turns: ChatTurn[]): keyof typeof PROPOSAL_SCHEMAS | 
   if (/\bcollection\b/.test(context)) return "prepare_collection";
   if (/\b(draft product|winning product|recommended product|add this|add these|new product)\b/.test(context)) return "prepare_product_draft";
   return "prepare_product_updates";
+}
+
+function forcedCampaignTool(turns: ChatTurn[]): "create_recovery_campaign" | null {
+  const latest = turns.at(-1)?.content.toLowerCase() ?? "";
+  const context = turns.slice(-6).map((turn) => turn.content.toLowerCase()).join("\n");
+  const recoveryContext = /\b(abandoned|checkout|cart recovery|recovery campaign|three-email|3-email)\b/.test(context);
+  const createIntent = /\b(create|build|prepare|draft|do it|go ahead|yes|okay|ok|proceed)\b/.test(latest);
+  return recoveryContext && createIntent ? "create_recovery_campaign" : null;
+}
+
+function selectedAgentToolNames(turns: ChatTurn[]): (typeof AGENT_TOOL_NAMES)[number][] {
+  const context = turns.slice(-6).map((turn) => turn.content.toLowerCase()).join("\n");
+  const selected = new Set<(typeof AGENT_TOOL_NAMES)[number]>(["remember_business_fact"]);
+  const add = (...names: (typeof AGENT_TOOL_NAMES)[number][]) => names.forEach((name) => selected.add(name));
+
+  if (/\b(abandon|checkout|cart recovery|recovery campaign)\b/.test(context)) {
+    add("get_abandoned_checkouts", "create_recovery_campaign", "prepare_discount");
+  }
+  if (/\b(win.?back|retention|lapsed|repeat customer|review)\b/.test(context)) {
+    add("get_retention_snapshot", "get_orders_summary", "prepare_discount");
+  }
+  if (/\b(ship|fulfil|fulfill|inventory|stock|operations|ops)\b/.test(context)) {
+    add("get_ship_queue", "get_inventory_watch", "get_orders_summary");
+  }
+  if (/\b(product|catalog|listing|collection|seo|merchand|price)\b/.test(context)) {
+    add("get_products", "get_product_sales", "get_latest_audit", "prepare_product_updates", "prepare_product_draft", "prepare_collection");
+  }
+  if (/\b(discount|promotion|coupon|free shipping)\b/.test(context)) {
+    add("prepare_discount", "get_orders_summary");
+  }
+  if (/\b(order|revenue|sales|performance|summary|opportunity)\b/.test(context)) {
+    add("get_orders_summary", "get_product_sales", "get_latest_audit");
+  }
+  if (selected.size === 1) add("get_orders_summary", "get_latest_audit");
+  return [...selected];
 }
 
 async function buildCatalogBlock(ctx: ToolCtx): Promise<string> {
@@ -287,7 +454,7 @@ export async function runAgentChat(
 
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResponse(401, { error: "Sign in to chat with your store." });
-  if (!(await isOperator(env, user.id))) {
+  if (!(await isOperator(env, user.id, user.email))) {
     return jsonResponse(OPERATOR_REQUIRED.status, { ...OPERATOR_REQUIRED.body });
   }
 
@@ -297,16 +464,52 @@ export async function runAgentChat(
   const ctx: ToolCtx = { env, userId: user.id, userEmail: user.email, conn, origin };
   const shop = conn.shop_domain.replace(".myshopify.com", "");
   const model = env.groqModel || CHAT_MODEL_DEFAULT;
-  const tools = AGENT_TOOL_NAMES.map((n) => PROPOSAL_SCHEMAS[n] ?? SKILL_TOOLS[n].schema);
-  const forcedTool = forcedProposalTool(turns);
+  const forcedTool = forcedCampaignTool(turns) ?? forcedProposalTool(turns);
+  const selectedNames = selectedAgentToolNames(turns);
+  if (forcedTool && !selectedNames.includes(forcedTool)) selectedNames.push(forcedTool);
+  const tools = selectedNames.map((n) => PROPOSAL_SCHEMAS[n] ?? SKILL_TOOLS[n].schema);
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const progress = (label: string) => controller.enqueue(sse({ progress: label }));
       try {
-        const catalogBlock = await buildCatalogBlock(ctx);
+        if (forcedTool === "create_recovery_campaign") {
+          progress(PROGRESS_LABELS.create_recovery_campaign);
+          const recentInstructions = turns
+            .slice(-6)
+            .filter((turn) => turn.role === "user")
+            .map((turn) => turn.content)
+            .join("\n")
+            .slice(-500);
+          const direct = await createRecoveryCampaign(env, user.id, authHeader, {
+            note: recentInstructions || "Create a safe recovery campaign draft.",
+          });
+          if (typeof direct.error === "string") {
+            controller.enqueue(sse({ error: direct.error }));
+            return;
+          }
+          const touches = Array.isArray(direct.touches)
+            ? direct.touches as { delayLabel?: string; subject?: string }[]
+            : [];
+          const plan = touches.map((touch, index) => `${index + 1}. ${touch.delayLabel ?? `Email ${index + 1}`} — ${touch.subject ?? "Draft email"}`).join("\n");
+          controller.enqueue(sse({ recoveryProposal: {
+            id: String(direct.id),
+            status: "proposed",
+            touches: direct.touches,
+            cartCount: Number(direct.cartCount ?? 0),
+            totalValue: Number(direct.totalValue ?? 0),
+            currency: typeof direct.currency === "string" ? direct.currency : null,
+            storeName: typeof direct.storeName === "string" ? direct.storeName : "your store",
+            deliveryReady: false,
+            createdAt: new Date().toISOString(),
+          } }));
+          controller.enqueue(sse({ choices: [{ delta: { content: `I checked the live recoverable carts and prepared customer-specific emails for approval. Nothing was sent.\n${plan}` } }] }));
+          return;
+        }
+        const persistentContext = await loadPersistentContext(env, user.id, turns);
+        const catalogBlock = "Catalog is available on demand through get_products; it is not preloaded into every request.";
         const convo: Record<string, unknown>[] = [
-          { role: "system", content: buildSystemPrompt(shop, catalogBlock) },
+          { role: "system", content: buildSystemPrompt(shop, catalogBlock, persistentContext) },
           ...turns,
         ];
 
@@ -332,17 +535,39 @@ export async function runAgentChat(
           if (!res.ok) {
             const detail = await res.text().catch(() => "");
             log("error", "agent-chat", "groq_upstream", { status: res.status, round });
-            controller.enqueue(
-              sse({
-                error:
-                  res.status === 429 || res.status === 413
-                    ? "I'm at capacity this minute — give me about 60 seconds and ask again."
-                    : `Copilot brain error (${res.status}). ${detail.slice(0, 120)}`,
-              }),
-            );
+            let upstreamMessage = "";
+            try {
+              const parsed = JSON.parse(detail) as { error?: { message?: string } };
+              upstreamMessage = parsed.error?.message?.trim().slice(0, 240) ?? "";
+            } catch {
+              upstreamMessage = detail.trim().slice(0, 240);
+            }
+            const publicError = res.status === 401
+              ? "The configured Groq API key was rejected. Restart or redeploy after updating the key."
+              : res.status === 413
+                ? "This conversation is too large for the configured model. Start a fresh chat or reduce stored context."
+                : res.status === 429
+                  ? `Groq rejected this request for rate or quota limits.${upstreamMessage ? ` ${upstreamMessage}` : " Check the Groq usage dashboard."}`
+                  : res.status === 404
+                    ? "The configured Groq model is unavailable or incorrectly named."
+                    : `Groq request failed (${res.status}).${upstreamMessage ? ` ${upstreamMessage}` : ""}`;
+            controller.enqueue(sse({ error: publicError }));
             return;
           }
-          const data = (await res.json()) as { choices?: { message?: GroqChatMessage }[] };
+          const data = (await res.json()) as {
+            choices?: { message?: GroqChatMessage }[];
+            usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+          };
+          if (data.usage) {
+            log("info", "agent-chat", "groq_usage", {
+              model,
+              round,
+              selectedTools: selectedNames.length,
+              promptTokens: data.usage.prompt_tokens ?? 0,
+              completionTokens: data.usage.completion_tokens ?? 0,
+              totalTokens: data.usage.total_tokens ?? 0,
+            });
+          }
           const msg = data.choices?.[0]?.message;
           if (!msg) {
             controller.enqueue(sse({ error: "The copilot brain returned an empty response." }));
@@ -364,13 +589,15 @@ export async function runAgentChat(
           convo.push({ role: "assistant", content: msg.content ?? null, tool_calls: calls });
           for (const call of calls) {
             const name = call.function.name;
-            const isProposal = Boolean(PROPOSAL_SCHEMAS[name]);
+            const isMemory = name === "remember_business_fact";
+            const isCampaign = name === "create_recovery_campaign";
+            const isProposal = Boolean(PROPOSAL_SCHEMAS[name]) && !isMemory && !isCampaign;
             const tool = !isProposal && (AGENT_TOOL_NAMES as readonly string[]).includes(name)
               ? SKILL_TOOLS[name]
               : null;
             progress(PROGRESS_LABELS[name] ?? "Checking your store data…");
             let result: unknown;
-            if (!tool && !isProposal) {
+            if (!tool && !isProposal && !isMemory && !isCampaign) {
               result = { error: `Unknown tool: ${name}` };
             } else {
               let args: Record<string, unknown> = {};
@@ -379,7 +606,11 @@ export async function runAgentChat(
               } catch {
                 /* run with defaults */
               }
-              if (isProposal) {
+              if (isMemory) {
+                result = await rememberBusinessFact(env, user.id, args);
+              } else if (isCampaign) {
+                result = await createRecoveryCampaign(env, user.id, authHeader, args);
+              } else if (isProposal) {
                 const proposalBody = name === "prepare_product_updates"
                   ? { kind: "product_update", ...args }
                   : name === "prepare_product_draft"

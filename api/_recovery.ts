@@ -22,6 +22,7 @@ import {
   fetchShopCurrency,
 } from "./_shopifyData";
 import { buildProductsDigest } from "./_skillTools";
+import { log } from "./_log";
 
 const WINDOW_DAYS = 30;
 
@@ -101,7 +102,7 @@ export async function runRecoveryCarts(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResult(401, { error: "Sign in first." });
-  if (!(await isOperator(env, user.id))) return { ...OPERATOR_REQUIRED };
+  if (!(await isOperator(env, user.id, user.email))) return { ...OPERATOR_REQUIRED };
 
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResult(409, { error: "Connect your Shopify store first." });
@@ -159,7 +160,7 @@ export async function runRecoveryDraft(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResult(401, { error: "Sign in first." });
-  if (!(await isOperator(env, user.id))) return { ...OPERATOR_REQUIRED };
+  if (!(await isOperator(env, user.id, user.email))) return { ...OPERATOR_REQUIRED };
 
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResult(409, { error: "Connect your Shopify store first." });
@@ -173,7 +174,7 @@ export async function runRecoveryDraft(
 
   // NON-PII store facts only — catalog aggregate + abandoned totals.
   const [digest, checkouts] = await Promise.all([
-    buildProductsDigest(conn, 50),
+    buildProductsDigest(conn, 12),
     fetchAbandonedCheckoutsWindow(conn, WINDOW_DAYS),
   ]);
   const topTitles =
@@ -209,15 +210,26 @@ export async function runRecoveryDraft(
       signal: AbortSignal.timeout(20_000),
     });
     if (res.ok) {
-      const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+      const data = (await res.json()) as {
+        choices?: { message?: { content?: string } }[];
+        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+      };
+      if (data.usage) {
+        log("info", "recovery", "groq_usage", {
+          model: env.groqModel || CHAT_MODEL_DEFAULT,
+          promptTokens: data.usage.prompt_tokens ?? 0,
+          completionTokens: data.usage.completion_tokens ?? 0,
+          totalTokens: data.usage.total_tokens ?? 0,
+        });
+      }
       const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}") as {
         touches?: unknown;
       };
       const touches = validTouches(parsed.touches);
-      if (touches) return jsonResult(200, { touches, source: "ai" });
+      if (touches) return jsonResult(200, { touches, source: "ai", cartCount: abandonedCount, totalValue: abandonedValue, currency: await fetchShopCurrency(conn) });
     }
   } catch {
     /* fall through to defaults */
   }
-  return jsonResult(200, { touches: DEFAULT_TOUCHES, source: "default" });
+  return jsonResult(200, { touches: DEFAULT_TOUCHES, source: "default", cartCount: abandonedCount, totalValue: abandonedValue, currency: await fetchShopCurrency(conn) });
 }

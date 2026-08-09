@@ -3,7 +3,7 @@ import { AvatarScene } from "./avatar/AvatarScene";
 import { MessageList } from "./components/MessageList";
 import { Composer } from "./components/Composer";
 import { Splash } from "./components/Splash";
-import { ButterflyIcon, MicIcon, StopIcon, CloseIcon, KeyboardIcon } from "./components/icons";
+import { ButterflyIcon, MicIcon, StopIcon, CloseIcon, KeyboardIcon, VolumeIcon, VolumeOffIcon } from "./components/icons";
 import { useAssistant } from "./hooks/useAssistant";
 import { useAuthEmail } from "./components/AuthGate";
 import { authEnabled, signOut } from "./lib/auth";
@@ -25,9 +25,12 @@ import { ensureProfile, getLatestAudit, getPlan, getStore, getStoreCatalog, runA
 import { isEmbedded } from "./lib/embedded";
 import { consumeUpgradeIntent } from "./lib/upgradeIntent";
 import { SKILL_CHIPS, type SkillChip } from "./lib/skills";
+import { MarketingManager } from "./components/MarketingManager";
+import { EmailDeliveryPanel } from "./components/EmailDeliveryPanel";
 
-type View = "voice" | "chat";
-const VIEW_KEY = "shop-avatar-view";
+type View = "marketing" | "voice" | "chat";
+// New key intentionally migrates existing users into the role-first workspace.
+const VIEW_KEY = "shop-avatar-role-view-v2";
 
 // Splash never flashes by (min), and never traps the user if the model stalls (max).
 const MIN_SPLASH_MS = 1600;
@@ -39,6 +42,11 @@ const STARTERS = [
   "Show me the catalog",
   "What's our best budget pick?",
   "What's our premium product?",
+];
+const MARKETING_STARTERS = [
+  "Find my best marketing opportunity",
+  "Build a cart recovery campaign",
+  "Create a win-back campaign",
 ];
 
 export default function App() {
@@ -62,7 +70,9 @@ export default function App() {
   const [retentionOpen, setRetentionOpen] = useState(false);
   const [opsOpen, setOpsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true);
 
   // The pricing CTA must open billing for non-gated accounts too (operators
   // revisiting, admins whose profile row is still free) — FreeHome handles
@@ -165,9 +175,12 @@ export default function App() {
   };
 
 
-  // Two experiences: an immersive voice stage (default) and a classic chat.
+  // Role workspace is the default; voice and full chat remain available.
   // The choice is remembered across visits.
-  const [view, setViewState] = useState<View>(() => loadJSON<{ view: View }>(VIEW_KEY, { view: "voice" }).view);
+  const [view, setViewState] = useState<View>(() => {
+    const saved = loadJSON<{ view?: string }>(VIEW_KEY, { view: "marketing" }).view;
+    return saved === "voice" || saved === "chat" || saved === "marketing" ? saved : "marketing";
+  });
   const setView = (v: View) => {
     setViewState(v);
     saveJSON(VIEW_KEY, { view: v });
@@ -239,6 +252,10 @@ export default function App() {
     ensureWarm();
     a.send(text);
   };
+  const handleMarketingAsk = (text: string) => {
+    setChatOpen(true);
+    handleSend(text);
+  };
   const handleMic = () => {
     void speechEngine.unlock();
     ensureWarm();
@@ -258,6 +275,7 @@ export default function App() {
   const canTalk = voiceEnabled && a.micSupported;
   // Voice stage needs a working mic — otherwise fall back to chat gracefully.
   const voiceView = view === "voice" && canTalk;
+  const marketingView = view === "marketing";
 
   // Hands-free auto-relisten belongs to the voice stage only.
   useEffect(() => {
@@ -339,6 +357,31 @@ export default function App() {
         {authEmail && (
           <div className="header-right">
             {store && (
+              <button type="button" className={`tasks-btn ${marketingView ? "active" : ""}`} onClick={() => setView("marketing")}>
+                Marketing Manager
+              </button>
+            )}
+            {store && marketingView && !chatOpen && (
+              <button type="button" className="tasks-btn" onClick={() => setChatOpen(true)}>
+                Open chat
+              </button>
+            )}
+            <button
+              type="button"
+              className={`tasks-btn sound-toggle ${a.settings.ttsEngine === "off" || a.settings.textOnly ? "muted" : ""}`}
+              onClick={a.toggleSound}
+              aria-label={a.settings.ttsEngine === "off" || a.settings.textOnly ? "Enable spoken replies" : "Mute spoken replies"}
+              title={a.settings.ttsEngine === "off" || a.settings.textOnly ? "Turn sound on" : "Turn sound off"}
+            >
+              {a.settings.ttsEngine === "off" || a.settings.textOnly ? <VolumeOffIcon size={17} /> : <VolumeIcon size={17} />}
+              <span>{a.settings.ttsEngine === "off" || a.settings.textOnly ? "Sound off" : "Sound on"}</span>
+            </button>
+            {store && (
+              <button type="button" className="tasks-btn" onClick={() => { setTasksOpen(false); setActionsOpen(false); setOpsOpen(false); setRecoveryOpen(false); setRetentionOpen(false); setDeliveryOpen((v) => !v); }}>
+                Email setup
+              </button>
+            )}
+            {store && (
               <button
                 type="button"
                 className="tasks-btn"
@@ -366,36 +409,6 @@ export default function App() {
                 }}
               >
                 Ops
-              </button>
-            )}
-            {store && (
-              <button
-                type="button"
-                className="tasks-btn"
-                onClick={() => {
-                  setTasksOpen(false);
-                  setActionsOpen(false);
-                  setRetentionOpen(false);
-                  setOpsOpen(false);
-                  setRecoveryOpen((v) => !v);
-                }}
-              >
-                Recovery
-              </button>
-            )}
-            {store && (
-              <button
-                type="button"
-                className="tasks-btn"
-                onClick={() => {
-                  setTasksOpen(false);
-                  setActionsOpen(false);
-                  setRecoveryOpen(false);
-                  setOpsOpen(false);
-                  setRetentionOpen((v) => !v);
-                }}
-              >
-                Retention
               </button>
             )}
             <button
@@ -439,31 +452,45 @@ export default function App() {
         )}
       </header>
 
-      <main className={`layout ${voiceView ? "solo" : ""}`}>
+      <main className={`layout ${voiceView ? "solo" : ""} ${marketingView ? "manager-layout" : ""} ${marketingView && !chatOpen ? "chat-closed" : ""}`}>
         {/* ── 3D avatar stage ───────────────────────────────────────────── */}
-        <section className="stage card">
-          <AvatarScene
+        <section className={`stage card ${marketingView ? "manager-stage" : ""}`}>
+          {marketingView ? (
+            <MarketingManager
+              active={marketingView}
+              onAsk={handleMarketingAsk}
+              onOpenRecovery={() => {
+                setRetentionOpen(false);
+                setRecoveryOpen(true);
+              }}
+              onOpenWinback={() => {
+                setRecoveryOpen(false);
+                setRetentionOpen(true);
+              }}
+              onOpenDelivery={() => setDeliveryOpen(true)}
+            />
+          ) : <AvatarScene
             avatarUrl={a.settings.avatarUrl}
             thinking={thinking}
             speaking={a.status === "speaking"}
             framing={voiceView ? "stage" : "portrait"}
             onAvatarFallback={() => a.setAvatarFellBack(true)}
             onReady={() => setAvatarReady(true)}
-          />
+          />}
 
-          <div className={`status-pill ${statusState}`}>
+          {!marketingView && <div className={`status-pill ${statusState}`}>
             <span className="pulse" />
             {statusLabel}
-          </div>
+          </div>}
 
-          {warming && (
+          {!marketingView && warming && (
             <div className="warmup" role="status">
               Warming up the voice… {Math.round((a.ttsProgress?.progress ?? 0) * 100)}%
               <span className="warmup-note">First visit only — it's cached after this.</span>
             </div>
           )}
 
-          {a.avatarFellBack && (
+          {!marketingView && a.avatarFellBack && (
             <div className="corner-note">
               Using the built-in avatar (couldn't load the Ready Player Me model).
             </div>
@@ -557,7 +584,13 @@ export default function App() {
 
         {/* ── Chat experience: an always-mounted panel that slides in over the
              right of the stage while the camera glides the model left. ───── */}
-        <section className={`chat card ${voiceView ? "hidden" : ""}`} aria-hidden={voiceView}>
+        <section className={`chat card ${voiceView || (marketingView && !chatOpen) ? "hidden" : ""}`} aria-hidden={voiceView || (marketingView && !chatOpen)}>
+            {marketingView && (
+              <div className="chat-toolbar">
+                <div><strong>Chat with your manager</strong><span>Ask, edit, approve, or pause work</span></div>
+                <button type="button" className="chat-close" onClick={() => setChatOpen(false)} aria-label="Close chat">×</button>
+              </div>
+            )}
             <MessageList
               messages={a.messages}
               status={a.status}
@@ -568,7 +601,13 @@ export default function App() {
                  With a store connected, they become the agentic skill chips. */}
             {a.messages.length <= 1 && a.status === "idle" && (
               <div className="suggestions" aria-label="Suggested questions">
-                {skillsAvailable
+                {marketingView
+                  ? MARKETING_STARTERS.map((s) => (
+                      <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
+                        {s}
+                      </button>
+                    ))
+                  : skillsAvailable
                   ? SKILL_CHIPS.map((c) => (
                       <button key={c.id} type="button" className="chip" title={c.blurb} onClick={() => handleSkill(c)}>
                         {c.label}
@@ -583,7 +622,7 @@ export default function App() {
             )}
 
             {/* Skills stay one tap away after the conversation has started. */}
-            {skillsAvailable && a.messages.length > 1 && (
+            {skillsAvailable && !marketingView && a.messages.length > 1 && (
               <div className="skills-row" aria-label="Skills">
                 {SKILL_CHIPS.map((c) => (
                   <button
@@ -661,6 +700,7 @@ export default function App() {
 
       {authEmail && store && <OpsPanel open={opsOpen} onClose={() => setOpsOpen(false)} />}
       {authEmail && store && <ActionCenter open={actionsOpen} onClose={() => setActionsOpen(false)} />}
+      {authEmail && store && <EmailDeliveryPanel open={deliveryOpen} onClose={() => setDeliveryOpen(false)} />}
       {authEmail && store && <LiveToasts />}
 
       {/* Embedded installs are connected by construction (the session
