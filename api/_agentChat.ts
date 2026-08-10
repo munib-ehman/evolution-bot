@@ -408,7 +408,7 @@ async function createWinbackCampaign(env: SkillEnv, userId: string, authHeader: 
     const missingTable = saved.status === 404 || failure.code === "42P01" || failure.code === "PGRST205";
     return { error: missingTable
       ? "The win-back campaign table is missing from the connected Supabase database. Apply the win-back migration to that project."
-      : `The win-back draft was generated but the database rejected it${failure.code ? ` (${failure.code})` : ""}. Nothing was sent.` };
+      : `The win-back draft was generated but the database rejected it${failure.code ? ` (${failure.code})` : ""}${failure.message ? `: ${failure.message}` : ""}. Nothing was sent.` };
   }
   const id = ((await saved.json()) as { id?: string }[])[0]?.id;
   return id ? { id, created: true, sent: false, touches: templates.winback, customerCount: customers.length, lifetimeValue, currency: audience.body.currency ?? null, storeName: connection?.shop_domain.replace(/\.myshopify\.com$/i, "") ?? "your store" } : { error: "The campaign could not be persisted." };
