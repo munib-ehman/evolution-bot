@@ -739,7 +739,10 @@ export async function runAgentChat(
                 }
                 if (name === "create_broadcast_campaign" && typeof (result as { error?: unknown }).error === "string") {
                   const reason = (result as { error: string }).error;
-                  controller.enqueue(sse({ choices: [{ delta: { content: `I couldn't create the one-time campaign draft: ${reason} Nothing was sent, and there is no campaign waiting for approval.` } }] }));
+                  const content = reason === "This segment has no subscribed customers."
+                    ? "Shopify currently shows 0 customers subscribed to email marketing, so I can't create or send this campaign—even with merchant approval. Nothing was sent. If you have customers who already gave consent, update their email-marketing status in Shopify and ask me again; otherwise, collect subscriptions first."
+                    : `I couldn't create the one-time campaign draft: ${reason} Nothing was sent, and there is no campaign waiting for approval.`;
+                  controller.enqueue(sse({ choices: [{ delta: { content } }] }));
                   return;
                 }
               } else if (isProposal) {
