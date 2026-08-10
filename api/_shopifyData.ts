@@ -377,6 +377,7 @@ async function fetchLapsedGraphql(
   conn: ShopifyConnection,
   minDays: number,
   maxDays: number,
+  includeNeverOrdered = false,
 ): Promise<PiiResult<LapsedCustomer>> {
   const out: LapsedCustomer[] = [];
   let scanned = 0;
@@ -393,14 +394,16 @@ async function fetchLapsedGraphql(
     for (const n of page.nodes) {
       scanned++;
       const lastAt = n.lastOrder?.createdAt;
-      if (!lastAt) continue; // never ordered
-      const age = daysAgo(lastAt);
-      if (!Number.isFinite(age) || age < minDays || age > maxDays) continue;
+      if (!lastAt && !includeNeverOrdered) continue;
+      if (lastAt) {
+        const age = daysAgo(lastAt);
+        if (!Number.isFinite(age) || age < minDays || age > maxDays) continue;
+      }
       out.push({
         id: n.id ?? "",
         firstName: (n.firstName ?? "").trim(),
         email: (n.defaultEmailAddress?.emailAddress ?? "").trim(),
-        lastOrderAt: lastAt,
+        lastOrderAt: lastAt ?? "",
         ordersCount: Number(n.numberOfOrders) || 0,
         totalSpent: money(n.amountSpent?.amount),
         lastItems: (n.lastOrder?.lineItems?.nodes ?? []).map((li) => ({
@@ -419,7 +422,7 @@ async function fetchLapsedGraphql(
 
 /** Past customers available for marketing segmentation. Callers must enforce SUBSCRIBED. */
 export async function fetchMarketingCustomers(conn: ShopifyConnection): Promise<PiiResult<LapsedCustomer>> {
-  const rows = await fetchLapsedGraphql(conn, 0, 3650);
+  const rows = await fetchLapsedGraphql(conn, 0, 3650, true);
   if (rows === "access-denied" || rows === null) return rows;
   return rows.sort((a, b) => Date.parse(b.lastOrderAt) - Date.parse(a.lastOrderAt));
 }
