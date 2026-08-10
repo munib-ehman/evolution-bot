@@ -734,6 +734,9 @@ export async function runAgentChat(
                   : name === "create_broadcast_campaign"
                     ? await createBroadcastCampaign(env, authHeader, args)
                     : await createRecoveryCampaign(env, user.id, authHeader, args);
+                if (name === "create_broadcast_campaign" && (result as { created?: unknown }).created === true) {
+                  controller.enqueue(sse({ broadcastProposal: result }));
+                }
               } else if (isProposal) {
                 const proposalBody = name === "prepare_product_updates"
                   ? { kind: "product_update", ...args }

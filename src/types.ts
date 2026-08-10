@@ -27,6 +27,8 @@ export interface Message {
   recoveryProposal?: import("./lib/recovery").RecoveryCampaignProposal;
   /** Customer-specific win-back campaign waiting for merchant approval. */
   winbackProposal?: import("./lib/winbackCampaigns").WinbackCampaignProposal;
+  /** One-time email campaign waiting for merchant approval. */
+  broadcastProposal?: import("./lib/broadcastCampaigns").BroadcastCampaign;
 }
 
 /** Speech-to-text engine choice, selectable in Settings. */

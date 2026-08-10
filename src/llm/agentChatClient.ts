@@ -15,6 +15,7 @@ import type { Message } from "../types";
 import type { ShopifyActionProposal } from "../lib/actions";
 import type { RecoveryCampaignProposal } from "../lib/recovery";
 import type { WinbackCampaignProposal } from "../lib/winbackCampaigns";
+import type { BroadcastCampaign } from "../lib/broadcastCampaigns";
 
 export class AgentChatError extends Error {
   constructor(
@@ -34,6 +35,7 @@ export interface AgentChatOptions {
   onAction?: (action: ShopifyActionProposal) => void;
   onRecoveryProposal?: (proposal: RecoveryCampaignProposal) => void;
   onWinbackProposal?: (proposal: WinbackCampaignProposal) => void;
+  onBroadcastProposal?: (proposal: BroadcastCampaign) => void;
 }
 
 /** Server rebuilds the system prompt; send user/assistant turns only. */
@@ -98,6 +100,7 @@ export async function runAgentChat(history: Message[], opts: AgentChatOptions = 
           action?: ShopifyActionProposal;
           recoveryProposal?: RecoveryCampaignProposal;
           winbackProposal?: WinbackCampaignProposal;
+          broadcastProposal?: BroadcastCampaign;
         };
         try {
           json = JSON.parse(payload);
@@ -111,6 +114,7 @@ export async function runAgentChat(history: Message[], opts: AgentChatOptions = 
         if (json.action) opts.onAction?.(json.action);
         if (json.recoveryProposal) opts.onRecoveryProposal?.(json.recoveryProposal);
         if (json.winbackProposal) opts.onWinbackProposal?.(json.winbackProposal);
+        if (json.broadcastProposal) opts.onBroadcastProposal?.(json.broadcastProposal);
         const delta = json.choices?.[0]?.delta?.content;
         if (delta) {
           reply += delta;

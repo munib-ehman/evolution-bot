@@ -5,6 +5,7 @@ import { renderMarkdown } from "../lib/markdown";
 import { ActionCard } from "./ActionCard";
 import { RecoveryApprovalCard } from "./RecoveryApprovalCard";
 import { WinbackApprovalCard } from "./WinbackApprovalCard";
+import { BroadcastApprovalCard } from "./BroadcastApprovalCard";
 
 interface Props {
   messages: Message[];
@@ -49,6 +50,7 @@ export function MessageList({ messages, status, onEscalate }: Props) {
             {m.action && <ActionCard initial={m.action} />}
             {m.recoveryProposal && <RecoveryApprovalCard proposal={m.recoveryProposal} />}
             {m.winbackProposal && <WinbackApprovalCard proposal={m.winbackProposal} />}
+            {m.broadcastProposal && <BroadcastApprovalCard proposal={m.broadcastProposal} />}
           </div>
         ),
       )}

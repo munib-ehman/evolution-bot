@@ -262,6 +262,16 @@ export function useAssistant() {
         }
       };
 
+      const onBroadcastProposal = (broadcastProposal: import("../lib/broadcastCampaigns").BroadcastCampaign) => {
+        if (controller.signal.aborted) return;
+        if (!bubbleShown) {
+          bubbleShown = true;
+          appendMessage({ id: assistantId, role: "assistant", content: "", pending: true, broadcastProposal });
+        } else {
+          updateMessage(assistantId, { broadcastProposal });
+        }
+      };
+
       try {
         // Store connected → the agentic path: the model can pull real store
         // data itself. Falls back to the generic brain when the agent is
@@ -277,6 +287,7 @@ export function useAssistant() {
               onAction,
               onRecoveryProposal,
               onWinbackProposal,
+              onBroadcastProposal,
             });
           } catch (err) {
             if (controller.signal.aborted) {
