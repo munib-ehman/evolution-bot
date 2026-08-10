@@ -737,6 +737,11 @@ export async function runAgentChat(
                 if (name === "create_broadcast_campaign" && (result as { created?: unknown }).created === true) {
                   controller.enqueue(sse({ broadcastProposal: result }));
                 }
+                if (name === "create_broadcast_campaign" && typeof (result as { error?: unknown }).error === "string") {
+                  const reason = (result as { error: string }).error;
+                  controller.enqueue(sse({ choices: [{ delta: { content: `I couldn't create the one-time campaign draft: ${reason} Nothing was sent, and there is no campaign waiting for approval.` } }] }));
+                  return;
+                }
               } else if (isProposal) {
                 const proposalBody = name === "prepare_product_updates"
                   ? { kind: "product_update", ...args }
