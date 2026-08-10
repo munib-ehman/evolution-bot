@@ -135,20 +135,26 @@ async function exchangeSessionToken(
   refresh_token_expires_at: string | null;
 } | null> {
   try {
+    const params = new URLSearchParams({
+      client_id: env.shopifyApiKey ?? "",
+      client_secret: env.shopifyApiSecret ?? "",
+      grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+      subject_token: sessionToken,
+      subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
+      requested_token_type: "urn:shopify:params:oauth:token-type:offline-access-token",
+      expiring: "1",
+    });
     const res = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_id: env.shopifyApiKey,
-        client_secret: env.shopifyApiSecret,
-        grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
-        subject_token: sessionToken,
-        subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
-        requested_token_type: "urn:shopify:params:oauth:token-type:offline-access-token",
-      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: params.toString(),
       signal: AbortSignal.timeout(8_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const failure = await res.json().catch(() => ({})) as { error?: string; error_description?: string };
+      log("warn", "shopify-session", "token_exchange_rejected", { shop, status: res.status, error: failure.error, description: failure.error_description?.slice(0, 160) });
+      return null;
+    }
     const data = (await res.json()) as {
       access_token?: string;
       scope?: string;

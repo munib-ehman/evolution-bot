@@ -145,7 +145,7 @@ Use the same gate for every role:
 
 ## Current execution status
 
-- Marketing Manager: next to implement.
+- Marketing Manager: in progress. Abandoned-cart recovery, win-back campaigns, and consent-safe one-time campaigns now have draft, approval, delivery, unsubscribe, and event-tracking paths. Unified history, proactive recommendations, attribution, and connected-store acceptance testing remain.
 - Customer Success Manager: queued after Marketing Manager is working.
 - SEO Manager: queued after Customer Success Manager is working.
 - Product Manager: deferred.

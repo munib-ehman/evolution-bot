@@ -113,7 +113,7 @@ export async function runRetentionCustomers(
     return jsonResult(502, { error: "Couldn't reach the Shopify customers API." });
   }
 
-  const lapsedWithEmail = (lapsed ?? []).filter((c) => c.email.includes("@"));
+  const lapsedWithEmail = (lapsed ?? []).filter((c) => c.email.includes("@") && c.marketingState === "SUBSCRIBED");
   const buyersWithEmail = (buyers ?? []).filter((b) => b.email.includes("@"));
   return jsonResult(200, {
     lapsedWindow: { minDays: LAPSED_MIN_DAYS, maxDays: LAPSED_MAX_DAYS },

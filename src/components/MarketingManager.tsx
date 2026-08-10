@@ -5,12 +5,13 @@ import { getEmailDeliverySettings, type EmailDeliverySettings } from "../lib/ema
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
-export function MarketingManager({ active, onAsk, onOpenRecovery, onOpenWinback, onOpenDelivery }: {
+export function MarketingManager({ active, onAsk, onOpenRecovery, onOpenWinback, onOpenDelivery, onOpenBroadcast }: {
   active: boolean;
   onAsk: (prompt: string) => void;
   onOpenRecovery: () => void;
   onOpenWinback: () => void;
   onOpenDelivery: () => void;
+  onOpenBroadcast: () => void;
 }) {
   const [state, setState] = useState<LoadState>("idle");
   const [recovery, setRecovery] = useState<RecoveryData | null>(null);
@@ -64,13 +65,13 @@ export function MarketingManager({ active, onAsk, onOpenRecovery, onOpenWinback,
         <div className="workflow-icon">01</div><div><h4>Abandoned cart recovery</h4><p>Three-touch, purchase-aware recovery built from live checkouts.</p></div><span className="workflow-state ready">Ready to draft</span>
         <div className="workflow-actions"><button type="button" className="link" onClick={onOpenRecovery}>Manage recovery</button><button type="button" onClick={() => onAsk("Create a three-email abandoned checkout recovery campaign without a discount. Use my live store data and show me the plan before anything is sent.")}>Build in chat</button></div>
       </article>
-      <article className="workflow-card">
-        <div className="workflow-icon">02</div><div><h4>Win-back campaigns</h4><p>Re-engage subscribed, lapsed customers with a focused offer.</p></div><span className="workflow-state ready">Ready to draft</span>
-        <div className="workflow-actions"><button type="button" className="link" onClick={onOpenWinback}>Review audience</button><button type="button" onClick={() => onAsk("Build a win-back campaign for my best eligible lapsed-customer segment. Explain the audience and draft the emails for approval.")}>Build in chat</button></div>
+      <article className={`workflow-card ${retention ? "" : "workflow-disabled"}`}>
+        <div className="workflow-icon">02</div><div><h4>Win-back campaigns</h4><p>Find valuable customers going quiet, choose the right incentive, and bring them back.</p></div><span className={`workflow-state ${retention ? "ready" : "setup"}`}>{retention ? `${retention.lapsed.length} eligible` : "Needs Shopify data"}</span>
+        <div className="workflow-actions"><button type="button" className="link" onClick={onOpenWinback}>Plan campaign</button><button type="button" disabled={!retention} onClick={() => onAsk("Build a win-back campaign for my best eligible lapsed-customer segment. Explain why this audience matters, recommend whether an offer is needed, and draft the emails for approval.")}>Ask manager to recommend</button></div>
       </article>
-      <article className="workflow-card">
-        <div className="workflow-icon">03</div><div><h4>One-time email campaign</h4><p>Launch, promotion, or customer announcement to an eligible segment.</p></div><span className="workflow-state setup">Delivery setup</span>
-        <div className="workflow-actions"><button type="button" onClick={() => onAsk("Help me plan a one-time email campaign. Ask only for details you cannot infer from my store.")}>Plan in chat</button><button type="button" className="link" onClick={onOpenDelivery}>Email delivery settings</button></div>
+      <article className={`workflow-card ${retention ? "" : "workflow-disabled"}`}>
+        <div className="workflow-icon">03</div><div><h4>One-time email campaign</h4><p>Send a consent-safe launch, promotion, or announcement to a selected customer segment.</p></div><span className={`workflow-state ${delivery?.status === "ready" ? "ready" : "setup"}`}>{delivery?.status === "ready" ? "Ready to plan" : "Delivery setup"}</span>
+        <div className="workflow-actions"><button type="button" className="link" onClick={onOpenBroadcast}>Plan campaign</button><button type="button" disabled={!retention} onClick={() => onAsk("Recommend a one-time email campaign based on my store and customer data. Explain the audience and angle, but do not send anything.")}>Ask manager to recommend</button></div>
       </article>
     </section>
     <p className="manager-safety">Chat and buttons use the same guarded actions. Evolution can analyze and draft freely; sending, scheduling, enabling an automation, or increasing an incentive always requires structured approval.</p>

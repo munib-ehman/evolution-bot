@@ -33,6 +33,8 @@ import { SKILL_TOOLS, buildProductsDigest, type SkillEnv, type ToolCtx, type Too
 import { log } from "./_log";
 import { runActionPropose } from "./_actions";
 import { runRecoveryCarts, runRecoveryDraft } from "./_recovery";
+import { runRetentionCustomers, runRetentionDraft } from "./_retention";
+import { runBroadcastAction } from "./_broadcastCampaigns";
 
 /**
  * Tools the chat may call — read-only store data. file_task is deliberately
@@ -50,6 +52,8 @@ const AGENT_TOOL_NAMES = [
   "get_retention_snapshot",
   "remember_business_fact",
   "create_recovery_campaign",
+  "create_winback_campaign",
+  "create_broadcast_campaign",
   "prepare_product_updates",
   "prepare_product_draft",
   "prepare_collection",
@@ -83,6 +87,32 @@ const PROPOSAL_SCHEMAS: Record<string, ToolSchema> = {
           note: { type: "string", description: "Merchant instructions for tone, timing, incentives, or exclusions. State 'no discount' when requested." },
         },
         required: ["note"],
+      },
+    },
+  },
+  create_winback_campaign: {
+    type: "function",
+    function: {
+      name: "create_winback_campaign",
+      description: "Create and persist an approval-ready two-email campaign for customers inactive for 60-365 days. This never sends email.",
+      parameters: { type: "object", properties: { note: { type: "string", description: "Merchant instructions for tone, offer, timing, or exclusions." } }, required: ["note"] },
+    },
+  },
+  create_broadcast_campaign: {
+    type: "function",
+    function: {
+      name: "create_broadcast_campaign",
+      description: "Create and persist an approval-ready one-time email campaign for Shopify customers who are currently subscribed to email marketing. This creates a draft only and never sends or schedules it without merchant approval.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Short internal campaign name." },
+          segment: { type: "string", enum: ["subscribers", "recent", "repeat", "vip", "lapsed"] },
+          subject: { type: "string", description: "Customer-facing email subject, maximum 120 characters." },
+          body: { type: "string", description: "Plain-text email copy. May use {{first_name}}, {{store_name}}, and {{store_url}}." },
+          scheduledAt: { type: ["string", "null"], description: "Requested future ISO-8601 send time, or null when the merchant has not specified a time." },
+        },
+        required: ["name", "segment", "subject", "body"],
       },
     },
   },
@@ -193,6 +223,8 @@ const PROGRESS_LABELS: Record<string, string> = {
   get_retention_snapshot: "Looking through your customers…",
   remember_business_fact: "Saving that to your store memory…",
   create_recovery_campaign: "Creating and saving your recovery draft…",
+  create_winback_campaign: "Creating and saving your win-back draft…",
+  create_broadcast_campaign: "Creating and saving your one-time campaign draft…",
   prepare_product_updates: "Preparing product changes for your approval…",
   prepare_product_draft: "Preparing an unpublished product draft…",
   prepare_collection: "Preparing the collection change…",
@@ -348,16 +380,69 @@ async function createRecoveryCampaign(
   };
 }
 
+async function createWinbackCampaign(env: SkillEnv, userId: string, authHeader: string | null, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const note = typeof args.note === "string" ? args.note.slice(0, 500) : "";
+  const draft = await runRetentionDraft({ note }, authHeader, env);
+  const templates = draft.body.templates as { winback?: unknown[]; review?: unknown[] } | undefined;
+  if (draft.status !== 200 || !Array.isArray(templates?.winback)) return draft.body;
+  const audience = await runRetentionCustomers(authHeader, env);
+  if (audience.status !== 200 || !Array.isArray(audience.body.lapsed)) return audience.body;
+  const allCustomers = audience.body.lapsed as { totalSpent?: number; ordersCount?: number; lastOrderAt?: string }[];
+  const normalized = note.toLowerCase();
+  const segment = /\bvip\b/.test(normalized) ? "vip" : /\brepeat\b/.test(normalized) ? "repeat" : /\brecently lapsed\b|\brecent segment\b/.test(normalized) ? "recent" : /\ball eligible\b/.test(normalized) ? "all" : "best";
+  const ranked = [...allCustomers].sort((a, b) => (Number(b.totalSpent) || 0) - (Number(a.totalSpent) || 0));
+  const customers = segment === "all" ? allCustomers
+    : segment === "repeat" ? allCustomers.filter((customer) => (Number(customer.ordersCount) || 0) >= 2)
+      : segment === "recent" ? allCustomers.filter((customer) => Date.now() - Date.parse(customer.lastOrderAt ?? "") <= 120 * 86_400_000)
+        : segment === "vip" ? ranked.slice(0, Math.max(1, Math.ceil(ranked.length * .25)))
+          : (() => { const repeat = ranked.filter((customer) => (Number(customer.ordersCount) || 0) >= 2); return (repeat.length ? repeat : ranked).slice(0, Math.max(1, Math.ceil(ranked.length * .4))); })();
+  const connection = await getConnection(env, userId);
+  if (!env.supabaseUrl || !env.serviceRoleKey) return { error: "Persistent campaign storage is not configured." };
+  const templateSave = await fetch(`${env.supabaseUrl}/rest/v1/retention_sequences?on_conflict=user_id`, { method: "POST", headers: { ...memoryHeaders(env), Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ user_id: userId, templates: { winback: templates.winback, review: templates.review ?? [], reviewLink: "" }, updated_at: new Date().toISOString() }) });
+  if (!templateSave.ok) return { error: "The win-back emails were generated but could not be saved. Nothing was sent." };
+  const lifetimeValue = customers.reduce((sum, customer) => sum + (Number(customer.totalSpent) || 0), 0);
+  const saved = await fetch(`${env.supabaseUrl}/rest/v1/winback_campaigns?select=id`, { method: "POST", headers: { ...memoryHeaders(env), Prefer: "return=representation" }, body: JSON.stringify({ user_id: userId, status: "proposed", touches: templates.winback, segment, customer_count: customers.length, lifetime_value: lifetimeValue, currency: typeof audience.body.currency === "string" ? audience.body.currency : null }) });
+  if (!saved.ok) {
+    const failure = await saved.json().catch(() => ({})) as { code?: string; message?: string };
+    log("error", "agent-chat", "winback_campaign_save_failed", { status: saved.status, code: failure.code ?? "unknown", message: failure.message?.slice(0, 160) });
+    const missingTable = saved.status === 404 || failure.code === "42P01" || failure.code === "PGRST205";
+    return { error: missingTable
+      ? "The win-back campaign table is missing from the connected Supabase database. Apply the win-back migration to that project."
+      : `The win-back draft was generated but the database rejected it${failure.code ? ` (${failure.code})` : ""}. Nothing was sent.` };
+  }
+  const id = ((await saved.json()) as { id?: string }[])[0]?.id;
+  return id ? { id, created: true, sent: false, touches: templates.winback, customerCount: customers.length, lifetimeValue, currency: audience.body.currency ?? null, storeName: connection?.shop_domain.replace(/\.myshopify\.com$/i, "") ?? "your store" } : { error: "The campaign could not be persisted." };
+}
+
+async function createBroadcastCampaign(env: SkillEnv, authHeader: string | null, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const requestedAt = typeof args.scheduledAt === "string" ? args.scheduledAt : "";
+  const scheduledAt = Number.isFinite(Date.parse(requestedAt))
+    ? new Date(requestedAt).toISOString()
+    : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const response = await runBroadcastAction({
+    action: "create",
+    name: args.name,
+    segment: args.segment,
+    subject: args.subject,
+    body: args.body,
+    scheduledAt,
+  }, authHeader, env);
+  const result = await response.json().catch(() => ({ error: "The one-time campaign could not be saved." })) as Record<string, unknown>;
+  if (!response.ok) return result;
+  const campaign = result.campaign as Record<string, unknown> | undefined;
+  return campaign ? { ...campaign, created: true, sent: false } : { error: "The one-time campaign could not be persisted." };
+}
+
 function buildSystemPrompt(shop: string, catalogBlock: string, persistentContext: string): string {
   return [
     `You are Evolution, the AI COO for the founder's connected Shopify store "${shop}". You are their store-aware copilot; replies may be spoken aloud.`,
     `You have TOOLS that fetch the store's REAL data, live. When a question needs data you don't already have — sales, top sellers, order stats, abandoned carts (including WHICH products get abandoned most), what's waiting to ship, stock levels, lapsed customers, audit findings, deeper product detail — CALL the right tool instead of guessing, deflecting, or claiming you lack data. Check your tools before ever saying you can't see something.`,
     `Every number you state must come from a tool result or the catalog below — NEVER invent figures. If a tool returns an "error" field, say plainly that that data source is unreachable right now and answer with what you have. Never infer or guess a product identity from a checkout total or price.`,
-    `When the merchant asks to create, build, prepare, or draft an abandoned-checkout campaign, call create_recovery_campaign. Follow-up confirmations such as "okay create", "do it", or "go ahead" refer to that campaign and must call the tool rather than narrating. The tool creates a saved draft only; clearly distinguish CREATED AS DRAFT from SENT. Never say "I've prepared" unless the tool returned created=true.`,
+    `When the merchant asks to create, build, prepare, or draft an abandoned-checkout campaign, call create_recovery_campaign. For a win-back campaign, call create_winback_campaign. For a one-time, broadcast, promotion, launch, or announcement email, call create_broadcast_campaign. A follow-up such as "create it" may use only the immediately preceding recommendation; if the campaign type is still unclear, ask the merchant to choose one-time, win-back, or cart recovery. Never guess from older conversation. Never print tool-call syntax, XML-like <function> tags, or pretend to call a tool in prose. These tools create saved drafts only; clearly distinguish CREATED AS DRAFT from SENT.`,
     `Keep replies SHORT and conversational (1–4 sentences); use a compact list only when the founder asks for a list. No preamble like "Based on the data".`,
     `You can PREPARE Shopify action proposals when the founder asks for a concrete supported change. If they say add, create, apply, update, fix, or "do this in my store", you MUST call the matching prepare_* tool instead of repeating the recommendation or merely explaining it. Treat "this", "that", and "these" as referring to the products or changes in the immediately preceding conversation. For a recommended product that is not already in their catalog, call prepare_product_draft. Proposal tools never execute; they create a before-and-after approval card. Tell the founder to review and click Approve and apply. Never claim a change is live until the action result says it succeeded. You cannot change prices, inventory, fulfillment, customers, themes, or publish products.`,
     `Don't just report numbers — read them like a COO and suggest the next move. A product topping the abandoned-cart list is a discount/free-shipping candidate; sold-out products with recent demand are urgent restocks; overdue shipments risk bad reviews; lapsed customers who bought a product you still stock are a win-back audience. One concrete suggestion beats three vague ones.`,
-    `The Marketing Manager workspace contains abandoned-cart recovery, win-back campaigns, and one-time email campaigns. Chat and visible controls operate the same saved campaign state. Sending is not connected yet: drafts may be created and edited, but never claim an email was sent, scheduled, or enabled.`,
+    `The Marketing Manager workspace contains abandoned-cart recovery, win-back campaigns, and one-time email campaigns. Chat and visible controls use the same backend campaign records. Chat may create drafts, but sending or scheduling still requires the merchant's explicit approval; never claim an email was sent or scheduled unless an action result proves it.`,
     `Use persistent memory carefully. If the merchant explicitly says "remember", "always", "our policy is", or states a durable business preference or decision, call remember_business_fact. Never save customer PII, credentials, payment data, access tokens, or a one-off request. Never claim something was saved unless the tool confirms it. Live Shopify tool data always wins over stale conversation context.`,
     persistentContext,
     catalogBlock,
@@ -377,12 +462,35 @@ function forcedProposalTool(turns: ChatTurn[]): (typeof AGENT_TOOL_NAMES)[number
   return "prepare_product_updates";
 }
 
-function forcedCampaignTool(turns: ChatTurn[]): "create_recovery_campaign" | null {
+type CampaignTool = "create_recovery_campaign" | "create_winback_campaign" | "create_broadcast_campaign";
+
+function campaignToolInText(textRaw: string): CampaignTool | null {
+  const text = textRaw.toLowerCase();
+  if (/\b(one[\s_-]?time|broadcast|newsletter|email blast|announcement email|create_one_time_campaign|campaign (?:for|to) (?:all )?(?:subscribers|customers))\b/.test(text)) return "create_broadcast_campaign";
+  if (/\b(win.?back|lapsed|inactive customer|retention campaign)\b/.test(text)) return "create_winback_campaign";
+  if (/\b(abandoned|checkout|cart recovery|recovery campaign|three-email|3-email)\b/.test(text)) return "create_recovery_campaign";
+  return null;
+}
+
+function forcedCampaignTool(turns: ChatTurn[]): CampaignTool | null {
   const latest = turns.at(-1)?.content.toLowerCase() ?? "";
-  const context = turns.slice(-6).map((turn) => turn.content.toLowerCase()).join("\n");
-  const recoveryContext = /\b(abandoned|checkout|cart recovery|recovery campaign|three-email|3-email)\b/.test(context);
   const createIntent = /\b(create|build|prepare|draft|do it|go ahead|yes|okay|ok|proceed)\b/.test(latest);
-  return recoveryContext && createIntent ? "create_recovery_campaign" : null;
+  if (!createIntent) return null;
+  const explicit = campaignToolInText(latest);
+  if (explicit) return explicit;
+  // A short confirmation may inherit only the immediately preceding
+  // assistant recommendation. Older history is never used to guess intent.
+  const previous = turns.at(-2);
+  return previous?.role === "assistant" ? campaignToolInText(previous.content) : null;
+}
+
+function needsCampaignClarification(turns: ChatTurn[]): boolean {
+  const latest = turns.at(-1)?.content.toLowerCase() ?? "";
+  const ambiguousCampaignRequest = /\b(create|build|prepare|draft)\b.*\b(email )?campaign\b/.test(latest) && !campaignToolInText(latest);
+  const genericConfirmation = /^(?:ah+a+\s+)?(?:yes|okay|ok|sure|proceed|go ahead|do it|create it|create this|create that)[.!\s]*$/.test(latest.trim());
+  if (!ambiguousCampaignRequest && !genericConfirmation) return false;
+  if (forcedCampaignTool(turns)) return false;
+  return ambiguousCampaignRequest || turns.slice(-6, -1).some((turn) => campaignToolInText(turn.content));
 }
 
 function selectedAgentToolNames(turns: ChatTurn[]): (typeof AGENT_TOOL_NAMES)[number][] {
@@ -394,7 +502,10 @@ function selectedAgentToolNames(turns: ChatTurn[]): (typeof AGENT_TOOL_NAMES)[nu
     add("get_abandoned_checkouts", "create_recovery_campaign", "prepare_discount");
   }
   if (/\b(win.?back|retention|lapsed|repeat customer|review)\b/.test(context)) {
-    add("get_retention_snapshot", "get_orders_summary", "prepare_discount");
+    add("get_retention_snapshot", "get_orders_summary", "create_winback_campaign", "prepare_discount");
+  }
+  if (/\b(one[ -]?time|broadcast|newsletter|email blast|announcement email|marketing subscribers)\b/.test(context)) {
+    add("get_retention_snapshot", "get_orders_summary", "create_broadcast_campaign");
   }
   if (/\b(ship|fulfil|fulfill|inventory|stock|operations|ops)\b/.test(context)) {
     add("get_ship_queue", "get_inventory_watch", "get_orders_summary");
@@ -464,6 +575,7 @@ export async function runAgentChat(
   const ctx: ToolCtx = { env, userId: user.id, userEmail: user.email, conn, origin };
   const shop = conn.shop_domain.replace(".myshopify.com", "");
   const model = env.groqModel || CHAT_MODEL_DEFAULT;
+  const clarifyCampaign = needsCampaignClarification(turns);
   const forcedTool = forcedCampaignTool(turns) ?? forcedProposalTool(turns);
   const selectedNames = selectedAgentToolNames(turns);
   if (forcedTool && !selectedNames.includes(forcedTool)) selectedNames.push(forcedTool);
@@ -473,17 +585,21 @@ export async function runAgentChat(
     async start(controller) {
       const progress = (label: string) => controller.enqueue(sse({ progress: label }));
       try {
-        if (forcedTool === "create_recovery_campaign") {
-          progress(PROGRESS_LABELS.create_recovery_campaign);
+        if (clarifyCampaign) {
+          controller.enqueue(sse({ choices: [{ delta: { content: "Which campaign should I create?\n\n- One-time email — a promotion, launch, or announcement to subscribed customers\n- Win-back — re-engage eligible lapsed customers\n- Cart recovery — follow up on abandoned checkouts\n\nI’ll create a draft only; nothing will be sent until you approve it." } }] }));
+          return;
+        }
+        if (forcedTool === "create_recovery_campaign" || forcedTool === "create_winback_campaign") {
+          progress(PROGRESS_LABELS[forcedTool]);
           const recentInstructions = turns
             .slice(-6)
             .filter((turn) => turn.role === "user")
             .map((turn) => turn.content)
             .join("\n")
             .slice(-500);
-          const direct = await createRecoveryCampaign(env, user.id, authHeader, {
-            note: recentInstructions || "Create a safe recovery campaign draft.",
-          });
+          const direct = forcedTool === "create_winback_campaign"
+            ? await createWinbackCampaign(env, user.id, authHeader, { note: recentInstructions || "Create a safe win-back campaign draft." })
+            : await createRecoveryCampaign(env, user.id, authHeader, { note: recentInstructions || "Create a safe recovery campaign draft." });
           if (typeof direct.error === "string") {
             controller.enqueue(sse({ error: direct.error }));
             return;
@@ -492,7 +608,7 @@ export async function runAgentChat(
             ? direct.touches as { delayLabel?: string; subject?: string }[]
             : [];
           const plan = touches.map((touch, index) => `${index + 1}. ${touch.delayLabel ?? `Email ${index + 1}`} — ${touch.subject ?? "Draft email"}`).join("\n");
-          controller.enqueue(sse({ recoveryProposal: {
+          const proposal = {
             id: String(direct.id),
             status: "proposed",
             touches: direct.touches,
@@ -502,8 +618,12 @@ export async function runAgentChat(
             storeName: typeof direct.storeName === "string" ? direct.storeName : "your store",
             deliveryReady: false,
             createdAt: new Date().toISOString(),
-          } }));
-          controller.enqueue(sse({ choices: [{ delta: { content: `I checked the live recoverable carts and prepared customer-specific emails for approval. Nothing was sent.\n${plan}` } }] }));
+          };
+          controller.enqueue(sse(forcedTool === "create_winback_campaign"
+            ? { winbackProposal: { ...proposal, customerCount: Number(direct.customerCount ?? 0), lifetimeValue: Number(direct.lifetimeValue ?? 0) } }
+            : { recoveryProposal: proposal }));
+          const summary = forcedTool === "create_winback_campaign" ? "I checked the eligible lapsed customers and prepared a two-email win-back campaign for approval." : "I checked the live recoverable carts and prepared customer-specific emails for approval.";
+          controller.enqueue(sse({ choices: [{ delta: { content: `${summary} Nothing was sent.\n${plan}` } }] }));
           return;
         }
         const persistentContext = await loadPersistentContext(env, user.id, turns);
@@ -590,7 +710,7 @@ export async function runAgentChat(
           for (const call of calls) {
             const name = call.function.name;
             const isMemory = name === "remember_business_fact";
-            const isCampaign = name === "create_recovery_campaign";
+            const isCampaign = name === "create_recovery_campaign" || name === "create_winback_campaign" || name === "create_broadcast_campaign";
             const isProposal = Boolean(PROPOSAL_SCHEMAS[name]) && !isMemory && !isCampaign;
             const tool = !isProposal && (AGENT_TOOL_NAMES as readonly string[]).includes(name)
               ? SKILL_TOOLS[name]
@@ -609,7 +729,11 @@ export async function runAgentChat(
               if (isMemory) {
                 result = await rememberBusinessFact(env, user.id, args);
               } else if (isCampaign) {
-                result = await createRecoveryCampaign(env, user.id, authHeader, args);
+                result = name === "create_winback_campaign"
+                  ? await createWinbackCampaign(env, user.id, authHeader, args)
+                  : name === "create_broadcast_campaign"
+                    ? await createBroadcastCampaign(env, authHeader, args)
+                    : await createRecoveryCampaign(env, user.id, authHeader, args);
               } else if (isProposal) {
                 const proposalBody = name === "prepare_product_updates"
                   ? { kind: "product_update", ...args }

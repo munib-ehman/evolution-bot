@@ -1283,6 +1283,82 @@ code {
 .retention-review-link { display: block; margin-top: 10px; }
 .retention-review-link span { display: block; margin-bottom: 4px; }
 .retention-review-link input { width: 100%; }
+.winback-panel { width: min(760px, calc(100vw - 24px)); padding-bottom: 0; }
+.winback-panel .tools-header { align-items: flex-start; }
+.winback-panel .tools-header h2 { margin-top: 3px; }
+.winback-intro { margin: 4px 0 18px; max-width: 620px; color: var(--ink2); font-size: 13.5px; line-height: 1.5; }
+.winback-loading { padding: 28px; border: 1px dashed var(--line); border-radius: 16px; color: var(--muted); text-align: center; }
+.winback-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid #efc9c1; border-radius: 14px; background: #fff7f4; }
+.winback-error .overlay-error { margin: 0; }
+.winback-error button { flex: none; padding: 8px 10px; border: 1px solid #e8b8ad; border-radius: 9px; background: #fff; color: #8a3f34; font-weight: 700; cursor: pointer; }
+.winback-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.winback-summary div { padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(145deg, #fff, #fff9f1); }
+.winback-summary span, .winback-summary small { display: block; color: var(--muted); font-size: 11px; }
+.winback-summary strong { display: block; margin: 4px 0 2px; font-size: 20px; }
+.winback-section { margin-top: 22px; }
+.winback-section-head { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
+.winback-section-head span { display: block; color: var(--g2); font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+.winback-section-head h3 { margin: 3px 0 0; font-size: 16px; }
+.winback-section-head small { max-width: 240px; color: var(--muted); font-size: 11px; text-align: right; }
+.winback-segments { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.winback-segments button { min-height: 68px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 13px; background: #fff; color: var(--ink); text-align: left; cursor: pointer; }
+.winback-segments button:first-child { grid-column: 1 / -1; }
+.winback-segments button.selected { border-color: #ef8c6a; background: #fff4eb; box-shadow: inset 3px 0 #ef8c6a; }
+.winback-segments strong, .winback-segments span { display: block; }
+.winback-segments strong { margin-bottom: 3px; font-size: 13px; }
+.winback-segments span { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+.winback-offers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.winback-offers label { display: flex; align-items: flex-start; gap: 7px; padding: 11px; border: 1px solid var(--line); border-radius: 13px; background: #fff; cursor: pointer; }
+.winback-offers label:has(input:checked) { border-color: #ef8c6a; background: #fff4eb; }
+.winback-offers input { margin-top: 2px; accent-color: #d86546; }
+.winback-offers strong, .winback-offers small { display: block; }
+.winback-offers strong { font-size: 12px; text-transform: capitalize; }
+.winback-offers small { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.winback-audience-list { display: grid; gap: 7px; }
+.winback-customer { border: 1px solid var(--line); border-radius: 12px; background: #fff; overflow: hidden; }
+.winback-customer > button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.winback-customer > button > span:last-child { text-align: right; }
+.winback-customer strong, .winback-customer small { display: block; }
+.winback-customer strong { font-size: 12.5px; }
+.winback-customer small, .winback-customer > div span { margin-top: 2px; color: var(--muted); font-size: 10.5px; }
+.winback-customer > div { padding: 9px 12px; border-top: 1px dashed var(--line); background: #fffaf4; }
+.winback-customer > div p { margin: 3px 0 0; font-size: 12px; }
+.winback-footer { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 22px -20px 0; padding: 14px 20px; border-top: 1px solid var(--line); background: rgba(255,255,255,.96); box-shadow: 0 -10px 26px rgba(74,34,20,.06); }
+.winback-footer strong, .winback-footer span { display: block; }
+.winback-footer strong { font-size: 13px; }
+.winback-footer span { margin-top: 2px; color: var(--muted); font-size: 10.5px; }
+.workflow-card.workflow-disabled { opacity: .72; }
+.workflow-actions button:disabled { cursor: not-allowed; opacity: .5; }
+.broadcast-panel { width: min(760px, calc(100vw - 24px)); padding-bottom: 0; }
+.broadcast-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.broadcast-fields label, .broadcast-schedule { display: block; }
+.broadcast-fields label > span, .broadcast-schedule > span { display: block; margin-bottom: 5px; color: var(--ink2); font-size: 11px; font-weight: 700; }
+.broadcast-fields input, .broadcast-fields textarea, .broadcast-schedule input { width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); font: inherit; font-size: 13px; }
+.broadcast-fields .wide { grid-column: 1 / -1; }
+.broadcast-fields label small { color: var(--muted); font-size: 10px; }
+.broadcast-segments { display: grid; gap: 7px; }
+.broadcast-segments button { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); text-align: left; cursor: pointer; }
+.broadcast-segments button.selected { border-color: #ef8c6a; background: #fff4eb; box-shadow: inset 3px 0 #ef8c6a; }
+.broadcast-segments span, .broadcast-segments strong, .broadcast-segments small { display: block; }
+.broadcast-segments small { margin-top: 3px; color: var(--muted); font-size: 10.5px; }
+.broadcast-segments b { min-width: 34px; padding: 5px 7px; border-radius: 10px; background: var(--cream-2); text-align: center; }
+.broadcast-review { margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
+.broadcast-review-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }
+.broadcast-review-metrics div { padding: 10px; border-radius: 11px; background: var(--cream-2); }
+.broadcast-review-metrics span, .broadcast-review-metrics strong { display: block; }
+.broadcast-review-metrics span, .broadcast-email-preview > span { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .6px; }
+.broadcast-review-metrics strong { margin-top: 3px; font-size: 12px; }
+.broadcast-email-preview { padding: 13px; border: 1px solid var(--line); border-radius: 12px; }
+.broadcast-email-preview strong { display: block; margin: 4px 0 10px; }
+.broadcast-email-preview pre { margin: 0; white-space: pre-wrap; font: inherit; font-size: 12.5px; line-height: 1.5; }
+@media (max-width:640px){.broadcast-fields,.broadcast-review-metrics{grid-template-columns:1fr}.broadcast-fields .wide{grid-column:auto}}
+@media (max-width: 640px) {
+  .winback-summary, .winback-segments, .winback-offers { grid-template-columns: 1fr; }
+  .winback-segments button:first-child { grid-column: auto; }
+  .winback-section-head, .winback-footer { align-items: flex-start; flex-direction: column; }
+  .winback-section-head small { text-align: left; }
+  .winback-footer .primary { width: 100%; }
+}
 
 /* ── Operations Center ── */
 .ops-live { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin: 10px 0 0; }

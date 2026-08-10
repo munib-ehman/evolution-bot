@@ -13,7 +13,7 @@ import { speechEngine } from "./audio/speechEngine";
 import { ConnectStore } from "./components/ConnectStore";
 import { ToolsPanel } from "./components/ToolsPanel";
 import { RecoveryPanel } from "./components/RecoveryPanel";
-import { RetentionPanel } from "./components/RetentionPanel";
+import { WinbackPanel } from "./components/WinbackPanel";
 import { OpsPanel } from "./components/OpsPanel";
 import { ActionCenter } from "./components/ActionCenter";
 import { LiveToasts } from "./components/LiveToasts";
@@ -27,6 +27,7 @@ import { consumeUpgradeIntent } from "./lib/upgradeIntent";
 import { SKILL_CHIPS, type SkillChip } from "./lib/skills";
 import { MarketingManager } from "./components/MarketingManager";
 import { EmailDeliveryPanel } from "./components/EmailDeliveryPanel";
+import { BroadcastCampaignPanel } from "./components/BroadcastCampaignPanel";
 
 type View = "marketing" | "voice" | "chat";
 // New key intentionally migrates existing users into the role-first workspace.
@@ -71,6 +72,7 @@ export default function App() {
   const [opsOpen, setOpsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
 
@@ -138,8 +140,20 @@ export default function App() {
         // The connection just landed — the catalog fetch above likely 409'd.
         setCatalog(await getStoreCatalog());
       } else if (shopifyResult === "error") {
+        const reason = params.get("reason");
+        const detail = reason === "token-exchange"
+          ? "Shopify rejected the access-token exchange. Reopen the app from Shopify Admin after this deployment."
+          : reason === "save"
+            ? "Shopify approved access, but saving the connection failed. Check that the Shopify token migrations are applied."
+            : reason === "bad-state"
+              ? "The connection session expired or was opened in another tab. Start Reconnect again and finish it in the same tab."
+              : reason === "bad-hmac"
+                ? "Shopify's callback signature did not match the deployed client secret."
+                : reason === "not-configured" || reason === "no-db"
+                  ? "The deployed Shopify or database environment variables are incomplete."
+                  : "The connection callback was incomplete or rejected.";
         a.postAssistantMessage(
-          "Hmm, the Shopify connection didn't complete. Try again from the My store panel — or email us and we'll sort it out.",
+          `Shopify connection failed: ${detail}`,
         );
       }
     })();
@@ -461,13 +475,16 @@ export default function App() {
               onAsk={handleMarketingAsk}
               onOpenRecovery={() => {
                 setRetentionOpen(false);
+                setBroadcastOpen(false);
                 setRecoveryOpen(true);
               }}
               onOpenWinback={() => {
                 setRecoveryOpen(false);
+                setBroadcastOpen(false);
                 setRetentionOpen(true);
               }}
-              onOpenDelivery={() => setDeliveryOpen(true)}
+              onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryOpen(true); }}
+              onOpenBroadcast={() => { setRecoveryOpen(false); setRetentionOpen(false); setBroadcastOpen(true); }}
             />
           ) : <AvatarScene
             avatarUrl={a.settings.avatarUrl}
@@ -690,17 +707,17 @@ export default function App() {
       )}
 
       {authEmail && store && (
-        <RetentionPanel
+        <WinbackPanel
           open={retentionOpen}
           onClose={() => setRetentionOpen(false)}
-          storeName={store.url.replace(/^https?:\/\//, "").replace(/\.myshopify\.com.*$/, "").replace(/\/.*$/, "")}
-          storeUrl={store.url}
+          onBuild={handleMarketingAsk}
         />
       )}
 
       {authEmail && store && <OpsPanel open={opsOpen} onClose={() => setOpsOpen(false)} />}
       {authEmail && store && <ActionCenter open={actionsOpen} onClose={() => setActionsOpen(false)} />}
       {authEmail && store && <EmailDeliveryPanel open={deliveryOpen} onClose={() => setDeliveryOpen(false)} />}
+      {authEmail && store && <BroadcastCampaignPanel open={broadcastOpen} onClose={() => setBroadcastOpen(false)} onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryOpen(true); }} />}
       {authEmail && store && <LiveToasts />}
 
       {/* Embedded installs are connected by construction (the session

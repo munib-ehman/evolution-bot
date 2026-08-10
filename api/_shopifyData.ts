@@ -312,6 +312,7 @@ export interface LapsedCustomer {
   ordersCount: number;
   totalSpent: number;
   lastItems: { title: string; qty: number }[];
+  marketingState?: string | null;
 }
 
 export interface RecentBuyer {
@@ -343,6 +344,7 @@ const LAPSED_QUERY = `query LapsedCustomers($first: Int!, $after: String) {
       defaultEmailAddress { emailAddress }
       numberOfOrders
       amountSpent { amount }
+      emailMarketingConsent { marketingState }
       lastOrder {
         createdAt
         lineItems(first: 5) { nodes { title quantity } }
@@ -360,6 +362,7 @@ interface GqlLapsedData {
       defaultEmailAddress?: { emailAddress?: string | null } | null;
       numberOfOrders?: string | number;
       amountSpent?: { amount?: string } | null;
+      emailMarketingConsent?: { marketingState?: string | null } | null;
       lastOrder?: {
         createdAt?: string;
         lineItems?: { nodes?: { title?: string; quantity?: number }[] };
@@ -404,6 +407,7 @@ async function fetchLapsedGraphql(
           title: (li.title ?? "").trim() || "(untitled)",
           qty: li.quantity ?? 0,
         })),
+        marketingState: n.emailMarketingConsent?.marketingState ?? null,
       });
       if (out.length >= LAPSED_COLLECT_CAP) break;
     }
@@ -411,6 +415,13 @@ async function fetchLapsedGraphql(
     after = page.pageInfo.endCursor;
   }
   return out;
+}
+
+/** Past customers available for marketing segmentation. Callers must enforce SUBSCRIBED. */
+export async function fetchMarketingCustomers(conn: ShopifyConnection): Promise<PiiResult<LapsedCustomer>> {
+  const rows = await fetchLapsedGraphql(conn, 0, 3650);
+  if (rows === "access-denied" || rows === null) return rows;
+  return rows.sort((a, b) => Date.parse(b.lastOrderAt) - Date.parse(a.lastOrderAt));
 }
 
 /** Customers whose last order fell out of the window (PII — owner's eyes only). */
@@ -726,4 +737,39 @@ export async function fetchShopCurrency(conn: ShopifyConnection): Promise<string
     {},
   );
   return data?.shop?.currencyCode ?? null;
+}
+
+const UNSUBSCRIBE_EMAIL_MARKETING_MUTATION = `mutation UnsubscribeEmailMarketing($input: CustomerEmailMarketingConsentUpdateInput!) {
+  customerEmailMarketingConsentUpdate(input: $input) {
+    customer { id }
+    userErrors { field message }
+  }
+}`;
+
+/** Mirror an Evolution email opt-out into the Shopify customer record. */
+export async function unsubscribeCustomerEmailMarketing(
+  conn: ShopifyConnection,
+  customerId: string,
+  consentUpdatedAt = new Date().toISOString(),
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!customerId.startsWith("gid://shopify/Customer/")) {
+    return { ok: false, error: "Invalid Shopify customer ID." };
+  }
+  const data = await shopifyGraphql<{
+    customerEmailMarketingConsentUpdate?: {
+      customer?: { id?: string } | null;
+      userErrors?: { message?: string }[];
+    };
+  }>(conn.shop_domain, conn.access_token, UNSUBSCRIBE_EMAIL_MARKETING_MUTATION, {
+    input: {
+      customerId,
+      emailMarketingConsent: { marketingState: "UNSUBSCRIBED", consentUpdatedAt },
+    },
+  });
+  const payload = data?.customerEmailMarketingConsentUpdate;
+  const message = payload?.userErrors?.map((item) => item.message).filter(Boolean).join("; ");
+  if (!payload?.customer?.id || message) {
+    return { ok: false, error: message || "Shopify did not update marketing consent." };
+  }
+  return { ok: true };
 }

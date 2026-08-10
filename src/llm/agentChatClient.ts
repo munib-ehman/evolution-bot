@@ -14,6 +14,7 @@ import { supabase } from "../lib/auth";
 import type { Message } from "../types";
 import type { ShopifyActionProposal } from "../lib/actions";
 import type { RecoveryCampaignProposal } from "../lib/recovery";
+import type { WinbackCampaignProposal } from "../lib/winbackCampaigns";
 
 export class AgentChatError extends Error {
   constructor(
@@ -32,6 +33,7 @@ export interface AgentChatOptions {
   onToken?: (text: string) => void;
   onAction?: (action: ShopifyActionProposal) => void;
   onRecoveryProposal?: (proposal: RecoveryCampaignProposal) => void;
+  onWinbackProposal?: (proposal: WinbackCampaignProposal) => void;
 }
 
 /** Server rebuilds the system prompt; send user/assistant turns only. */
@@ -95,6 +97,7 @@ export async function runAgentChat(history: Message[], opts: AgentChatOptions = 
           choices?: { delta?: { content?: string } }[];
           action?: ShopifyActionProposal;
           recoveryProposal?: RecoveryCampaignProposal;
+          winbackProposal?: WinbackCampaignProposal;
         };
         try {
           json = JSON.parse(payload);
@@ -107,6 +110,7 @@ export async function runAgentChat(history: Message[], opts: AgentChatOptions = 
         if (typeof json.progress === "string") opts.onProgress?.(json.progress);
         if (json.action) opts.onAction?.(json.action);
         if (json.recoveryProposal) opts.onRecoveryProposal?.(json.recoveryProposal);
+        if (json.winbackProposal) opts.onWinbackProposal?.(json.winbackProposal);
         const delta = json.choices?.[0]?.delta?.content;
         if (delta) {
           reply += delta;

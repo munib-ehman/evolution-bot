@@ -63,7 +63,7 @@ Create or link the Shopify Partner app and configure:
 ```dotenv
 SHOPIFY_API_KEY=
 SHOPIFY_API_SECRET=
-SHOPIFY_SCOPES=write_products,write_files,write_discounts,read_orders,read_checkouts,read_customers
+SHOPIFY_SCOPES=write_products,write_files,write_discounts,read_orders,read_checkouts,read_customers,write_customers
 VITE_SHOPIFY_API_KEY=
 VITE_SHOPIFY_APP_HANDLE=runevolution
 ```
@@ -119,6 +119,8 @@ $bytes = New-Object byte[] 48
 ```
 
 Copy the single output value to **Vercel → Project Settings → Environment Variables**, name it `CRON_SECRET`, select **Production**, and redeploy. Alternatively, run `vercel env add CRON_SECRET production`. Do not add the real value to `.env.example` or commit it. Vercel automatically sends it as `Authorization: Bearer <CRON_SECRET>` when invoking `/api/action-metrics`.
+
+Vercel Hobby permits cron schedules only once per day, so the five-minute email delivery tick runs from `.github/workflows/marketing-delivery.yml` instead. Add the **same value** as a GitHub Actions repository secret named `CRON_SECRET`. The workflow calls the secured recovery, win-back, and one-time delivery endpoints every five minutes; Vercel retains only the daily metrics cron.
 
 ## 5. Configure web billing with Polar
 

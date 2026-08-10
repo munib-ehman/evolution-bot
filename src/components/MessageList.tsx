@@ -4,6 +4,7 @@ import type { AssistantStatus } from "../hooks/useAssistant";
 import { renderMarkdown } from "../lib/markdown";
 import { ActionCard } from "./ActionCard";
 import { RecoveryApprovalCard } from "./RecoveryApprovalCard";
+import { WinbackApprovalCard } from "./WinbackApprovalCard";
 
 interface Props {
   messages: Message[];
@@ -47,6 +48,7 @@ export function MessageList({ messages, status, onEscalate }: Props) {
             {m.content}
             {m.action && <ActionCard initial={m.action} />}
             {m.recoveryProposal && <RecoveryApprovalCard proposal={m.recoveryProposal} />}
+            {m.winbackProposal && <WinbackApprovalCard proposal={m.winbackProposal} />}
           </div>
         ),
       )}

@@ -16,6 +16,7 @@ export interface ShopifyCapabilities {
   canEditProducts: boolean;
   canEditFiles: boolean;
   canManageDiscounts: boolean;
+  canWriteCustomers: boolean;
   operatorReady: boolean;
 }
 
@@ -24,11 +25,13 @@ const capabilitiesFromScopes = (raw: string | null | undefined): ShopifyCapabili
   const canEditProducts = scopes.has("write_products");
   const canEditFiles = scopes.has("write_files");
   const canManageDiscounts = scopes.has("write_discounts");
+  const canWriteCustomers = scopes.has("write_customers");
   return {
     canEditProducts,
     canEditFiles,
     canManageDiscounts,
-    operatorReady: canEditProducts && canEditFiles && canManageDiscounts,
+    canWriteCustomers,
+    operatorReady: canEditProducts && canEditFiles && canManageDiscounts && canWriteCustomers,
   };
 };
 

@@ -36,6 +36,8 @@ import type { SkillEnv } from "./api/_skillTools";
 import { sendTaskEmail } from "./api/_email";
 import { runEmailDeliveryCheck, runEmailDeliveryGet, runEmailDeliverySave, runEmailDeliveryTest, type EmailDeliveryEnv } from "./api/_emailDelivery";
 import { processRecoveryDeliveries, runRecoveryCampaignAction, runRecoveryUnsubscribe, runResendWebhook, type RecoveryCampaignEnv } from "./api/_recoveryCampaigns";
+import { processWinbackDeliveries, runWinbackCampaignAction, runWinbackUnsubscribe } from "./api/_winbackCampaigns";
+import { processBroadcastDeliveries, runBroadcastAction, runBroadcastAudience, runBroadcastUnsubscribe } from "./api/_broadcastCampaigns";
 import {
   runActionPropose,
   runActionExecute,
@@ -527,6 +529,35 @@ export function devApi(): Plugin {
           return pipeResponse(res, await runRecoveryCampaignAction(body, auth, recoveryCampaignEnv));
         })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
       });
+
+      server.middlewares.use("/api/winback-campaign", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const body = JSON.parse(await readBody(req) || "{}") as Record<string, unknown>;
+          return pipeResponse(res, await runWinbackCampaignAction(body, auth, recoveryCampaignEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/winback-deliver", (req, res) => {
+        void (async () => {
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
+          if (!recoveryCampaignEnv.cronSecret || auth !== `Bearer ${recoveryCampaignEnv.cronSecret}`) return send(res, 401, "Unauthorized");
+          res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(await processWinbackDeliveries(recoveryCampaignEnv)));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/winback-unsubscribe", (req, res) => {
+        void (async () => {
+          const request = new Request(`http://${req.headers.host ?? "127.0.0.1:5173"}${req.url ?? "/api/winback-unsubscribe"}`, { headers: req.headers as Record<string, string> });
+          return pipeResponse(res, await runWinbackUnsubscribe(request, recoveryCampaignEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/broadcast-audience", (req, res) => { void (async()=>{const auth=typeof req.headers.authorization==="string"?req.headers.authorization:null;return pipeResponse(res,await runBroadcastAudience(auth,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err))); });
+      server.middlewares.use("/api/broadcast-campaign", (req, res) => { void (async()=>{if(req.method!=="POST")return send(res,405,"Method not allowed");const auth=typeof req.headers.authorization==="string"?req.headers.authorization:null;return pipeResponse(res,await runBroadcastAction(JSON.parse(await readBody(req)||"{}")as Record<string,unknown>,auth,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err))); });
+      server.middlewares.use("/api/broadcast-deliver", (req, res) => { void (async()=>{const auth=typeof req.headers.authorization==="string"?req.headers.authorization:"";if(!recoveryCampaignEnv.cronSecret||auth!==`Bearer ${recoveryCampaignEnv.cronSecret}`)return send(res,401,"Unauthorized");res.setHeader("Content-Type","application/json");res.end(JSON.stringify(await processBroadcastDeliveries(recoveryCampaignEnv)));})().catch(err=>send(res,500,String(err))); });
+      server.middlewares.use("/api/broadcast-unsubscribe", (req, res) => { void (async()=>{const request=new Request(`http://${req.headers.host??"127.0.0.1:5173"}${req.url??"/api/broadcast-unsubscribe"}`,{headers:req.headers as Record<string,string>});return pipeResponse(res,await runBroadcastUnsubscribe(request,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err))); });
 
       server.middlewares.use("/api/recovery-deliver", (req, res) => {
         void (async () => {

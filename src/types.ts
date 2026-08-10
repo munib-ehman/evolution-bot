@@ -25,6 +25,8 @@ export interface Message {
   action?: import("./lib/actions").ShopifyActionProposal;
   /** Customer-specific cart recovery work waiting for merchant approval. */
   recoveryProposal?: import("./lib/recovery").RecoveryCampaignProposal;
+  /** Customer-specific win-back campaign waiting for merchant approval. */
+  winbackProposal?: import("./lib/winbackCampaigns").WinbackCampaignProposal;
 }
 
 /** Speech-to-text engine choice, selectable in Settings. */

@@ -252,6 +252,16 @@ export function useAssistant() {
         }
       };
 
+      const onWinbackProposal = (winbackProposal: import("../lib/winbackCampaigns").WinbackCampaignProposal) => {
+        if (controller.signal.aborted) return;
+        if (!bubbleShown) {
+          bubbleShown = true;
+          appendMessage({ id: assistantId, role: "assistant", content: "", pending: true, winbackProposal });
+        } else {
+          updateMessage(assistantId, { winbackProposal });
+        }
+      };
+
       try {
         // Store connected → the agentic path: the model can pull real store
         // data itself. Falls back to the generic brain when the agent is
@@ -266,6 +276,7 @@ export function useAssistant() {
               onToken,
               onAction,
               onRecoveryProposal,
+              onWinbackProposal,
             });
           } catch (err) {
             if (controller.signal.aborted) {

@@ -1,7 +1,6 @@
 {
   "cleanUrls": true,
   "crons": [
-    { "path": "/api/action-metrics", "schedule": "15 3 * * *" },
-    { "path": "/api/recovery-deliver", "schedule": "*/5 * * * *" }
+    { "path": "/api/action-metrics", "schedule": "15 3 * * *" }
   ]
 }
