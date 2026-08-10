@@ -1942,11 +1942,22 @@ code {
 .workflow-actions button:not(.link) { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--cream); color: var(--ink); cursor: pointer; font-weight: 700; }
 .manager-notice { padding: 10px 12px; border-radius: 12px; background: #fff3e8; color: #8a4b21; font-size: 12px; }
 .manager-safety { margin: 16px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.seo-products { margin-top: 22px; }
+.seo-product { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 15px; background: var(--card); }
+.seo-product + .seo-product { margin-top: 8px; }
+.seo-product h4 { margin: 0 0 4px; }
+.seo-product p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.seo-product-scores { display: flex; gap: 8px; }
+.seo-product-scores span { padding: 7px 9px; border-radius: 10px; background: #f8f1e9; color: var(--ink2); font-size: 11px; white-space: nowrap; }
+.seo-product-scores b { color: var(--ink); font-size: 13px; }
+.seo-product .workflow-actions { grid-column: auto; justify-content: flex-end; }
 
 @media (max-width: 760px) {
   .marketing-manager { padding: 18px; }
   .manager-hero, .manager-priority { align-items: flex-start; flex-direction: column; }
   .manager-metrics { grid-template-columns: 1fr; }
+  .seo-product { grid-template-columns: 1fr; }
+  .seo-product .workflow-actions { grid-column: 1; justify-content: flex-start; }
   .workflow-card { grid-template-columns: 34px 1fr; }
   .workflow-state, .workflow-actions { grid-column: 2; justify-content: flex-start; }
 }

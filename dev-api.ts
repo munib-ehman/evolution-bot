@@ -24,6 +24,7 @@ import { checkRateLimit } from "./api/_ratelimit";
 import { runShopifyAuthStart, runShopifyCallback, runShopifyDisconnect, type ShopifyEnv } from "./api/_shopify";
 import { runSkill, type SkillRunBody } from "./api/_skills";
 import { runStoreCatalog } from "./api/_catalog";
+import { runSeoSnapshot } from "./api/_seoManager";
 import { runRecoveryCarts, runRecoveryDraft } from "./api/_recovery";
 import { runRetentionCustomers, runRetentionDraft } from "./api/_retention";
 import { runOpsSnapshot } from "./api/_ops";
@@ -646,6 +647,14 @@ export function devApi(): Plugin {
           if (!res.headersSent) send(res, 500, String(err));
           else res.end();
         });
+      });
+
+      server.middlewares.use("/api/seo-snapshot", (req, res) => {
+        void (async () => {
+          if (req.method !== "GET") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runSeoSnapshot(auth, auditEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
       });
 
       server.middlewares.use("/api/task-notify", (req, res) => {

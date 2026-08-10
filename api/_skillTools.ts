@@ -68,6 +68,11 @@ interface ProductSource {
   imagesNoAlt: number;
   variants: { price: number | null; qty: number | null; tracked: boolean; oversells: boolean }[];
   tagCount: number;
+  handle: string;
+  vendor: string;
+  productType: string;
+  seoTitle: string;
+  seoDescription: string;
 }
 
 /** Sold out = every variant tracked, at/under zero, and not set to oversell. */
@@ -92,6 +97,10 @@ const PRODUCTS_QUERY = `query ProductAudit($first: Int!, $after: String) {
       status
       descriptionHtml
       tags
+      handle
+      vendor
+      productType
+      seo { title description }
       mediaCount { count }
       media(first: 10) { nodes { alt } }
       variants(first: 10) {
@@ -115,6 +124,10 @@ interface GqlProductsData {
       status?: string;
       descriptionHtml?: string | null;
       tags?: string[];
+      handle?: string;
+      vendor?: string | null;
+      productType?: string | null;
+      seo?: { title?: string | null; description?: string | null } | null;
       mediaCount?: { count?: number } | null;
       media?: { nodes?: { alt?: string | null }[] };
       variants?: {
@@ -157,6 +170,11 @@ async function fetchProductsGraphql(conn: ShopifyConnection, limit: number): Pro
           oversells: v.inventoryPolicy === "CONTINUE",
         })),
         tagCount: (n.tags ?? []).length,
+        handle: (n.handle ?? "").trim(),
+        vendor: (n.vendor ?? "").trim(),
+        productType: (n.productType ?? "").trim(),
+        seoTitle: (n.seo?.title ?? "").trim(),
+        seoDescription: (n.seo?.description ?? "").trim(),
       });
     }
     if (!productsPage.pageInfo?.hasNextPage || !productsPage.pageInfo.endCursor) break;
@@ -192,6 +210,14 @@ export async function buildProductsDigest(
       priceMin: prices.length ? Math.min(...prices) : null,
       priceMax: prices.length ? Math.max(...prices) : null,
       tags: p.tagCount,
+      handle: p.handle,
+      vendor: Boolean(p.vendor),
+      productType: Boolean(p.productType),
+      seoTitleChars: p.seoTitle.length,
+      seoDescriptionChars: p.seoDescription.length,
+      seoTitleQuality: p.seoTitle.length === 0 ? "missing" : p.seoTitle.length > 60 ? "long" : "ok",
+      seoDescriptionQuality: p.seoDescription.length === 0 ? "missing" : p.seoDescription.length < 70 ? "thin" : p.seoDescription.length > 160 ? "long" : "ok",
+      geoReady: p.descText.length >= 200 && Boolean(p.vendor) && Boolean(p.productType) && p.tagCount >= 3 && p.imagesNoAlt === 0,
     };
   });
 
@@ -212,6 +238,13 @@ export async function buildProductsDigest(
       withImagesMissingAlt: products.filter((p) => p.imagesNoAlt > 0).length,
       soldOut: products.filter((p) => p.soldOut).length,
       duplicateTitles,
+      seoTitlesMissing: products.filter((p) => p.seoTitleQuality === "missing").length,
+      seoTitlesLong: products.filter((p) => p.seoTitleQuality === "long").length,
+      seoDescriptionsMissing: products.filter((p) => p.seoDescriptionQuality === "missing").length,
+      seoDescriptionsWeak: products.filter((p) => p.seoDescriptionQuality === "thin" || p.seoDescriptionQuality === "long").length,
+      missingProductType: products.filter((p) => !p.productType).length,
+      missingVendor: products.filter((p) => !p.vendor).length,
+      geoReady: products.filter((p) => p.geoReady).length,
     },
   };
 }
@@ -238,6 +271,27 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
     async run(ctx, args) {
       if (!ctx.conn) return { error: "No Shopify store connected." };
       return buildProductsDigest(ctx.conn, clampInt(args.limit, 1, 100, 100));
+    },
+  },
+
+  get_product_detail: {
+    schema: {
+      type: "function",
+      function: {
+        name: "get_product_detail",
+        description: "Fetch the factual Shopify fields needed before preparing an SEO or GEO product update: current title, description, SEO fields, vendor, product type, tags, and image IDs/alt text. Always call this before drafting SEO/GEO changes.",
+        parameters: { type: "object", properties: { productId: { type: "string" } }, required: ["productId"] },
+      },
+    },
+    async run(ctx, args) {
+      if (!ctx.conn) return { error: "No Shopify store connected." };
+      const productId = typeof args.productId === "string" && /^gid:\/\/shopify\/Product\/\d+$/.test(args.productId) ? args.productId : "";
+      if (!productId) return { error: "A valid Shopify product ID is required." };
+      const data = await shopifyGraphql<{ product?: { id:string; title:string; descriptionHtml?:string|null; vendor?:string|null; productType?:string|null; tags?:string[]; seo?:{title?:string|null;description?:string|null}|null; media?:{nodes?:{id?:string;alt?:string|null}[]} } }>(ctx.conn.shop_domain, ctx.conn.access_token, `query SeoProduct($id: ID!) { product(id: $id) { id title descriptionHtml vendor productType tags seo { title description } media(first: 20) { nodes { id alt } } } }`, { id: productId });
+      const product = data?.product;
+      if (!product) return { error: "Shopify could not find that product." };
+      const descriptionHtml = (product.descriptionHtml ?? "").slice(0, 20_000);
+      return { id:product.id, title:product.title, vendor:product.vendor??"", productType:product.productType??"", tags:(product.tags??[]).slice(0,100), seo:product.seo??{}, descriptionText:stripHtml(descriptionHtml).slice(0,10_000), descriptionHtml, media:(product.media?.nodes??[]).map(item=>({id:item.id,alt:item.alt??""})) };
     },
   },
 

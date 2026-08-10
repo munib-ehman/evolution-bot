@@ -11,6 +11,7 @@
     "blog": "node tools/build-blog.mjs",
     "build": "node tools/build-blog.mjs && tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
+    "test:seo": "node tools/test-seo-manager.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

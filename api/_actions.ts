@@ -75,6 +75,8 @@ interface ProductPatch {
   seoTitle?: string;
   seoDescription?: string;
   tags?: string[];
+  vendor?: string;
+  productType?: string;
   mediaAlt?: { id: string; alt: string }[];
 }
 
@@ -171,7 +173,7 @@ async function gql<T>(
 
 const PRODUCTS_STATE = `query ActionProducts($ids: [ID!]!) {
   nodes(ids: $ids) { ... on Product {
-    id updatedAt title descriptionHtml tags status
+    id updatedAt title descriptionHtml tags status vendor productType
     seo { title description }
     media(first: 50) { nodes { id alt } }
   } }
@@ -183,6 +185,8 @@ interface ProductState {
   title: string;
   descriptionHtml: string;
   tags: string[];
+  vendor: string;
+  productType: string;
   status: string;
   seo: { title?: string | null; description?: string | null };
   media: { nodes: { id: string; alt?: string | null }[] };
@@ -220,6 +224,8 @@ function validateProductItems(raw: unknown): ProductPatch[] | null {
     if (row.seoTitle !== undefined) item.seoTitle = cleanText(row.seoTitle, 70);
     if (row.seoDescription !== undefined) item.seoDescription = cleanText(row.seoDescription, 320);
     if (row.tags !== undefined) item.tags = stringList(row.tags, 250);
+    if (row.vendor !== undefined) item.vendor = cleanText(row.vendor, 255);
+    if (row.productType !== undefined) item.productType = cleanText(row.productType, 255);
     if (Array.isArray(row.mediaAlt)) {
       item.mediaAlt = row.mediaAlt.slice(0, 50).flatMap((entry) => {
         const media = entry as Record<string, unknown>;
@@ -426,6 +432,8 @@ function productInput(item: ProductPatch): Record<string, unknown> {
     ...(item.title !== undefined ? { title: item.title } : {}),
     ...(item.descriptionHtml !== undefined ? { descriptionHtml: item.descriptionHtml } : {}),
     ...(item.tags !== undefined ? { tags: item.tags } : {}),
+    ...(item.vendor !== undefined ? { vendor: item.vendor } : {}),
+    ...(item.productType !== undefined ? { productType: item.productType } : {}),
     ...(item.seoTitle !== undefined || item.seoDescription !== undefined
       ? { seo: { ...(item.seoTitle !== undefined ? { title: item.seoTitle } : {}), ...(item.seoDescription !== undefined ? { description: item.seoDescription } : {}) } }
       : {}),
@@ -590,7 +598,7 @@ async function undoMutation(row: ShopifyActionRow, conn: ShopifyConnection): Pro
       const { data, errors } = await gql<{ productUpdate?: { product?: { id: string }; userErrors?: { message?: string }[] } }>(
         conn,
         `mutation UndoProduct($input: ProductUpdateInput!) { productUpdate(product: $input) { product { id } userErrors { field message } } }`,
-        { input: { id: p.id, title: p.title, descriptionHtml: p.descriptionHtml, tags: p.tags, seo: p.seo } },
+        { input: { id: p.id, title: p.title, descriptionHtml: p.descriptionHtml, tags: p.tags, vendor: p.vendor, productType: p.productType, seo: p.seo } },
       );
       if (!data?.productUpdate?.product?.id || errors.length || data.productUpdate.userErrors?.length) return { ok: false, error: "A product could not be restored." };
       if (p.media.nodes.length) await gql(conn, `mutation UndoFiles($files: [FileUpdateInput!]!) { fileUpdate(files: $files) { files { id } userErrors { message } } }`, { files: p.media.nodes.map((m) => ({ id: m.id, alt: m.alt ?? "" })) });

@@ -11,8 +11,22 @@ const label: Record<ShopifyActionProposal["kind"], string> = {
 
 function preview(action: ShopifyActionProposal): string[] {
   if (action.kind === "product_update") {
-    const items = action.payload.items as { title?: string; productId?: string }[] | undefined;
-    return (items ?? []).map((item) => item.title || item.productId || "Product");
+    const items = action.payload.items as { title?: string; productId?: string; seoTitle?:string; seoDescription?:string; descriptionHtml?:string; tags?:string[]; vendor?:string; productType?:string; mediaAlt?:{id:string;alt:string}[] }[] | undefined;
+    const before = action.before_state.products as {id:string;title:string;seo?:{title?:string|null;description?:string|null};tags?:string[];vendor?:string;productType?:string}[]|undefined;
+    return (items ?? []).flatMap((item) => {
+      const previous = before?.find(product=>product.id===item.productId);
+      const name = item.title || previous?.title || item.productId || "Product";
+      const changes = [
+        item.seoTitle !== undefined ? `Search title: ${previous?.seo?.title||"(default product title)"} → ${item.seoTitle}` : "",
+        item.seoDescription !== undefined ? `Meta description: ${previous?.seo?.description||"(empty)"} → ${item.seoDescription}` : "",
+        item.descriptionHtml !== undefined ? `Description: ${item.descriptionHtml.replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim().slice(0,180)}${item.descriptionHtml.length>180?"…":""}` : "",
+        item.tags !== undefined ? `Tags: ${item.tags.join(", ")}` : "",
+        item.vendor !== undefined ? `Vendor/brand: ${previous?.vendor||"(empty)"} → ${item.vendor}` : "",
+        item.productType !== undefined ? `Product type: ${previous?.productType||"(empty)"} → ${item.productType}` : "",
+        item.mediaAlt?.length ? `Image alt text: ${item.mediaAlt.length} image${item.mediaAlt.length===1?"":"s"}` : "",
+      ].filter(Boolean);
+      return [name, ...changes];
+    });
   }
   if (action.kind === "product_draft_create") {
     return [String((action.payload.product as { title?: string })?.title ?? "New draft")];

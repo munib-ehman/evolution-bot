@@ -28,8 +28,9 @@ import { SKILL_CHIPS, type SkillChip } from "./lib/skills";
 import { MarketingManager } from "./components/MarketingManager";
 import { EmailDeliveryPanel } from "./components/EmailDeliveryPanel";
 import { BroadcastCampaignPanel } from "./components/BroadcastCampaignPanel";
+import { SeoManager } from "./components/SeoManager";
 
-type View = "marketing" | "voice" | "chat";
+type View = "marketing" | "seo" | "voice" | "chat";
 // New key intentionally migrates existing users into the role-first workspace.
 const VIEW_KEY = "shop-avatar-role-view-v2";
 
@@ -48,6 +49,11 @@ const MARKETING_STARTERS = [
   "Find my best marketing opportunity",
   "Build a cart recovery campaign",
   "Create a win-back campaign",
+];
+const SEO_STARTERS = [
+  "Audit my product SEO",
+  "Find my biggest AI/GEO opportunity",
+  "Which product should I optimize for SEO first?",
 ];
 
 export default function App() {
@@ -193,7 +199,7 @@ export default function App() {
   // The choice is remembered across visits.
   const [view, setViewState] = useState<View>(() => {
     const saved = loadJSON<{ view?: string }>(VIEW_KEY, { view: "marketing" }).view;
-    return saved === "voice" || saved === "chat" || saved === "marketing" ? saved : "marketing";
+    return saved === "voice" || saved === "chat" || saved === "marketing" || saved === "seo" ? saved : "marketing";
   });
   const setView = (v: View) => {
     setViewState(v);
@@ -290,6 +296,8 @@ export default function App() {
   // Voice stage needs a working mic — otherwise fall back to chat gracefully.
   const voiceView = view === "voice" && canTalk;
   const marketingView = view === "marketing";
+  const seoView = view === "seo";
+  const managerView = marketingView || seoView;
 
   // Hands-free auto-relisten belongs to the voice stage only.
   useEffect(() => {
@@ -375,7 +383,12 @@ export default function App() {
                 Marketing Manager
               </button>
             )}
-            {store && marketingView && !chatOpen && (
+            {store && (
+              <button type="button" className={`tasks-btn ${seoView ? "active" : ""}`} onClick={() => setView("seo")}>
+                SEO Manager
+              </button>
+            )}
+            {store && managerView && !chatOpen && (
               <button type="button" className="tasks-btn" onClick={() => setChatOpen(true)}>
                 Open chat
               </button>
@@ -466,9 +479,9 @@ export default function App() {
         )}
       </header>
 
-      <main className={`layout ${voiceView ? "solo" : ""} ${marketingView ? "manager-layout" : ""} ${marketingView && !chatOpen ? "chat-closed" : ""}`}>
+      <main className={`layout ${voiceView ? "solo" : ""} ${managerView ? "manager-layout" : ""} ${managerView && !chatOpen ? "chat-closed" : ""}`}>
         {/* ── 3D avatar stage ───────────────────────────────────────────── */}
-        <section className={`stage card ${marketingView ? "manager-stage" : ""}`}>
+        <section className={`stage card ${managerView ? "manager-stage" : ""}`}>
           {marketingView ? (
             <MarketingManager
               active={marketingView}
@@ -486,6 +499,8 @@ export default function App() {
               onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryOpen(true); }}
               onOpenBroadcast={() => { setRecoveryOpen(false); setRetentionOpen(false); setBroadcastOpen(true); }}
             />
+          ) : seoView ? (
+            <SeoManager active={seoView} onAsk={handleMarketingAsk}/>
           ) : <AvatarScene
             avatarUrl={a.settings.avatarUrl}
             thinking={thinking}
@@ -495,19 +510,19 @@ export default function App() {
             onReady={() => setAvatarReady(true)}
           />}
 
-          {!marketingView && <div className={`status-pill ${statusState}`}>
+          {!managerView && <div className={`status-pill ${statusState}`}>
             <span className="pulse" />
             {statusLabel}
           </div>}
 
-          {!marketingView && warming && (
+          {!managerView && warming && (
             <div className="warmup" role="status">
               Warming up the voice… {Math.round((a.ttsProgress?.progress ?? 0) * 100)}%
               <span className="warmup-note">First visit only — it's cached after this.</span>
             </div>
           )}
 
-          {!marketingView && a.avatarFellBack && (
+          {!managerView && a.avatarFellBack && (
             <div className="corner-note">
               Using the built-in avatar (couldn't load the Ready Player Me model).
             </div>
@@ -601,8 +616,8 @@ export default function App() {
 
         {/* ── Chat experience: an always-mounted panel that slides in over the
              right of the stage while the camera glides the model left. ───── */}
-        <section className={`chat card ${voiceView || (marketingView && !chatOpen) ? "hidden" : ""}`} aria-hidden={voiceView || (marketingView && !chatOpen)}>
-            {marketingView && (
+        <section className={`chat card ${voiceView || (managerView && !chatOpen) ? "hidden" : ""}`} aria-hidden={voiceView || (managerView && !chatOpen)}>
+            {managerView && (
               <div className="chat-toolbar">
                 <div><strong>Chat with your manager</strong><span>Ask, edit, approve, or pause work</span></div>
                 <button type="button" className="chat-close" onClick={() => setChatOpen(false)} aria-label="Close chat">×</button>
@@ -624,6 +639,12 @@ export default function App() {
                         {s}
                       </button>
                     ))
+                  : seoView
+                  ? SEO_STARTERS.map((s) => (
+                      <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
+                        {s}
+                      </button>
+                    ))
                   : skillsAvailable
                   ? SKILL_CHIPS.map((c) => (
                       <button key={c.id} type="button" className="chip" title={c.blurb} onClick={() => handleSkill(c)}>
@@ -639,7 +660,7 @@ export default function App() {
             )}
 
             {/* Skills stay one tap away after the conversation has started. */}
-            {skillsAvailable && !marketingView && a.messages.length > 1 && (
+            {skillsAvailable && !managerView && a.messages.length > 1 && (
               <div className="skills-row" aria-label="Skills">
                 {SKILL_CHIPS.map((c) => (
                   <button

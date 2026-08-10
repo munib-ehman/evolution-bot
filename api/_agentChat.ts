@@ -43,6 +43,7 @@ import { runBroadcastAction } from "./_broadcastCampaigns";
  */
 const AGENT_TOOL_NAMES = [
   "get_products",
+  "get_product_detail",
   "get_product_sales",
   "get_orders_summary",
   "get_abandoned_checkouts",
@@ -131,7 +132,8 @@ const PROPOSAL_SCHEMAS: Record<string, ToolSchema> = {
               type: "object",
               properties: {
                 productId: { type: "string" }, title: { type: "string" }, descriptionHtml: { type: "string" },
-                seoTitle: { type: "string" }, seoDescription: { type: "string" }, tags: { type: "array", items: { type: "string" } },
+                seoTitle: { type: "string" }, seoDescription: { type: "string" }, tags: { type: "array", items: { type: "string" } }, vendor: { type: "string" }, productType: { type: "string" },
+                mediaAlt: { type: "array", items: { type: "object", properties: { id: { type: "string" }, alt: { type: "string" } }, required: ["id", "alt"] } },
               },
               required: ["productId"],
             },
@@ -443,19 +445,21 @@ function buildSystemPrompt(shop: string, catalogBlock: string, persistentContext
     `You can PREPARE Shopify action proposals when the founder asks for a concrete supported change. If they say add, create, apply, update, fix, or "do this in my store", you MUST call the matching prepare_* tool instead of repeating the recommendation or merely explaining it. Treat "this", "that", and "these" as referring to the products or changes in the immediately preceding conversation. For a recommended product that is not already in their catalog, call prepare_product_draft. Proposal tools never execute; they create a before-and-after approval card. Tell the founder to review and click Approve and apply. Never claim a change is live until the action result says it succeeded. You cannot change prices, inventory, fulfillment, customers, themes, or publish products.`,
     `Don't just report numbers — read them like a COO and suggest the next move. A product topping the abandoned-cart list is a discount/free-shipping candidate; sold-out products with recent demand are urgent restocks; overdue shipments risk bad reviews; lapsed customers who bought a product you still stock are a win-back audience. One concrete suggestion beats three vague ones.`,
     `The Marketing Manager workspace contains abandoned-cart recovery, win-back campaigns, and one-time email campaigns. Chat and visible controls use the same backend campaign records. Chat may create drafts, but sending or scheduling still requires the merchant's explicit approval; never claim an email was sent or scheduled unless an action result proves it.`,
+    `The SEO Manager covers Product SEO and AI/GEO optimization. For any requested SEO/GEO edit, call get_product_detail for each target first, preserve all factual product claims, then call prepare_product_updates. Never invent specifications, materials, benefits, comparisons, reviews, certifications, or FAQs. An action exists only when the proposal tool returns an action object; otherwise report the exact error.`,
     `Use persistent memory carefully. If the merchant explicitly says "remember", "always", "our policy is", or states a durable business preference or decision, call remember_business_fact. Never save customer PII, credentials, payment data, access tokens, or a one-off request. Never claim something was saved unless the tool confirms it. Live Shopify tool data always wins over stale conversation context.`,
     persistentContext,
     catalogBlock,
   ].join("\n\n");
 }
 
-function forcedProposalTool(turns: ChatTurn[]): (typeof AGENT_TOOL_NAMES)[number] | null {
+export function forcedProposalTool(turns: ChatTurn[]): (typeof AGENT_TOOL_NAMES)[number] | null {
   const latest = turns.at(-1)?.content.toLowerCase() ?? "";
   const context = turns.slice(-4).map((turn) => turn.content.toLowerCase()).join("\n");
   const directAction = /\b(add|create|apply|update|change|fix|prepare|recreate|do)\b.*\b(store|shop|product|listing|collection|discount|promotion|card)\b/.test(latest)
     || /\b(where|how)\b.*\b(approve|approval|card)\b/.test(latest)
     || /\b(add|apply|do|create)\s+(this|that|these|it)\b/.test(latest);
   if (!directAction) return null;
+  if (/\b(seo|geo|search title|meta description|alt text|ai discover)\b/.test(context)) return null;
   if (/\b(discount|promotion|coupon|free shipping)\b/.test(context)) return "prepare_discount";
   if (/\bcollection\b/.test(context)) return "prepare_collection";
   if (/\b(draft product|winning product|recommended product|add this|add these|new product)\b/.test(context)) return "prepare_product_draft";
@@ -493,7 +497,7 @@ function needsCampaignClarification(turns: ChatTurn[]): boolean {
   return ambiguousCampaignRequest || turns.slice(-6, -1).some((turn) => campaignToolInText(turn.content));
 }
 
-function selectedAgentToolNames(turns: ChatTurn[]): (typeof AGENT_TOOL_NAMES)[number][] {
+export function selectedAgentToolNames(turns: ChatTurn[]): (typeof AGENT_TOOL_NAMES)[number][] {
   const context = turns.slice(-6).map((turn) => turn.content.toLowerCase()).join("\n");
   const selected = new Set<(typeof AGENT_TOOL_NAMES)[number]>(["remember_business_fact"]);
   const add = (...names: (typeof AGENT_TOOL_NAMES)[number][]) => names.forEach((name) => selected.add(name));
@@ -511,7 +515,7 @@ function selectedAgentToolNames(turns: ChatTurn[]): (typeof AGENT_TOOL_NAMES)[nu
     add("get_ship_queue", "get_inventory_watch", "get_orders_summary");
   }
   if (/\b(product|catalog|listing|collection|seo|merchand|price)\b/.test(context)) {
-    add("get_products", "get_product_sales", "get_latest_audit", "prepare_product_updates", "prepare_product_draft", "prepare_collection");
+    add("get_products", "get_product_detail", "get_product_sales", "get_latest_audit", "prepare_product_updates", "prepare_product_draft", "prepare_collection");
   }
   if (/\b(discount|promotion|coupon|free shipping)\b/.test(context)) {
     add("prepare_discount", "get_orders_summary");
@@ -576,7 +580,10 @@ export async function runAgentChat(
   const shop = conn.shop_domain.replace(".myshopify.com", "");
   const model = env.groqModel || CHAT_MODEL_DEFAULT;
   const clarifyCampaign = needsCampaignClarification(turns);
-  const forcedTool = forcedCampaignTool(turns) ?? forcedProposalTool(turns);
+  const recentText = turns.slice(-6).map(turn=>turn.content.toLowerCase()).join("\n");
+  const seoIntent = /\b(seo|geo|search title|meta description|alt text|ai discover)\b/.test(recentText);
+  const hasExplicitProductId = /gid:\/\/shopify\/product\/\d+/i.test(recentText);
+  const forcedTool = (seoIntent && hasExplicitProductId ? "get_product_detail" : null) ?? forcedCampaignTool(turns) ?? forcedProposalTool(turns);
   const selectedNames = selectedAgentToolNames(turns);
   if (forcedTool && !selectedNames.includes(forcedTool)) selectedNames.push(forcedTool);
   const tools = selectedNames.map((n) => PROPOSAL_SCHEMAS[n] ?? SKILL_TOOLS[n].schema);
@@ -584,6 +591,7 @@ export async function runAgentChat(
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const progress = (label: string) => controller.enqueue(sse({ progress: label }));
+      const detailedProductIds = new Set<string>();
       try {
         if (clarifyCampaign) {
           controller.enqueue(sse({ choices: [{ delta: { content: "Which campaign should I create?\n\n- One-time email — a promotion, launch, or announcement to subscribed customers\n- Win-back — re-engage eligible lapsed customers\n- Cart recovery — follow up on abandoned checkouts\n\nI’ll create a draft only; nothing will be sent until you approve it." } }] }));
@@ -746,6 +754,15 @@ export async function runAgentChat(
                   return;
                 }
               } else if (isProposal) {
+                if (name === "prepare_product_updates" && seoIntent) {
+                  const ids = Array.isArray(args.items) ? args.items.map(item=>String((item as Record<string,unknown>).productId??"")) : [];
+                  const missing = ids.filter(id=>!detailedProductIds.has(id));
+                  if (missing.length) {
+                    result = { error: "Fetch each target with get_product_detail before preparing SEO/GEO changes." };
+                    convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+                    continue;
+                  }
+                }
                 const proposalBody = name === "prepare_product_updates"
                   ? { kind: "product_update", ...args }
                   : name === "prepare_product_draft"
@@ -757,8 +774,13 @@ export async function runAgentChat(
                 result = await response.json();
                 const action = (result as { action?: unknown }).action;
                 if (action) controller.enqueue(sse({ action }));
+                else if (typeof (result as {error?:unknown}).error === "string") {
+                  controller.enqueue(sse({ choices: [{ delta: { content: `I couldn't create the approval proposal: ${(result as {error:string}).error} Nothing was changed in Shopify, and there is no approval card waiting.` } }] }));
+                  return;
+                }
               } else {
                 result = await tool!.run(ctx, args).catch((err) => ({ error: String(err).slice(0, 200) }));
+                if (name === "get_product_detail" && !(result as {error?:unknown}).error && typeof args.productId === "string") detailedProductIds.add(args.productId);
               }
             }
             convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
