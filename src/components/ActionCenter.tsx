@@ -9,12 +9,25 @@ export function ActionCenter({ open, onClose }: { open: boolean; onClose: () => 
 
   const refresh = async () => {
     setLoading(true); setError(null);
-    try { setActions(await fetchActionHistory()); }
+    try {
+      const history = await fetchActionHistory();
+      const newestPendingSeo = new Set<string>();
+      setActions(history.filter((action) => {
+        if (action.kind !== "product_update" || action.status !== "proposed") return true;
+        const productId = (action.payload.items as {productId?:string}[]|undefined)?.[0]?.productId;
+        if (!productId || newestPendingSeo.has(productId)) return false;
+        newestPendingSeo.add(productId);
+        return true;
+      }));
+    }
     catch (e) { setError(e instanceof Error ? e.message : "Couldn't load actions."); }
     finally { setLoading(false); }
   };
   useEffect(() => { if (open) void refresh(); }, [open]);
-  const changed = (next: ShopifyActionProposal) => setActions((rows) => rows.map((r) => r.id === next.id ? next : r));
+  const changed = (next: ShopifyActionProposal) => {
+    setActions((rows) => rows.map((r) => r.id === next.id ? next : r));
+    window.dispatchEvent(new CustomEvent("evolution:shopify-action-changed", { detail: { id:next.id, kind:next.kind, status:next.status } }));
+  };
 
   return (
     <aside className={`tools-panel action-center card ${open ? "open" : ""}`} aria-hidden={!open} aria-label="Shopify actions">

@@ -25,6 +25,7 @@ import { runShopifyAuthStart, runShopifyCallback, runShopifyDisconnect, type Sho
 import { runSkill, type SkillRunBody } from "./api/_skills";
 import { runStoreCatalog } from "./api/_catalog";
 import { runSeoSnapshot } from "./api/_seoManager";
+import { runSeoOptimize, type SeoOptimizeBody } from "./api/_seoOptimizer";
 import { runRecoveryCarts, runRecoveryDraft } from "./api/_recovery";
 import { runRetentionCustomers, runRetentionDraft } from "./api/_retention";
 import { runOpsSnapshot } from "./api/_ops";
@@ -42,6 +43,8 @@ import { processBroadcastDeliveries, runBroadcastAction, runBroadcastAudience, r
 import {
   runActionPropose,
   runActionExecute,
+  runActionUpdate,
+  runActionReject,
   runActionUndo,
   runActionHistory,
   runActionMetrics,
@@ -649,11 +652,44 @@ export function devApi(): Plugin {
         });
       });
 
+      server.middlewares.use("/api/action-update", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: { actionId?: unknown; items?: unknown };
+          try { body = JSON.parse(await readBody(req)) as { actionId?: unknown; items?: unknown }; }
+          catch { return send(res, 400, "Invalid request body."); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionUpdate(body.actionId, body.items, auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/action-reject", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let actionId: unknown;
+          try { actionId = (JSON.parse(await readBody(req)) as { actionId?: unknown }).actionId; }
+          catch { return send(res, 400, "Invalid request body."); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionReject(actionId, auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
       server.middlewares.use("/api/seo-snapshot", (req, res) => {
         void (async () => {
           if (req.method !== "GET") return send(res, 405, "Method not allowed");
           const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
           await pipeResponse(res, await runSeoSnapshot(auth, auditEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/seo-optimize", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: SeoOptimizeBody;
+          try { body = JSON.parse(await readBody(req)) as SeoOptimizeBody; }
+          catch { return send(res, 400, "Invalid JSON body"); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runSeoOptimize(body, auth, auditEnv));
         })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
       });
 

@@ -25,6 +25,7 @@ import {
   CHAT_MAX_MESSAGES,
   CHAT_MAX_TOTAL_CHARS,
   CHAT_MAX_COMPLETION_TOKENS,
+  RESEARCH_MODEL_DEFAULT,
 } from "./_shared";
 import { resolveUserFull } from "./_audit";
 import { isOperator, OPERATOR_REQUIRED } from "./_plan";
@@ -35,6 +36,7 @@ import { runActionPropose } from "./_actions";
 import { runRecoveryCarts, runRecoveryDraft } from "./_recovery";
 import { runRetentionCustomers, runRetentionDraft } from "./_retention";
 import { runBroadcastAction } from "./_broadcastCampaigns";
+import { runSeoOptimize } from "./_seoOptimizer";
 
 /**
  * Tools the chat may call — read-only store data. file_task is deliberately
@@ -138,6 +140,17 @@ const PROPOSAL_SCHEMAS: Record<string, ToolSchema> = {
               required: ["productId"],
             },
           },
+          evidence: {
+            type: "object",
+            description: "Required for SEO proposals. Only include claims supported by live research URLs. Never invent search volume, rankings, reviews, materials, features, or demand.",
+            properties: {
+              keywords: { type: "array", items: { type: "object", properties: { keyword: { type: "string" }, evidence: { type: "string" }, sourceUrl: { type: "string" } }, required: ["keyword", "evidence", "sourceUrl"] } },
+              marketplace: { type: "array", items: { type: "object", properties: { source: { type: "string" }, observation: { type: "string" }, metric: { type: "string" }, sourceUrl: { type: "string" } }, required: ["source", "observation", "sourceUrl"] } },
+              rationale: { type: "string" },
+              limitations: { type: "string" },
+            },
+            required: ["keywords", "marketplace", "rationale", "limitations"],
+          },
         },
         required: ["summary", "items"],
       },
@@ -233,15 +246,19 @@ const PROGRESS_LABELS: Record<string, string> = {
   prepare_discount: "Preparing the promotion for your approval…",
 };
 
-/** One tool-selection round plus one answer round. Clear commands bypass both. */
-const MAX_TOOL_ROUNDS = 2;
+/** SEO may need product lookup -> exact detail -> proposal before answering. */
+const MAX_TOOL_ROUNDS = 3;
 const GROQ_TIMEOUT_MS = 25_000;
+const SEO_SYNTHESIS_MODEL = "llama-3.1-8b-instant";
 /** Client history is advisory; the server enforces its own tighter cap. */
 const MAX_HISTORY_TURNS = 6;
 
 export interface AgentChatBody {
   messages?: unknown;
+  manager?: unknown;
 }
+
+type ManagerRole = "marketing" | "seo";
 
 interface ChatTurn {
   role: "user" | "assistant";
@@ -382,6 +399,29 @@ async function createRecoveryCampaign(
   };
 }
 
+async function researchSeoEvidence(env: SkillEnv, productDetail: unknown): Promise<string | null> {
+  const response = await fetch(`${GROQ_BASE}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.groqKey}` },
+    body: JSON.stringify({
+      model: env.groqResearchModel || RESEARCH_MODEL_DEFAULT,
+      temperature: 0.1,
+      max_tokens: 1_400,
+      messages: [
+        {
+          role: "system",
+          content: `You research ecommerce product SEO using live web search. Search current Amazon and eBay results for the product category, plus public keyword/trend sources and relevant category or buying-guide pages. Return concise research notes with direct source URLs beside every claim. Capture visible quantitative evidence such as review counts, result wording, prices, trend direction, or publication data only when the source actually shows it. Identify recurring buyer-intent phrases suitable for a Shopify listing. Never report invented keyword volume or rankings. If exact search volume is unavailable, state that a licensed keyword-volume provider is required. Competitor claims are keyword evidence only: never transfer their materials, specifications, certifications, reviews, or benefits onto the merchant's product.`,
+        },
+        { role: "user", content: `Research evidence for this live Shopify product:\n${JSON.stringify(productDetail)}` },
+      ],
+    }),
+    signal: AbortSignal.timeout(90_000),
+  });
+  if (!response.ok) return null;
+  const data = await response.json().catch(() => ({})) as {choices?: {message?: {content?:string}}[]};
+  return data.choices?.[0]?.message?.content?.trim() || null;
+}
+
 async function createWinbackCampaign(env: SkillEnv, userId: string, authHeader: string | null, args: Record<string, unknown>): Promise<Record<string, unknown>> {
   const note = typeof args.note === "string" ? args.note.slice(0, 500) : "";
   const draft = await runRetentionDraft({ note }, authHeader, env);
@@ -435,9 +475,15 @@ async function createBroadcastCampaign(env: SkillEnv, authHeader: string | null,
   return campaign ? { ...campaign, created: true, sent: false } : { error: "The one-time campaign could not be persisted." };
 }
 
-function buildSystemPrompt(shop: string, catalogBlock: string, persistentContext: string): string {
+function buildSystemPrompt(shop: string, catalogBlock: string, persistentContext: string, manager?: ManagerRole): string {
+  const roleIdentity = manager === "seo"
+    ? `You are currently the SEO Manager. Stay within Product SEO and AI/GEO discoverability. Do not act as the Marketing Manager, recommend email campaigns, or create recovery, win-back, or broadcast campaigns. Treat older conversation from another workspace as background only, never as the current task. When the merchant asks you to generate, add, prepare, or create a recommended SEO change, you must use tools and produce an approval proposal now; never merely say that you will prepare it, and never tell the merchant which tools should be called.`
+    : manager === "marketing"
+      ? `You are currently the Marketing Manager. Focus on lifecycle email revenue, including abandoned-cart recovery, win-back, and one-time campaigns. Do not present yourself as the SEO Manager unless the merchant explicitly asks to switch roles.`
+      : `You are the founder's general store-aware copilot.`;
   return [
     `You are Evolution, the AI COO for the founder's connected Shopify store "${shop}". You are their store-aware copilot; replies may be spoken aloud.`,
+    roleIdentity,
     `You have TOOLS that fetch the store's REAL data, live. When a question needs data you don't already have — sales, top sellers, order stats, abandoned carts (including WHICH products get abandoned most), what's waiting to ship, stock levels, lapsed customers, audit findings, deeper product detail — CALL the right tool instead of guessing, deflecting, or claiming you lack data. Check your tools before ever saying you can't see something.`,
     `Every number you state must come from a tool result or the catalog below — NEVER invent figures. If a tool returns an "error" field, say plainly that that data source is unreachable right now and answer with what you have. Never infer or guess a product identity from a checkout total or price.`,
     `When the merchant asks to create, build, prepare, or draft an abandoned-checkout campaign, call create_recovery_campaign. For a win-back campaign, call create_winback_campaign. For a one-time, broadcast, promotion, launch, or announcement email, call create_broadcast_campaign. A follow-up such as "create it" may use only the immediately preceding recommendation; if the campaign type is still unclear, ask the merchant to choose one-time, win-back, or cart recovery. Never guess from older conversation. Never print tool-call syntax, XML-like <function> tags, or pretend to call a tool in prose. These tools create saved drafts only; clearly distinguish CREATED AS DRAFT from SENT.`,
@@ -476,6 +522,20 @@ function campaignToolInText(textRaw: string): CampaignTool | null {
   return null;
 }
 
+export function forcedSeoTool(turns: ChatTurn[]): "get_products" | "get_product_detail" | null {
+  const latest = turns.at(-1)?.content.toLowerCase() ?? "";
+  const recent = turns.slice(-4).map((turn) => turn.content).join("\n");
+  const productId = recent.match(/gid:\/\/shopify\/product\/\d+/i)?.[0];
+  const explicitlyReadOnly = /\b(?:do not|don't|dont|not yet|without)\b.{0,32}\b(?:create|prepare|apply|change|update|edit)\b/.test(latest)
+    || /\b(?:create|prepare|apply|change|update|edit)\b.{0,16}\b(?:nothing|not yet)\b/.test(latest);
+  if (explicitlyReadOnly) return null;
+  const wantsProposal = /\b(generate|add|create|prepare|apply|update|fix|optimi[sz]e|draft)\b/.test(latest)
+    || /\b(i(?:'|’)ll|i will)\s+approve\b/.test(latest)
+    || /\b(add|apply|do|create)\s+(this|that|these|it|one)\b/.test(latest);
+  if (!wantsProposal) return null;
+  return productId ? "get_product_detail" : "get_products";
+}
+
 function forcedCampaignTool(turns: ChatTurn[]): CampaignTool | null {
   const latest = turns.at(-1)?.content.toLowerCase() ?? "";
   const createIntent = /\b(create|build|prepare|draft|do it|go ahead|yes|okay|ok|proceed)\b/.test(latest);
@@ -497,10 +557,17 @@ function needsCampaignClarification(turns: ChatTurn[]): boolean {
   return ambiguousCampaignRequest || turns.slice(-6, -1).some((turn) => campaignToolInText(turn.content));
 }
 
-export function selectedAgentToolNames(turns: ChatTurn[]): (typeof AGENT_TOOL_NAMES)[number][] {
+export function selectedAgentToolNames(turns: ChatTurn[], manager?: ManagerRole): (typeof AGENT_TOOL_NAMES)[number][] {
   const context = turns.slice(-6).map((turn) => turn.content.toLowerCase()).join("\n");
   const selected = new Set<(typeof AGENT_TOOL_NAMES)[number]>(["remember_business_fact"]);
   const add = (...names: (typeof AGENT_TOOL_NAMES)[number][]) => names.forEach((name) => selected.add(name));
+
+  // A workspace is an execution boundary, not just a different heading. In
+  // particular, old marketing turns must never expose campaign tools to SEO.
+  if (manager === "seo") {
+    add("get_products", "get_product_detail", "get_product_sales", "get_latest_audit", "prepare_product_updates");
+    return [...selected];
+  }
 
   if (/\b(abandon|checkout|cart recovery|recovery campaign)\b/.test(context)) {
     add("get_abandoned_checkouts", "create_recovery_campaign", "prepare_discount");
@@ -577,14 +644,15 @@ export async function runAgentChat(
   if (!conn) return jsonResponse(409, { error: "Connect your Shopify store first." });
 
   const ctx: ToolCtx = { env, userId: user.id, userEmail: user.email, conn, origin };
+  const manager: ManagerRole | undefined = body.manager === "marketing" || body.manager === "seo" ? body.manager : undefined;
   const shop = conn.shop_domain.replace(".myshopify.com", "");
   const model = env.groqModel || CHAT_MODEL_DEFAULT;
-  const clarifyCampaign = needsCampaignClarification(turns);
+  const clarifyCampaign = manager !== "seo" && needsCampaignClarification(turns);
   const recentText = turns.slice(-6).map(turn=>turn.content.toLowerCase()).join("\n");
-  const seoIntent = /\b(seo|geo|search title|meta description|alt text|ai discover)\b/.test(recentText);
-  const hasExplicitProductId = /gid:\/\/shopify\/product\/\d+/i.test(recentText);
-  const forcedTool = (seoIntent && hasExplicitProductId ? "get_product_detail" : null) ?? forcedCampaignTool(turns) ?? forcedProposalTool(turns);
-  const selectedNames = selectedAgentToolNames(turns);
+  const forcedTool = manager === "seo"
+    ? forcedSeoTool(turns)
+    : forcedCampaignTool(turns) ?? forcedProposalTool(turns);
+  const selectedNames = selectedAgentToolNames(turns, manager);
   if (forcedTool && !selectedNames.includes(forcedTool)) selectedNames.push(forcedTool);
   const tools = selectedNames.map((n) => PROPOSAL_SCHEMAS[n] ?? SKILL_TOOLS[n].schema);
 
@@ -634,27 +702,99 @@ export async function runAgentChat(
           controller.enqueue(sse({ choices: [{ delta: { content: `${summary} Nothing was sent.\n${plan}` } }] }));
           return;
         }
+        if (manager === "seo" && forcedTool) {
+          let productId = turns.slice(-4).map(turn => turn.content).join("\n").match(/gid:\/\/shopify\/product\/\d+/i)?.[0] ?? null;
+          if (!productId) {
+            progress("Resolving the recommended product…");
+            const digest = await buildProductsDigest(conn, 100);
+            if (!("error" in digest)) {
+              const recent = turns.slice(-4).map(turn => turn.content.toLowerCase()).join("\n");
+              const mentioned = (digest.products as {id:string;title:string}[]).sort((a,b)=>b.title.length-a.title.length).find(product=>recent.includes(product.title.toLowerCase()));
+              productId = mentioned?.id ?? null;
+            }
+          }
+          if (!productId) {
+            controller.enqueue(sse({ choices: [{ delta: { content: "Name the product you want to optimize, or use its Research & prepare approval button in SEO Manager." } }] }));
+            return;
+          }
+          progress("Running the standalone SEO optimizer…");
+          const optimized = await runSeoOptimize({ productId }, authHeader, env);
+          const result = await optimized.json().catch(()=>({})) as {action?:unknown;error?:string};
+          if (!optimized.ok || !result.action) {
+            controller.enqueue(sse({ choices: [{ delta: { content: `${result.error ?? "The SEO optimizer could not create a proposal."} Nothing was changed.` } }] }));
+            return;
+          }
+          controller.enqueue(sse({ action: result.action }));
+          controller.enqueue(sse({ choices: [{ delta: { content: "The standalone SEO optimizer created an evidence-backed approval action. Review its sources, keywords, and before/after fields in Actions. Nothing has changed yet." } }] }));
+          return;
+        }
         const persistentContext = await loadPersistentContext(env, user.id, turns);
         const catalogBlock = "Catalog is available on demand through get_products; it is not preloaded into every request.";
         const convo: Record<string, unknown>[] = [
-          { role: "system", content: buildSystemPrompt(shop, catalogBlock, persistentContext) },
+          { role: "system", content: buildSystemPrompt(shop, catalogBlock, persistentContext, manager) },
           ...turns,
         ];
+        const seoProposalRequested = manager === "seo" && forcedTool !== null;
+        let resolvedSeoProductId = turns.slice(-4).map(turn => turn.content).join("\n").match(/gid:\/\/shopify\/product\/\d+/i)?.[0] ?? null;
+        let pendingForcedTool: (typeof AGENT_TOOL_NAMES)[number] | null = forcedTool;
+        let proposalEmitted = false;
+
+        // Product resolution and detail fetching are deterministic data work,
+        // so do them in code instead of spending two LLM requests asking the
+        // model to select obvious tools. The model is used once: to draft the
+        // grounded update payload that becomes the approval proposal.
+        if (seoProposalRequested) {
+          if (!resolvedSeoProductId) {
+            progress("Resolving the recommended product…");
+            const digest = await buildProductsDigest(conn, 100);
+            if ("error" in digest) {
+              controller.enqueue(sse({ choices: [{ delta: { content: `I couldn't load the live catalog: ${digest.error}. No approval action was created.` } }] }));
+              return;
+            }
+            const recentConversation = turns.slice(-4).map(turn => turn.content.toLowerCase()).join("\n");
+            const mentioned = (digest.products as {id:string;title:string}[])
+              .sort((a, b) => b.title.length - a.title.length)
+              .find(product => recentConversation.includes(product.title.toLowerCase()));
+            resolvedSeoProductId = mentioned?.id ?? null;
+          }
+          if (!resolvedSeoProductId) {
+            controller.enqueue(sse({ choices: [{ delta: { content: "I couldn't reliably identify which product you meant, so no approval action was created. Name the product and ask me to prepare its SEO update." } }] }));
+            return;
+          }
+          progress("Checking the product's current SEO fields…");
+          const detailTool = SKILL_TOOLS.get_product_detail;
+          const productDetail = await detailTool.run(ctx, { productId: resolvedSeoProductId }).catch(err => ({ error: String(err).slice(0, 200) }));
+          if ((productDetail as {error?:unknown}).error) {
+            controller.enqueue(sse({ choices: [{ delta: { content: `I couldn't fetch that product's current details: ${String((productDetail as {error:unknown}).error)}. No approval action was created.` } }] }));
+            return;
+          }
+          progress("Researching current marketplace and keyword evidence…");
+          const researchNotes = await researchSeoEvidence(env, productDetail);
+          if (!researchNotes) {
+            controller.enqueue(sse({ choices: [{ delta: { content: "Live marketplace and keyword research was unavailable, so I did not generate an ungrounded SEO action. Nothing was changed. Retry when research capacity is available." } }] }));
+            return;
+          }
+          detailedProductIds.add(resolvedSeoProductId);
+          convo.push({ role: "system", content: `Verified live Shopify detail for the single target product:\n${JSON.stringify(productDetail)}\n\nLive marketplace/keyword research notes:\n${researchNotes}\n\nCall prepare_product_updates now. Include an evidence object with only cited research claims and URLs. Show which researched phrases informed the SEO title, meta description, description, and tags. Preserve the product's factual boundaries: do not add any material, feature, benefit, certification, review, or specification absent from Shopify. If the live product lacks enough facts for substantive description copy, improve only safe metadata and explicitly state the limitation in evidence.limitations.` });
+          pendingForcedTool = "prepare_product_updates";
+        }
 
         for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
           const lastRound = round === MAX_TOOL_ROUNDS;
+          const forcedThisRound = pendingForcedTool;
+          pendingForcedTool = null;
           const res = await fetch(`${GROQ_BASE}/chat/completions`, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.groqKey}` },
             body: JSON.stringify({
-              model,
+              model: seoProposalRequested ? SEO_SYNTHESIS_MODEL : model,
               messages: convo,
               temperature: 0.4,
               max_tokens: CHAT_MAX_COMPLETION_TOKENS,
               ...(lastRound ? {} : {
                 tools,
-                tool_choice: round === 0 && forcedTool
-                  ? { type: "function", function: { name: forcedTool } }
+                tool_choice: forcedThisRound
+                  ? { type: "function", function: { name: forcedThisRound } }
                   : "auto",
               }),
             }),
@@ -704,6 +844,10 @@ export async function runAgentChat(
 
           const calls = (msg.tool_calls ?? []).filter((c) => c.type === "function");
           if (calls.length === 0 || lastRound) {
+            if (seoProposalRequested && !proposalEmitted) {
+              controller.enqueue(sse({ choices: [{ delta: { content: "I couldn't create the SEO approval proposal, so there is no action to approve and nothing was changed. Please retry; if it fails again, check the Actions service configuration." } }] }));
+              return;
+            }
             const text = (msg.content ?? "").trim();
             if (!text) {
               controller.enqueue(sse({ error: "The copilot brain returned an empty reply." }));
@@ -734,6 +878,7 @@ export async function runAgentChat(
               } catch {
                 /* run with defaults */
               }
+              if (name === "get_product_detail" && resolvedSeoProductId) args.productId = resolvedSeoProductId;
               if (isMemory) {
                 result = await rememberBusinessFact(env, user.id, args);
               } else if (isCampaign) {
@@ -754,13 +899,27 @@ export async function runAgentChat(
                   return;
                 }
               } else if (isProposal) {
-                if (name === "prepare_product_updates" && seoIntent) {
+                if (name === "prepare_product_updates" && manager === "seo") {
                   const ids = Array.isArray(args.items) ? args.items.map(item=>String((item as Record<string,unknown>).productId??"")) : [];
                   const missing = ids.filter(id=>!detailedProductIds.has(id));
                   if (missing.length) {
                     result = { error: "Fetch each target with get_product_detail before preparing SEO/GEO changes." };
                     convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
                     continue;
+                  }
+                  const evidence = args.evidence as {keywords?:unknown[];marketplace?:unknown[]} | undefined;
+                  if (!evidence || !Array.isArray(evidence.keywords) || !evidence.keywords.length || !Array.isArray(evidence.marketplace) || !evidence.marketplace.length) {
+                    controller.enqueue(sse({ choices: [{ delta: { content: "I found no sufficiently structured marketplace and keyword evidence, so I did not create an SEO approval action. Nothing was changed." } }] }));
+                    return;
+                  }
+                  if (Array.isArray(args.items)) {
+                    args.items = args.items.map(value => {
+                      const item = { ...(value as Record<string, unknown>) };
+                      delete item.vendor;
+                      delete item.productType;
+                      delete item.title;
+                      return item;
+                    });
                   }
                 }
                 const proposalBody = name === "prepare_product_updates"
@@ -773,14 +932,33 @@ export async function runAgentChat(
                 const response = await runActionPropose(proposalBody, authHeader, env);
                 result = await response.json();
                 const action = (result as { action?: unknown }).action;
-                if (action) controller.enqueue(sse({ action }));
+                if (action) {
+                  proposalEmitted = true;
+                  controller.enqueue(sse({ action }));
+                  if (manager === "seo") {
+                    const summary = String((action as {summary?:unknown}).summary ?? "SEO product update");
+                    controller.enqueue(sse({ choices: [{ delta: { content: `Created the approval action: ${summary}. Review the before-and-after details and click Approve and apply. Nothing has changed in Shopify yet.` } }] }));
+                    return;
+                  }
+                }
                 else if (typeof (result as {error?:unknown}).error === "string") {
                   controller.enqueue(sse({ choices: [{ delta: { content: `I couldn't create the approval proposal: ${(result as {error:string}).error} Nothing was changed in Shopify, and there is no approval card waiting.` } }] }));
                   return;
                 }
               } else {
                 result = await tool!.run(ctx, args).catch((err) => ({ error: String(err).slice(0, 200) }));
+                if (name === "get_products" && seoProposalRequested && !(result as {error?:unknown}).error) {
+                  const products = (result as {products?: {id?:unknown;title?:unknown}[]}).products ?? [];
+                  const recentConversation = turns.slice(-4).map(turn => turn.content.toLowerCase()).join("\n");
+                  const mentioned = products
+                    .filter(product => typeof product.id === "string" && typeof product.title === "string")
+                    .sort((a, b) => String(b.title).length - String(a.title).length)
+                    .find(product => recentConversation.includes(String(product.title).toLowerCase()));
+                  if (mentioned) resolvedSeoProductId = String(mentioned.id);
+                  pendingForcedTool = "get_product_detail";
+                }
                 if (name === "get_product_detail" && !(result as {error?:unknown}).error && typeof args.productId === "string") detailedProductIds.add(args.productId);
+                if (name === "get_product_detail" && seoProposalRequested && !(result as {error?:unknown}).error) pendingForcedTool = "prepare_product_updates";
               }
             }
             convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });

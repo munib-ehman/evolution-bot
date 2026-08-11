@@ -173,7 +173,9 @@ async function fetchProductsGraphql(conn: ShopifyConnection, limit: number): Pro
         handle: (n.handle ?? "").trim(),
         vendor: (n.vendor ?? "").trim(),
         productType: (n.productType ?? "").trim(),
-        seoTitle: (n.seo?.title ?? "").trim(),
+        // Shopify uses the product title when no custom SEO title is stored.
+        // Audit the effective storefront title, not only the optional override.
+        seoTitle: (n.seo?.title ?? n.title ?? "").trim(),
         seoDescription: (n.seo?.description ?? "").trim(),
       });
     }
@@ -213,6 +215,8 @@ export async function buildProductsDigest(
       handle: p.handle,
       vendor: Boolean(p.vendor),
       productType: Boolean(p.productType),
+      vendorName: p.vendor,
+      productTypeName: p.productType,
       seoTitleChars: p.seoTitle.length,
       seoDescriptionChars: p.seoDescription.length,
       seoTitleQuality: p.seoTitle.length === 0 ? "missing" : p.seoTitle.length > 60 ? "long" : "ok",

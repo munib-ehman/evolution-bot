@@ -64,6 +64,7 @@ export function useAssistant() {
   const [error, setError] = useState<string | null>(null);
   const [ttsProgress, setTtsProgress] = useState<ModelProgress | null>(null);
   const [avatarFellBack, setAvatarFellBack] = useState(false);
+  const [actionRevision, setActionRevision] = useState(0);
   // True once the product catalog has resolved (loaded OR failed) — one of the
   // signals the boot splash waits on before revealing the app.
   const [catalogReady, setCatalogReady] = useState(false);
@@ -158,7 +159,7 @@ export function useAssistant() {
 
   /** Core: send a user turn, get a reply, speak it (unless text-only). */
   const send = useCallback(
-    async (rawText: string, opts?: { fromVoice?: boolean }) => {
+    async (rawText: string, opts?: { fromVoice?: boolean; manager?: "marketing" | "seo" }) => {
       const text = rawText.trim();
       if (!text || status === "thinking") return;
 
@@ -234,6 +235,7 @@ export function useAssistant() {
 
       const onAction = (action: import("../lib/actions").ShopifyActionProposal) => {
         if (controller.signal.aborted) return;
+        setActionRevision((revision) => revision + 1);
         if (!bubbleShown) {
           bubbleShown = true;
           appendMessage({ id: assistantId, role: "assistant", content: "", pending: true, action });
@@ -281,6 +283,7 @@ export function useAssistant() {
         if (storeContextRef.current !== null) {
           try {
             reply = await runAgentChat(history, {
+              manager: opts?.manager,
               signal: controller.signal,
               onProgress,
               onToken,
@@ -621,6 +624,7 @@ export function useAssistant() {
     updateSettings,
     toggleSound,
     avatarFellBack,
+    actionRevision,
     setAvatarFellBack,
     send,
     runSkillFlow,

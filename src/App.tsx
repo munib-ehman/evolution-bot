@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { AvatarScene } from "./avatar/AvatarScene";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { MessageList } from "./components/MessageList";
 import { Composer } from "./components/Composer";
 import { Splash } from "./components/Splash";
@@ -30,6 +29,8 @@ import { EmailDeliveryPanel } from "./components/EmailDeliveryPanel";
 import { BroadcastCampaignPanel } from "./components/BroadcastCampaignPanel";
 import { SeoManager } from "./components/SeoManager";
 
+const AvatarScene = lazy(() => import("./avatar/AvatarScene").then(module => ({ default: module.AvatarScene })));
+
 type View = "marketing" | "seo" | "voice" | "chat";
 // New key intentionally migrates existing users into the role-first workspace.
 const VIEW_KEY = "shop-avatar-role-view-v2";
@@ -52,7 +53,7 @@ const MARKETING_STARTERS = [
 ];
 const SEO_STARTERS = [
   "Audit my product SEO",
-  "Find my biggest AI/GEO opportunity",
+  "Find my biggest AI search opportunity",
   "Which product should I optimize for SEO first?",
 ];
 
@@ -81,6 +82,19 @@ export default function App() {
   const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
+
+  // A freshly persisted Shopify proposal belongs in the approval inbox. Open
+  // it immediately so the merchant never has to hunt for an invisible card.
+  useEffect(() => {
+    if (a.actionRevision === 0) return;
+    setTasksOpen(false);
+    setRecoveryOpen(false);
+    setRetentionOpen(false);
+    setOpsOpen(false);
+    setDeliveryOpen(false);
+    setBroadcastOpen(false);
+    setActionsOpen(true);
+  }, [a.actionRevision]);
 
   // The pricing CTA must open billing for non-gated accounts too (operators
   // revisiting, admins whose profile row is still free) — FreeHome handles
@@ -270,7 +284,7 @@ export default function App() {
     // browser's autoplay policy lets the first spoken reply play.
     void speechEngine.unlock();
     ensureWarm();
-    a.send(text);
+    a.send(text, { manager: view === "marketing" || view === "seo" ? view : undefined });
   };
   const handleMarketingAsk = (text: string) => {
     setChatOpen(true);
@@ -500,15 +514,18 @@ export default function App() {
               onOpenBroadcast={() => { setRecoveryOpen(false); setRetentionOpen(false); setBroadcastOpen(true); }}
             />
           ) : seoView ? (
-            <SeoManager active={seoView} onAsk={handleMarketingAsk}/>
-          ) : <AvatarScene
+            <SeoManager active={seoView} onAsk={handleMarketingAsk} onProposal={(action) => {
+              setActionsOpen(true);
+              a.postAssistantMessage(`Your SEO update is ready for review: ${action.summary}. Open Actions to compare the current listing with the suggested version before approving it.`);
+            }}/>
+          ) : <Suspense fallback={<div className="avatar-loading" aria-label="Loading avatar" />}><AvatarScene
             avatarUrl={a.settings.avatarUrl}
             thinking={thinking}
             speaking={a.status === "speaking"}
             framing={voiceView ? "stage" : "portrait"}
             onAvatarFallback={() => a.setAvatarFellBack(true)}
             onReady={() => setAvatarReady(true)}
-          />}
+          /></Suspense>}
 
           {!managerView && <div className={`status-pill ${statusState}`}>
             <span className="pulse" />
@@ -624,7 +641,7 @@ export default function App() {
               </div>
             )}
             <MessageList
-              messages={a.messages}
+              messages={seoView && a.messages.length === 1 ? [{ ...a.messages[0], content: "Hey, I’m your SEO Manager. I’ll review your products, find relevant search terms, and prepare clear before-and-after improvements. Nothing changes until you approve it." }] : a.messages}
               status={a.status}
               onEscalate={(taskTool, note) => void a.escalateToTeam(taskTool, note)}
             />

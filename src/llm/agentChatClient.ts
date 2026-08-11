@@ -29,6 +29,7 @@ export class AgentChatError extends Error {
 }
 
 export interface AgentChatOptions {
+  manager?: "marketing" | "seo";
   signal?: AbortSignal;
   onProgress?: (label: string) => void;
   onToken?: (text: string) => void;
@@ -57,7 +58,7 @@ export async function runAgentChat(history: Message[], opts: AgentChatOptions = 
   const res = await fetch("/api/agent-chat", {
     method: "POST",
     headers,
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, manager: opts.manager }),
     signal: opts.signal,
   });
 

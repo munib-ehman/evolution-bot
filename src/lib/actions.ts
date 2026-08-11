@@ -8,7 +8,7 @@ export type ShopifyActionKind =
   | "discount_automatic_create";
 export type ShopifyActionStatus =
   | "proposed" | "executing" | "succeeded" | "partial" | "failed"
-  | "stale" | "undone" | "expired";
+  | "stale" | "undone" | "expired" | "rejected";
 
 export interface ShopifyActionMetric {
   window_days: number;
@@ -54,6 +54,16 @@ async function request(path: string, method: "GET" | "POST", body?: unknown): Pr
 
 export async function executeAction(actionId: string): Promise<ShopifyActionProposal> {
   const data = await request("/api/action-execute", "POST", { actionId }) as { action: ShopifyActionProposal };
+  return data.action;
+}
+
+export async function updateAction(actionId: string, items: unknown[]): Promise<ShopifyActionProposal> {
+  const data = await request("/api/action-update", "POST", { actionId, items }) as { action: ShopifyActionProposal };
+  return data.action;
+}
+
+export async function rejectAction(actionId: string): Promise<ShopifyActionProposal> {
+  const data = await request("/api/action-reject", "POST", { actionId }) as { action: ShopifyActionProposal };
   return data.action;
 }
 

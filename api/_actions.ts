@@ -29,7 +29,8 @@ export type ShopifyActionStatus =
   | "failed"
   | "stale"
   | "undone"
-  | "expired";
+  | "expired"
+  | "rejected";
 
 export interface ActionEnv extends ShopifyEnv { cronSecret?: string }
 
@@ -100,6 +101,13 @@ export interface ActionProposeBody {
   product?: unknown;
   collection?: unknown;
   discount?: unknown;
+  evidence?: unknown;
+  optimizerVersion?: unknown;
+  targetMarket?: unknown;
+  keywordPlan?: unknown;
+  sourceStatus?: unknown;
+  confirmedFacts?: unknown;
+  geoPlan?: unknown;
 }
 
 const ACTION_SELECT =
@@ -239,6 +247,61 @@ function validateProductItems(raw: unknown): ProductPatch[] | null {
   return items;
 }
 
+function safeSourceUrl(raw: unknown): string {
+  const value = cleanText(raw, 1_000);
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : "";
+  } catch { return ""; }
+}
+
+function validateSeoEvidence(raw: unknown): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const value = raw as Record<string, unknown>;
+  const keywords = Array.isArray(value.keywords) ? value.keywords.slice(0, 12).flatMap(entry => {
+    const row = entry as Record<string, unknown>;
+    const keyword = cleanText(row.keyword, 120);
+    const evidence = cleanText(row.evidence, 500);
+    const sourceUrl = safeSourceUrl(row.sourceUrl);
+    return keyword && evidence && sourceUrl ? [{ keyword, evidence, sourceUrl }] : [];
+  }) : [];
+  const marketplace = Array.isArray(value.marketplace) ? value.marketplace.slice(0, 10).flatMap(entry => {
+    const row = entry as Record<string, unknown>;
+    const source = cleanText(row.source, 80);
+    const observation = cleanText(row.observation, 600);
+    const metric = cleanText(row.metric, 160);
+    const sourceUrl = safeSourceUrl(row.sourceUrl);
+    return source && observation && sourceUrl ? [{ source, observation, metric, sourceUrl }] : [];
+  }) : [];
+  const rationale = cleanText(value.rationale, 1_500);
+  const limitations = cleanText(value.limitations, 800);
+  const reviewRaw = value.review && typeof value.review === "object" ? value.review as Record<string,unknown> : {};
+  const review = {
+    currentListing: cleanText(reviewRaw.currentListing, 1_000),
+    shopperIntent: cleanText(reviewRaw.shopperIntent, 1_000),
+    keywordUse: cleanText(reviewRaw.keywordUse, 1_000),
+    titleAdvice: cleanText(reviewRaw.titleAdvice, 1_000),
+    descriptionAdvice: cleanText(reviewRaw.descriptionAdvice, 1_000),
+    tagAdvice: cleanText(reviewRaw.tagAdvice, 1_000),
+  };
+  const geoRaw = value.geo && typeof value.geo === "object" ? value.geo as Record<string,unknown> : {};
+  const geo = {
+    label: cleanText(geoRaw.label, 120),
+    improves: stringList(geoRaw.improves, 8),
+    safeguards: stringList(geoRaw.safeguards, 8),
+    manualGaps: stringList(geoRaw.manualGaps, 8),
+  };
+  const catalogRaw = value.catalogContext && typeof value.catalogContext === "object" ? value.catalogContext as Record<string,unknown> : {};
+  const catalogContext = {
+    category: cleanText(catalogRaw.category,240),
+    existingTags: stringList(catalogRaw.existingTags,30),
+    attributes: Array.isArray(catalogRaw.attributes) ? catalogRaw.attributes.slice(0,30).flatMap(entry=>{const row=entry as Record<string,unknown>;const label=cleanText(row.label,120),attributeValue=cleanText(row.value,500),source=row.source==="category"?"category":"product";return label&&attributeValue?[{label,value:attributeValue,source}]:[];}) : [],
+  };
+  return keywords.length || marketplace.length || rationale
+    ? { keywords, marketplace, rationale, limitations, review, geo, catalogContext }
+    : undefined;
+}
+
 function validateDiscount(raw: unknown, withCode: boolean): DiscountSpec | null {
   const row = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const valueType = row.valueType;
@@ -349,7 +412,17 @@ export async function runActionPropose(body: ActionProposeBody, authHeader: stri
     needsFiles = items.some((i) => Boolean(i.mediaAlt?.length));
     const states = await productStates(ctx.conn, items.map((i) => i.productId));
     if (!states) return json(502, { error: "Couldn't load every selected product from Shopify." });
-    payload = { items };
+    const evidence = validateSeoEvidence(body.evidence);
+    payload = {
+      items,
+      ...(evidence ? { evidence } : {}),
+      ...(cleanText(body.optimizerVersion, 80) ? { optimizerVersion: cleanText(body.optimizerVersion, 80) } : {}),
+      ...(body.targetMarket && typeof body.targetMarket === "object" ? { targetMarket: body.targetMarket } : {}),
+      ...(body.keywordPlan && typeof body.keywordPlan === "object" ? { keywordPlan: body.keywordPlan } : {}),
+      ...(Array.isArray(body.sourceStatus) ? { sourceStatus: body.sourceStatus } : {}),
+      ...(body.confirmedFacts && typeof body.confirmedFacts === "object" ? { confirmedFacts: body.confirmedFacts } : {}),
+      ...(body.geoPlan && typeof body.geoPlan === "object" ? { geoPlan: body.geoPlan } : {}),
+    };
     before = { products: states };
     summary ||= `Update ${items.length} product listing${items.length === 1 ? "" : "s"}`;
   } else if (kind === "product_draft_create") {
@@ -589,6 +662,47 @@ export async function runActionExecute(actionIdRaw: unknown, authHeader: string 
   await event(env, row, status, { succeeded, total: execution.results.length });
   log(status === "succeeded" ? "info" : "warn", "shopify-action", "executed", { actionId: row.id, kind: row.kind, status });
   return json(status === "failed" ? 502 : 200, { action: row });
+}
+
+export async function runActionUpdate(actionIdRaw: unknown, itemsRaw: unknown, authHeader: string | null, env: ShopifyEnv): Promise<Response> {
+  if (!env.supabaseUrl || !env.serviceRoleKey) return json(503, { error: "Action storage isn't configured." });
+  const ctx = await authContext(authHeader, env);
+  if ("error" in ctx) return ctx.error;
+  const actionId = cleanText(actionIdRaw, 80);
+  const row = await loadAction(env, actionId, ctx.user.id);
+  if (!row) return json(404, { error: "That prepared update could not be found." });
+  if (row.status !== "proposed") return json(409, { error: "Only updates waiting for approval can be edited." });
+  if (row.kind !== "product_update") return json(400, { error: "This type of action cannot be edited here." });
+  const items = validateProductItems(itemsRaw);
+  if (!items) return json(400, { error: "The edited product details are incomplete or invalid." });
+  const originalItems = row.payload.items as ProductPatch[];
+  const originalIds = originalItems.map(item => item.productId).sort().join(",");
+  const editedIds = items.map(item => item.productId).sort().join(",");
+  if (originalIds !== editedIds) return json(400, { error: "Editing cannot change which Shopify products are targeted." });
+  const payload = { ...row.payload, items };
+  const response = await fetch(
+    `${env.supabaseUrl}/rest/v1/shopify_actions?id=eq.${encodeURIComponent(row.id)}&user_id=eq.${encodeURIComponent(ctx.user.id)}&status=eq.proposed&select=${ACTION_SELECT}`,
+    { method:"PATCH", headers:dbHeaders(env,true), body:JSON.stringify({payload}) },
+  );
+  if (!response.ok) return json(502, { error: "Couldn't save your edits." });
+  const updated = ((await response.json()) as ShopifyActionRow[])[0];
+  if (!updated) return json(409, { error: "This update changed before your edits could be saved. Refresh and try again." });
+  await event(env, updated, "edited", { fields:"product listing" });
+  return json(200, { action:updated });
+}
+
+export async function runActionReject(actionIdRaw: unknown, authHeader: string | null, env: ShopifyEnv): Promise<Response> {
+  if (!env.supabaseUrl || !env.serviceRoleKey) return json(503, { error: "Action storage isn't configured." });
+  const ctx = await authContext(authHeader, env);
+  if ("error" in ctx) return ctx.error;
+  const actionId = cleanText(actionIdRaw, 80);
+  const row = await loadAction(env, actionId, ctx.user.id);
+  if (!row) return json(404, { error: "That prepared update could not be found." });
+  if (row.status !== "proposed") return json(409, { error: "Only updates waiting for approval can be rejected." });
+  const updated = await updateAction(env, row.id, ctx.user.id, { status:"rejected" }, "proposed");
+  if (!updated) return json(409, { error: "This update changed before it could be rejected. Refresh and try again." });
+  await event(env, updated, "rejected");
+  return json(200, { action:updated });
 }
 
 async function undoMutation(row: ShopifyActionRow, conn: ShopifyConnection): Promise<{ ok: boolean; error?: string }> {
