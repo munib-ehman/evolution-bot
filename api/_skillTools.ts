@@ -510,9 +510,14 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
       }
       if (!lapsed && !buyers) return { error: "Couldn't reach the Shopify customers API." };
       const lapsedRows = lapsed ?? [];
+      const buyerRows = buyers ?? [];
       const byTitle = new Map<string, number>();
       for (const c of lapsedRows) {
         for (const item of c.lastItems) byTitle.set(item.title, (byTitle.get(item.title) ?? 0) + 1);
+      }
+      const reviewItems = new Map<string, number>();
+      for (const buyer of buyerRows) {
+        for (const item of buyer.items) reviewItems.set(item.title, (reviewItems.get(item.title) ?? 0) + item.qty);
       }
       return {
         lapsedCustomers: lapsedRows.length,
@@ -521,8 +526,12 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
           .sort((a, b) => b[1] - a[1])
           .slice(0, 8)
           .map(([title, customers]) => ({ title, customers })),
-        recentBuyersForReviews: (buyers ?? []).length,
-        windows: { lapsedDays: "60-365", buyersDays: "7-30" },
+        recentBuyersForReviews: buyerRows.length,
+        reviewEligiblePurchases: [...reviewItems.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([title, quantity]) => ({ title, quantity })),
+        windows: { lapsedDays: "60-365", fulfilledForReviewDays: "7-30" },
       };
     },
   },

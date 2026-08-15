@@ -145,9 +145,9 @@ Use the same gate for every role:
 
 ## Current execution status
 
-- Marketing Manager: in progress. Abandoned-cart recovery, win-back campaigns, and consent-safe one-time campaigns now have draft, approval, delivery, unsubscribe, and event-tracking paths. Unified history, proactive recommendations, attribution, and connected-store acceptance testing remain.
-- Customer Success Manager: queued after Marketing Manager is working.
-- SEO Manager: queued after Customer Success Manager is working.
+- Marketing Manager: working. Abandoned-cart recovery, win-back campaigns, and consent-safe one-time campaigns have draft, approval, delivery, unsubscribe, and event-tracking paths.
+- Customer Success Manager: in progress. The role workspace prioritizes Shopify-derived support risks, fulfilled buyers eligible for review requests, and lapsed customers. Approval-gated support email delivery, duplicate suppression, and delivery tracking are implemented; richer reply handling and outcome analytics remain.
+- SEO Manager: working. Product SEO and AI/GEO auditing, evidence-backed proposals, approvals, and Shopify-side outcome tracking are implemented.
 - Product Manager: deferred.
 - Operations Manager: deferred.
 

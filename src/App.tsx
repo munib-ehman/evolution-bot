@@ -28,10 +28,13 @@ import { MarketingManager } from "./components/MarketingManager";
 import { EmailDeliveryPanel } from "./components/EmailDeliveryPanel";
 import { BroadcastCampaignPanel } from "./components/BroadcastCampaignPanel";
 import { SeoManager } from "./components/SeoManager";
+import { CustomerSuccessManager } from "./components/CustomerSuccessManager";
+import { RetentionPanel } from "./components/RetentionPanel";
+import { SupportPanel } from "./components/SupportPanel";
 
 const AvatarScene = lazy(() => import("./avatar/AvatarScene").then(module => ({ default: module.AvatarScene })));
 
-type View = "marketing" | "seo" | "voice" | "chat";
+type View = "marketing" | "customer-success" | "seo" | "voice" | "chat";
 // New key intentionally migrates existing users into the role-first workspace.
 const VIEW_KEY = "shop-avatar-role-view-v2";
 
@@ -56,6 +59,11 @@ const SEO_STARTERS = [
   "Find my biggest AI search opportunity",
   "Which product should I optimize for SEO first?",
 ];
+const CUSTOMER_SUCCESS_STARTERS = [
+  "Find my most urgent customer issue",
+  "Who should I ask for a review?",
+  "Which customers are at risk?",
+];
 
 export default function App() {
   const a = useAssistant();
@@ -77,9 +85,11 @@ export default function App() {
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [retentionOpen, setRetentionOpen] = useState(false);
   const [opsOpen, setOpsOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [customerQueueOpen, setCustomerQueueOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
 
@@ -91,6 +101,7 @@ export default function App() {
     setRecoveryOpen(false);
     setRetentionOpen(false);
     setOpsOpen(false);
+    setSupportOpen(false);
     setDeliveryOpen(false);
     setBroadcastOpen(false);
     setActionsOpen(true);
@@ -213,7 +224,7 @@ export default function App() {
   // The choice is remembered across visits.
   const [view, setViewState] = useState<View>(() => {
     const saved = loadJSON<{ view?: string }>(VIEW_KEY, { view: "marketing" }).view;
-    return saved === "voice" || saved === "chat" || saved === "marketing" || saved === "seo" ? saved : "marketing";
+    return saved === "voice" || saved === "chat" || saved === "marketing" || saved === "customer-success" || saved === "seo" ? saved : "marketing";
   });
   const setView = (v: View) => {
     setViewState(v);
@@ -284,7 +295,7 @@ export default function App() {
     // browser's autoplay policy lets the first spoken reply play.
     void speechEngine.unlock();
     ensureWarm();
-    a.send(text, { manager: view === "marketing" || view === "seo" ? view : undefined });
+    a.send(text, { manager: view === "marketing" || view === "customer-success" || view === "seo" ? view : undefined });
   };
   const handleMarketingAsk = (text: string) => {
     setChatOpen(true);
@@ -310,8 +321,15 @@ export default function App() {
   // Voice stage needs a working mic — otherwise fall back to chat gracefully.
   const voiceView = view === "voice" && canTalk;
   const marketingView = view === "marketing";
+  const customerSuccessView = view === "customer-success";
   const seoView = view === "seo";
-  const managerView = marketingView || seoView;
+  const managerView = marketingView || customerSuccessView || seoView;
+
+  useEffect(() => {
+    if (marketingView) a.setManagerContext("marketing");
+    else if (customerSuccessView) a.setManagerContext("customer-success");
+    else if (seoView) a.setManagerContext("seo");
+  }, [marketingView, customerSuccessView, seoView, a.setManagerContext]);
 
   // Hands-free auto-relisten belongs to the voice stage only.
   useEffect(() => {
@@ -395,6 +413,11 @@ export default function App() {
             {store && (
               <button type="button" className={`tasks-btn ${marketingView ? "active" : ""}`} onClick={() => setView("marketing")}>
                 Marketing Manager
+              </button>
+            )}
+            {store && (
+              <button type="button" className={`tasks-btn ${customerSuccessView ? "active" : ""}`} onClick={() => setView("customer-success")}>
+                Customer Success Manager
               </button>
             )}
             {store && (
@@ -512,6 +535,14 @@ export default function App() {
               }}
               onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryOpen(true); }}
               onOpenBroadcast={() => { setRecoveryOpen(false); setRetentionOpen(false); setBroadcastOpen(true); }}
+            />
+          ) : customerSuccessView ? (
+            <CustomerSuccessManager
+              active={customerSuccessView}
+              onAsk={handleMarketingAsk}
+              onOpenSupport={() => setSupportOpen(true)}
+              onOpenReviews={() => setCustomerQueueOpen(true)}
+              onOpenRetention={() => setCustomerQueueOpen(true)}
             />
           ) : seoView ? (
             <SeoManager active={seoView} onAsk={handleMarketingAsk} onProposal={(action) => {
@@ -641,7 +672,7 @@ export default function App() {
               </div>
             )}
             <MessageList
-              messages={seoView && a.messages.length === 1 ? [{ ...a.messages[0], content: "Hey, I’m your SEO Manager. I’ll review your products, find relevant search terms, and prepare clear before-and-after improvements. Nothing changes until you approve it." }] : a.messages}
+              messages={a.messages}
               status={a.status}
               onEscalate={(taskTool, note) => void a.escalateToTeam(taskTool, note)}
             />
@@ -652,6 +683,12 @@ export default function App() {
               <div className="suggestions" aria-label="Suggested questions">
                 {marketingView
                   ? MARKETING_STARTERS.map((s) => (
+                      <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
+                        {s}
+                      </button>
+                    ))
+                  : customerSuccessView
+                  ? CUSTOMER_SUCCESS_STARTERS.map((s) => (
                       <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
                         {s}
                       </button>
@@ -753,6 +790,8 @@ export default function App() {
       )}
 
       {authEmail && store && <OpsPanel open={opsOpen} onClose={() => setOpsOpen(false)} />}
+      {authEmail && store && <SupportPanel open={supportOpen} onClose={() => setSupportOpen(false)} onOpenDelivery={() => { setSupportOpen(false); setDeliveryOpen(true); }} />}
+      {authEmail && store && <RetentionPanel open={customerQueueOpen} onClose={() => setCustomerQueueOpen(false)} storeName={store.url.replace(/^https?:\/\//, "").replace(/\.myshopify\.com.*$/, "").replace(/\/.*$/, "")} storeUrl={store.url} />}
       {authEmail && store && <ActionCenter open={actionsOpen} onClose={() => setActionsOpen(false)} />}
       {authEmail && store && <EmailDeliveryPanel open={deliveryOpen} onClose={() => setDeliveryOpen(false)} />}
       {authEmail && store && <BroadcastCampaignPanel open={broadcastOpen} onClose={() => setBroadcastOpen(false)} onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryOpen(true); }} />}

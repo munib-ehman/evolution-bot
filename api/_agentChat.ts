@@ -258,7 +258,7 @@ export interface AgentChatBody {
   manager?: unknown;
 }
 
-type ManagerRole = "marketing" | "seo";
+type ManagerRole = "marketing" | "customer-success" | "seo";
 
 interface ChatTurn {
   role: "user" | "assistant";
@@ -478,6 +478,8 @@ async function createBroadcastCampaign(env: SkillEnv, authHeader: string | null,
 function buildSystemPrompt(shop: string, catalogBlock: string, persistentContext: string, manager?: ManagerRole): string {
   const roleIdentity = manager === "seo"
     ? `You are currently the SEO Manager. Stay within Product SEO and AI/GEO discoverability. Do not act as the Marketing Manager, recommend email campaigns, or create recovery, win-back, or broadcast campaigns. Treat older conversation from another workspace as background only, never as the current task. When the merchant asks you to generate, add, prepare, or create a recommended SEO change, you must use tools and produce an approval proposal now; never merely say that you will prepare it, and never tell the merchant which tools should be called.`
+    : manager === "customer-success"
+      ? `You are currently the Customer Success Manager. Focus on customer support risks, honest review generation, and customer retention. Use live Shopify order and customer signals. Treat older conversation from another workspace as background only and never introduce yourself as the Marketing or SEO Manager. For review requests, use only get_retention_snapshot.reviewEligiblePurchases; never infer a purchased product from the catalog, price, or another order. A review candidate must come from a successfully fulfilled order in the tool result. For overdue fulfillment, first recommend that the merchant verify inventory, fulfillment status, and a real ship date; offer cancellation or refund when appropriate. Draft customer replies using only verified facts, and never promise shipment, an update, or a resolution that the merchant has not confirmed. Customer email sending exists only in the structured Customer Support queue and requires the merchant to review and approve the exact message; chat cannot send and must never claim a message was sent.`
     : manager === "marketing"
       ? `You are currently the Marketing Manager. Focus on lifecycle email revenue, including abandoned-cart recovery, win-back, and one-time campaigns. Do not present yourself as the SEO Manager unless the merchant explicitly asks to switch roles.`
       : `You are the founder's general store-aware copilot.`;
@@ -568,6 +570,10 @@ export function selectedAgentToolNames(turns: ChatTurn[], manager?: ManagerRole)
     add("get_products", "get_product_detail", "get_product_sales", "get_latest_audit", "prepare_product_updates");
     return [...selected];
   }
+  if (manager === "customer-success") {
+    add("get_ship_queue", "get_orders_summary", "get_retention_snapshot", "get_products", "get_product_detail");
+    return [...selected];
+  }
 
   if (/\b(abandon|checkout|cart recovery|recovery campaign)\b/.test(context)) {
     add("get_abandoned_checkouts", "create_recovery_campaign", "prepare_discount");
@@ -644,14 +650,16 @@ export async function runAgentChat(
   if (!conn) return jsonResponse(409, { error: "Connect your Shopify store first." });
 
   const ctx: ToolCtx = { env, userId: user.id, userEmail: user.email, conn, origin };
-  const manager: ManagerRole | undefined = body.manager === "marketing" || body.manager === "seo" ? body.manager : undefined;
+  const manager: ManagerRole | undefined = body.manager === "marketing" || body.manager === "customer-success" || body.manager === "seo" ? body.manager : undefined;
   const shop = conn.shop_domain.replace(".myshopify.com", "");
   const model = env.groqModel || CHAT_MODEL_DEFAULT;
-  const clarifyCampaign = manager !== "seo" && needsCampaignClarification(turns);
+  const clarifyCampaign = manager === "marketing" && needsCampaignClarification(turns);
   const recentText = turns.slice(-6).map(turn=>turn.content.toLowerCase()).join("\n");
   const forcedTool = manager === "seo"
     ? forcedSeoTool(turns)
-    : forcedCampaignTool(turns) ?? forcedProposalTool(turns);
+    : manager === "marketing"
+      ? forcedCampaignTool(turns) ?? forcedProposalTool(turns)
+      : null;
   const selectedNames = selectedAgentToolNames(turns, manager);
   if (forcedTool && !selectedNames.includes(forcedTool)) selectedNames.push(forcedTool);
   const tools = selectedNames.map((n) => PROPOSAL_SCHEMAS[n] ?? SKILL_TOOLS[n].schema);

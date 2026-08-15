@@ -321,6 +321,8 @@ export interface RecentBuyer {
   firstName: string;
   email: string;
   orderedAt: string;
+  /** Successful fulfillment timestamp used for review-request eligibility. */
+  fulfilledAt: string;
   totalPrice: number;
   items: { title: string; qty: number }[];
 }
@@ -449,9 +451,11 @@ const BUYERS_QUERY = `query RecentBuyers($first: Int!, $after: String, $q: Strin
       createdAt
       cancelledAt
       displayFinancialStatus
+      displayFulfillmentStatus
       email
       customer { id firstName }
       currentTotalPriceSet { shopMoney { amount } }
+      fulfillments(first: 10) { createdAt status }
       lineItems(first: 10) { nodes { title quantity } }
     }
   }
@@ -465,15 +469,35 @@ interface GqlBuyersData {
       createdAt?: string;
       cancelledAt?: string | null;
       displayFinancialStatus?: string | null;
+      displayFulfillmentStatus?: string | null;
       email?: string | null;
       customer?: { id?: string; firstName?: string | null } | null;
       currentTotalPriceSet?: { shopMoney?: { amount?: string } } | null;
+      fulfillments?: { createdAt?: string; status?: string | null }[];
       lineItems?: { nodes?: { title?: string; quantity?: number }[] };
     }[];
   };
 }
 
 const REFUNDED_STATUSES = new Set(["REFUNDED", "VOIDED", "refunded", "voided"]);
+
+export function reviewEligibleFulfillment(
+  order: { cancelledAt?: string | null; financialStatus?: string | null; fulfillmentStatus?: string | null; fulfillments?: { createdAt?: string; status?: string | null }[] },
+  minDays: number,
+  maxDays: number,
+  now = Date.now(),
+): string | null {
+  if (order.cancelledAt || REFUNDED_STATUSES.has(order.financialStatus ?? "")) return null;
+  if ((order.fulfillmentStatus ?? "").toUpperCase() !== "FULFILLED") return null;
+  const successful = (order.fulfillments ?? [])
+    .filter((fulfillment) => (fulfillment.status ?? "").toUpperCase() === "SUCCESS" && fulfillment.createdAt)
+    .map((fulfillment) => fulfillment.createdAt as string)
+    .sort((a, b) => Date.parse(b) - Date.parse(a));
+  const fulfilledAt = successful[0];
+  if (!fulfilledAt) return null;
+  const age = (now - Date.parse(fulfilledAt)) / 86_400_000;
+  return Number.isFinite(age) && age >= minDays && age <= maxDays ? fulfilledAt : null;
+}
 
 function dedupeBuyers(rows: RecentBuyer[]): RecentBuyer[] {
   // Newest-first input: the first row seen per customer is their latest order.
@@ -507,13 +531,20 @@ async function fetchBuyersGraphql(
     const page: GqlBuyersData["orders"] = data?.orders;
     if (!page?.nodes) return out.length === 0 ? null : dedupeBuyers(out);
     for (const n of page.nodes) {
-      if (n.cancelledAt || REFUNDED_STATUSES.has(n.displayFinancialStatus ?? "")) continue;
+      const fulfilledAt = reviewEligibleFulfillment({
+        cancelledAt: n.cancelledAt,
+        financialStatus: n.displayFinancialStatus,
+        fulfillmentStatus: n.displayFulfillmentStatus,
+        fulfillments: n.fulfillments,
+      }, minDays, maxDays);
+      if (!fulfilledAt) continue;
       out.push({
         orderId: n.id ?? "",
         customerId: n.customer?.id ?? null,
         firstName: (n.customer?.firstName ?? "").trim(),
         email: (n.email ?? "").trim(),
         orderedAt: n.createdAt ?? "",
+        fulfilledAt,
         totalPrice: money(n.currentTotalPriceSet?.shopMoney?.amount),
         items: (n.lineItems?.nodes ?? []).map((li) => ({
           title: (li.title ?? "").trim() || "(untitled)",
@@ -560,6 +591,12 @@ export interface ShipQueueOrder {
   financialStatus: string;
   totalPrice: number;
   items: { title: string; qty: number }[];
+}
+
+export interface SupportRiskOrder extends ShipQueueOrder {
+  id: string;
+  firstName: string;
+  email: string;
 }
 
 const INVENTORY_LOW_THRESHOLD = 5;
@@ -726,6 +763,57 @@ async function fetchShipQueueGraphql(conn: ShopifyConnection): Promise<ShipQueue
 /** Open orders waiting to ship, oldest first (capped at 50). Null = read failed. */
 export async function fetchShipQueue(conn: ShopifyConnection): Promise<ShipQueueOrder[] | null> {
   return fetchShipQueueGraphql(conn);
+}
+
+const SUPPORT_RISKS_QUERY = `query SupportRisks($first: Int!, $after: String) {
+  orders(first: $first, after: $after, query: "fulfillment_status:unshipped", sortKey: CREATED_AT) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id name createdAt cancelledAt displayFinancialStatus email
+      customer { firstName }
+      currentTotalPriceSet { shopMoney { amount } }
+      lineItems(first: 10) { nodes { title quantity } }
+    }
+  }
+}`;
+
+interface GqlSupportRisksData {
+  orders?: {
+    pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+    nodes?: {
+      id?: string; name?: string; createdAt?: string; cancelledAt?: string | null;
+      displayFinancialStatus?: string | null; email?: string | null;
+      customer?: { firstName?: string | null } | null;
+      currentTotalPriceSet?: { shopMoney?: { amount?: string } } | null;
+      lineItems?: { nodes?: { title?: string; quantity?: number }[] };
+    }[];
+  };
+}
+
+/** Owner-only support queue with contact details. Never expose this through LLM tools. */
+export async function fetchSupportRiskOrders(conn: ShopifyConnection): Promise<PiiResult<SupportRiskOrder>> {
+  const out: SupportRiskOrder[] = [];
+  let after: string | null = null;
+  while (out.length < SHIP_QUEUE_CAP) {
+    const { data, accessDenied }: { data: GqlSupportRisksData | null; accessDenied: boolean } = await shopifyGraphqlDetailed<GqlSupportRisksData>(conn.shop_domain, conn.access_token, SUPPORT_RISKS_QUERY, {
+      first: Math.min(25, SHIP_QUEUE_CAP - out.length), after,
+    });
+    if (accessDenied) return "access-denied";
+    const page: GqlSupportRisksData["orders"] = data?.orders;
+    if (!page?.nodes) return out.length ? out : null;
+    for (const order of page.nodes) {
+      if (order.cancelledAt) continue;
+      out.push({
+        id: order.id ?? "", name: order.name ?? "", createdAt: order.createdAt ?? "",
+        financialStatus: order.displayFinancialStatus ?? "", totalPrice: money(order.currentTotalPriceSet?.shopMoney?.amount),
+        firstName: (order.customer?.firstName ?? "").trim(), email: (order.email ?? "").trim(),
+        items: (order.lineItems?.nodes ?? []).map((item: { title?: string; quantity?: number }) => ({ title: (item.title ?? "").trim() || "(untitled)", qty: item.quantity ?? 0 })),
+      });
+    }
+    if (!page.pageInfo?.hasNextPage || !page.pageInfo.endCursor) break;
+    after = page.pageInfo.endCursor;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

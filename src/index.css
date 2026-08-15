@@ -1959,6 +1959,23 @@ code {
 .workflow-actions button:not(.link) { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--cream); color: var(--ink); cursor: pointer; font-weight: 700; }
 .manager-notice { padding: 10px 12px; border-radius: 12px; background: #fff3e8; color: #8a4b21; font-size: 12px; }
 .manager-safety { margin: 16px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.support-case-list { display: grid; gap: 10px; margin-top: 14px; }
+.support-case { padding: 14px; border: 1px solid var(--line); border-radius: 15px; background: var(--card); }
+.support-case.sent { border-color: #b8dfc4; }
+.support-case.resolved { opacity: .72; }
+.support-case-head { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; width: 100%; padding: 0; border: 0; background: transparent; text-align: left; color: inherit; }
+.support-case-head span, .support-case-head small { display: block; }
+.support-case-head span:nth-child(2) { text-align: right; }
+.support-case-head small { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.support-case-head em { padding: 6px 9px; border-radius: 999px; background: #fff0d2; color: #80590d; font-size: 10px; font-style: normal; font-weight: 800; }
+.support-case.sent .support-case-head em, .support-case.resolved .support-case-head em { background: #e1f4e7; color: #267847; }
+.support-case > p { margin: 9px 0 0; color: var(--ink2); font-size: 12px; }
+.support-workflow, .support-email-review { display: grid; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.support-workflow label, .support-email-review label { display: grid; gap: 5px; color: var(--ink2); font-size: 11px; font-weight: 700; }
+.support-workflow select, .support-workflow input, .support-workflow textarea { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); font: inherit; font-weight: 400; }
+.support-approval { grid-template-columns: auto 1fr !important; align-items: start; padding: 10px; border-radius: 10px; background: #fff7e8; }
+.support-approval input { width: auto; margin-top: 2px; }
+@media (max-width:640px){.support-case-head{grid-template-columns:1fr auto}.support-case-head em{grid-column:1/-1;justify-self:start}}
 .seo-products { margin-top: 22px; }
 .seo-product { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 15px; background: var(--card); }
 .seo-product + .seo-product { margin-top: 8px; }

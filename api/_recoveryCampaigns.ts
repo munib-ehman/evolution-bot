@@ -221,7 +221,9 @@ export async function runResendWebhook(req: Request, env: RecoveryCampaignEnv): 
   const winbackDelivery = winbackFound?.ok ? ((await winbackFound.json()) as { id: string; user_id: string; customer_id: string }[])[0] : null;
   const broadcastFound = recoveryDelivery || winbackDelivery ? null : await fetch(`${env.supabaseUrl}/rest/v1/broadcast_deliveries?resend_email_id=eq.${encodeURIComponent(emailId)}&select=id,user_id,customer_id&limit=1`, { headers: h(env) });
   const broadcastDelivery = broadcastFound?.ok ? ((await broadcastFound.json()) as { id: string; user_id: string; customer_id: string }[])[0] : null;
-  if (!recoveryDelivery && !winbackDelivery && !broadcastDelivery) return json({ ok: true });
+  const supportFound = recoveryDelivery || winbackDelivery || broadcastDelivery ? null : await fetch(`${env.supabaseUrl}/rest/v1/support_notifications?resend_email_id=eq.${encodeURIComponent(emailId)}&select=id,user_id,order_id&limit=1`, { headers: h(env) });
+  const supportNotification = supportFound?.ok ? ((await supportFound.json()) as { id: string; user_id: string; order_id: string }[])[0] : null;
+  if (!recoveryDelivery && !winbackDelivery && !broadcastDelivery && !supportNotification) return json({ ok: true });
   const now = new Date().toISOString();
   const status = type.replace(/^email\./, "");
   const patch: Record<string, unknown> = { delivery_status: status, updated_at: now };
@@ -232,11 +234,12 @@ export async function runResendWebhook(req: Request, env: RecoveryCampaignEnv): 
   if (status === "complained") patch.complained_at = now;
   if (recoveryDelivery) await mark(env, recoveryDelivery.id, patch);
   else if (winbackDelivery) await fetch(`${env.supabaseUrl}/rest/v1/winback_deliveries?id=eq.${winbackDelivery.id}`, { method: "PATCH", headers: h(env), body: JSON.stringify(patch) });
-  else await fetch(`${env.supabaseUrl}/rest/v1/broadcast_deliveries?id=eq.${broadcastDelivery!.id}`, { method: "PATCH", headers: h(env), body: JSON.stringify(patch) });
+  else if (broadcastDelivery) await fetch(`${env.supabaseUrl}/rest/v1/broadcast_deliveries?id=eq.${broadcastDelivery.id}`, { method: "PATCH", headers: h(env), body: JSON.stringify(patch) });
+  else await fetch(`${env.supabaseUrl}/rest/v1/support_notifications?id=eq.${supportNotification!.id}`, { method: "PATCH", headers: h(env), body: JSON.stringify(patch) });
   if (["bounced", "complained", "suppressed", "failed"].includes(status)) {
     if (recoveryDelivery) await fetch(`${env.supabaseUrl}/rest/v1/recovery_deliveries?user_id=eq.${recoveryDelivery.user_id}&checkout_id=eq.${encodeURIComponent(recoveryDelivery.checkout_id)}&status=eq.queued`, { method: "PATCH", headers: h(env), body: JSON.stringify({ status: "cancelled", delivery_status: status, error: `Remaining recovery stopped after email ${status}.`, updated_at: now }) });
     else if (winbackDelivery) await fetch(`${env.supabaseUrl}/rest/v1/winback_deliveries?user_id=eq.${winbackDelivery.user_id}&customer_id=eq.${encodeURIComponent(winbackDelivery.customer_id)}&status=eq.queued`, { method: "PATCH", headers: h(env), body: JSON.stringify({ status: "cancelled", delivery_status: status, error: `Remaining win-back emails stopped after email ${status}.`, updated_at: now }) });
-    else await fetch(`${env.supabaseUrl}/rest/v1/marketing_suppressions?on_conflict=user_id,customer_id`, { method: "POST", headers: { ...h(env), Prefer: "resolution=ignore-duplicates,return=minimal" }, body: JSON.stringify({ user_id: broadcastDelivery!.user_id, customer_id: broadcastDelivery!.customer_id, reason: status, created_at: now }) });
+    else if (broadcastDelivery) await fetch(`${env.supabaseUrl}/rest/v1/marketing_suppressions?on_conflict=user_id,customer_id`, { method: "POST", headers: { ...h(env), Prefer: "resolution=ignore-duplicates,return=minimal" }, body: JSON.stringify({ user_id: broadcastDelivery.user_id, customer_id: broadcastDelivery.customer_id, reason: status, created_at: now }) });
   }
   return json({ ok: true });
 }

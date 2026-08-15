@@ -40,6 +40,7 @@ import { runEmailDeliveryCheck, runEmailDeliveryGet, runEmailDeliverySave, runEm
 import { processRecoveryDeliveries, runRecoveryCampaignAction, runRecoveryUnsubscribe, runResendWebhook, type RecoveryCampaignEnv } from "./api/_recoveryCampaigns";
 import { processWinbackDeliveries, runWinbackCampaignAction, runWinbackUnsubscribe } from "./api/_winbackCampaigns";
 import { processBroadcastDeliveries, runBroadcastAction, runBroadcastAudience, runBroadcastUnsubscribe } from "./api/_broadcastCampaigns";
+import { runSupportCasesAction, runSupportCasesGet } from "./api/_supportCases";
 import {
   runActionPropose,
   runActionExecute,
@@ -531,6 +532,15 @@ export function devApi(): Plugin {
           const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
           const body = JSON.parse(await readBody(req) || "{}") as Record<string, unknown>;
           return pipeResponse(res, await runRecoveryCampaignAction(body, auth, recoveryCampaignEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/support-cases", (req, res) => {
+        void (async () => {
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          if (req.method === "GET") return pipeResponse(res, await runSupportCasesGet(auth, recoveryCampaignEnv));
+          if (req.method === "POST") return pipeResponse(res, await runSupportCasesAction(JSON.parse(await readBody(req) || "{}") as Record<string, unknown>, auth, recoveryCampaignEnv));
+          return send(res, 405, "Method not allowed");
         })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
       });
 

@@ -37,6 +37,7 @@ export interface RecentBuyer {
   firstName: string;
   email: string;
   orderedAt: string;
+  fulfilledAt: string;
   totalPrice: number;
   items: { title: string; qty: number }[];
 }

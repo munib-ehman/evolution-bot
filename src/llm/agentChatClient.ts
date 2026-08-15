@@ -29,7 +29,7 @@ export class AgentChatError extends Error {
 }
 
 export interface AgentChatOptions {
-  manager?: "marketing" | "seo";
+  manager?: "marketing" | "customer-success" | "seo";
   signal?: AbortSignal;
   onProgress?: (label: string) => void;
   onToken?: (text: string) => void;

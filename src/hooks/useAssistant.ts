@@ -30,6 +30,17 @@ import { FILE_FIXES_SKILL_ID, type SkillChip } from "../lib/skills";
 
 export type AssistantStatus = "idle" | "thinking" | "speaking";
 export type MicState = "idle" | "listening" | "transcribing";
+export type ManagerRole = "marketing" | "customer-success" | "seo";
+
+function managerGreeting(manager: ManagerRole): string {
+  if (manager === "customer-success") {
+    return "Hey, I’m your Customer Success Manager. I’ll prioritize customer risks, prepare review requests only for fulfilled orders, and identify customers who may not return. Customer emails send only from the support queue after you review and approve the exact message.";
+  }
+  if (manager === "seo") {
+    return "Hey, I’m your SEO Manager. I’ll review your products, find relevant search terms, and prepare clear before-and-after improvements. Nothing changes until you approve it.";
+  }
+  return "Hey, I’m your Marketing Manager. I’m monitoring your store for email revenue opportunities. Ask me to recover carts, win back customers, or plan a campaign—nothing sends without your approval.";
+}
 
 // Bump this suffix whenever a default changes in a way that must override a
 // previously-persisted value (e.g. the default avatar URL). Old settings are
@@ -88,6 +99,7 @@ export function useAssistant() {
   // The app disables hands-free re-listening while the chat view is open, so
   // the mic never surprise-activates outside the voice stage.
   const handsFreeRef = useRef(true);
+  const managerRef = useRef<ManagerRole>("marketing");
 
   // Load the product catalog (static file, no backend).
   useEffect(() => {
@@ -105,9 +117,7 @@ export function useAssistant() {
       {
         id: newId(),
         role: "assistant",
-        content: isMockMode
-          ? "Hey, I’m your Marketing Manager. I’m monitoring your store for email revenue opportunities. Ask me to recover carts, win back customers, or plan a campaign—nothing sends without your approval."
-          : "Welcome to Evolution. I’m your Marketing Manager—tell me what email outcome you want, and I’ll build the campaign with you.",
+        content: managerGreeting("marketing"),
       },
     ]);
   }, []);
@@ -131,6 +141,16 @@ export function useAssistant() {
 
   const appendMessage = useCallback((msg: Message) => {
     setMessages((prev) => [...prev, msg]);
+  }, []);
+
+  const setManagerContext = useCallback((manager: ManagerRole) => {
+    managerRef.current = manager;
+    abortRef.current?.abort();
+    activeSpeakerRef.current?.cancel();
+    stopSpeaking();
+    setStatus("idle");
+    setError(null);
+    setMessages([{ id: newId(), role: "assistant", content: managerGreeting(manager) }]);
   }, []);
 
   // Connected-store context (store URL + audit) injected into every turn's
@@ -159,7 +179,7 @@ export function useAssistant() {
 
   /** Core: send a user turn, get a reply, speak it (unless text-only). */
   const send = useCallback(
-    async (rawText: string, opts?: { fromVoice?: boolean; manager?: "marketing" | "seo" }) => {
+    async (rawText: string, opts?: { fromVoice?: boolean; manager?: ManagerRole }) => {
       const text = rawText.trim();
       if (!text || status === "thinking") return;
 
@@ -630,6 +650,7 @@ export function useAssistant() {
     runSkillFlow,
     escalateToTeam,
     setStoreContext,
+    setManagerContext,
     postAssistantMessage,
     toggleMic,
     cancelListening,
