@@ -13,9 +13,11 @@ import {
   type ShopifyEnv,
 } from "./_shopify";
 import { log } from "./_log";
+import { GROQ_BASE } from "./_shared";
 
 export type ShopifyActionKind =
   | "product_update"
+  | "product_status_update"
   | "product_draft_create"
   | "collection_upsert"
   | "discount_code_create"
@@ -78,6 +80,7 @@ interface ProductPatch {
   tags?: string[];
   vendor?: string;
   productType?: string;
+  status?: "ACTIVE" | "ARCHIVED" | "DRAFT";
   mediaAlt?: { id: string; alt: string }[];
 }
 
@@ -137,13 +140,40 @@ const json = (status: number, body: Record<string, unknown>) =>
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 
+type OptimizedDraft={title:string;descriptionHtml:string;productType:string;tags:string[]};
+const draftWordCount=(html:string)=>html.replace(/<[^>]*>/g," ").split(/\s+/).filter(Boolean).length;
+// Structure and usefulness matter more than an arbitrary word target. A
+// concise 80-word researched listing with real highlights is better than 120
+// words padded with generic copy.
+const launchReadyDraft=(draft:OptimizedDraft)=>Boolean(draft.title&&draft.productType&&draft.tags.length>=3&&draftWordCount(draft.descriptionHtml)>=80&&/<h3\b/i.test(draft.descriptionHtml)&&((draft.descriptionHtml.match(/<li\b/gi)??[]).length>=3));
+const recoverableResearchDraft=(draft:OptimizedDraft)=>Boolean(draft.title&&draft.productType&&draft.tags.length>=3&&draftWordCount(draft.descriptionHtml)>=45&&((draft.descriptionHtml.match(/<li\b/gi)??[]).length>=3));
+
+async function optimizeResearchDraft(env:ShopifyEnv,input:OptimizedDraft,evidence:unknown):Promise<OptimizedDraft|null>{
+  if(!env.groqKey)return null;
+  for(let attempt=0;attempt<2;attempt++){
+    try{
+      const response=await fetch(`${GROQ_BASE}/chat/completions`,{method:"POST",headers:{Authorization:`Bearer ${env.groqKey}`,"Content-Type":"application/json"},body:JSON.stringify({model:"llama-3.3-70b-versatile",temperature:.15,max_tokens:1400,response_format:{type:"json_object"},messages:[{role:"system",content:"Return JSON only. You are the Product Listing VA finishing a researched product before it becomes an unpublished Shopify draft. Use only the candidate copy and research evidence supplied. Do not invent materials, dimensions, certifications, reviews, compatibility, package contents, safety claims, or performance claims. Produce a specific natural storefront title under 70 characters, a useful productType, 4-10 supported catalog tags, and 180-300 words of clean descriptionHtml with an opening paragraph, a <h3>Product highlights</h3> heading, 4-6 factual <li> bullets, and a concise <h3>Product overview</h3> section. Develop the supplied category and shopper-use information professionally without fabricating specifications. Return {title,descriptionHtml,productType,tags}."},{role:"user",content:JSON.stringify({candidate:input,researchEvidence:evidence}).slice(0,12_000)}]}),signal:AbortSignal.timeout(25_000)});
+      if(!response.ok)continue;
+      const data=await response.json() as {choices?:{message?:{content?:string}}[]};
+      const parsed=JSON.parse(data.choices?.[0]?.message?.content??"{}") as Record<string,unknown>;
+      const title=cleanText(parsed.title,70)||input.title;
+      const productType=cleanText(parsed.productType,255)||input.productType||input.title;
+      const generatedTags=stringList(parsed.tags,20);
+      const tags=[...new Set([...input.tags,...generatedTags,productType,...title.split(/\s+/).filter(word=>word.length>3)].map(value=>cleanText(value,80)).filter(Boolean))].slice(0,20);
+      const draft={title,descriptionHtml:safeHtml(parsed.descriptionHtml),productType,tags};
+      if(launchReadyDraft(draft))return draft;
+    }catch{/* retry once */}
+  }
+  return null;
+}
+
 function scopes(conn: ShopifyConnection): Set<string> {
   return new Set((conn.scopes ?? "").split(",").map((s) => s.trim()).filter(Boolean));
 }
 
 function requiredScope(kind: ShopifyActionKind): string[] {
   if (kind === "discount_code_create" || kind === "discount_automatic_create") return ["write_discounts"];
-  if (kind === "product_update") return ["write_products"];
+  if (kind === "product_update" || kind === "product_status_update") return ["write_products"];
   return ["write_products"];
 }
 
@@ -234,6 +264,11 @@ function validateProductItems(raw: unknown): ProductPatch[] | null {
     if (row.tags !== undefined) item.tags = stringList(row.tags, 250);
     if (row.vendor !== undefined) item.vendor = cleanText(row.vendor, 255);
     if (row.productType !== undefined) item.productType = cleanText(row.productType, 255);
+    if (row.status !== undefined) {
+      const status = cleanText(row.status, 20).toUpperCase();
+      if (!(["ACTIVE", "ARCHIVED", "DRAFT"] as string[]).includes(status)) return null;
+      item.status = status as ProductPatch["status"];
+    }
     if (Array.isArray(row.mediaAlt)) {
       item.mediaAlt = row.mediaAlt.slice(0, 50).flatMap((entry) => {
         const media = entry as Record<string, unknown>;
@@ -297,8 +332,20 @@ function validateSeoEvidence(raw: unknown): Record<string, unknown> | undefined 
     existingTags: stringList(catalogRaw.existingTags,30),
     attributes: Array.isArray(catalogRaw.attributes) ? catalogRaw.attributes.slice(0,30).flatMap(entry=>{const row=entry as Record<string,unknown>;const label=cleanText(row.label,120),attributeValue=cleanText(row.value,500),source=row.source==="category"?"category":"product";return label&&attributeValue?[{label,value:attributeValue,source}]:[];}) : [],
   };
+  const listingVaRaw = value.listingVa && typeof value.listingVa === "object" ? value.listingVa as Record<string,unknown> : {};
+  const listingVa = {
+    audit: stringList(listingVaRaw.audit,12),
+    shopperIntent: cleanText(listingVaRaw.shopperIntent,1_200),
+    titleStrategy: cleanText(listingVaRaw.titleStrategy,1_200),
+    descriptionStrategy: cleanText(listingVaRaw.descriptionStrategy,1_200),
+    tagStrategy: cleanText(listingVaRaw.tagStrategy,1_200),
+    imagePlan: stringList(listingVaRaw.imagePlan,12),
+    missingFacts: stringList(listingVaRaw.missingFacts,12),
+    preserved: stringList(listingVaRaw.preserved,12),
+  };
+  const hasListingVa=Boolean(listingVa.audit.length||listingVa.shopperIntent);
   return keywords.length || marketplace.length || rationale
-    ? { keywords, marketplace, rationale, limitations, review, geo, catalogContext }
+    ? { keywords, marketplace, rationale, limitations, ...(hasListingVa?{listingVa}:{review,geo,catalogContext}) }
     : undefined;
 }
 
@@ -397,7 +444,7 @@ export async function runActionPropose(body: ActionProposeBody, authHeader: stri
   const ctx = await authContext(authHeader, env);
   if ("error" in ctx) return ctx.error;
   const kind = String(body.kind ?? "") as ShopifyActionKind;
-  if (!["product_update", "product_draft_create", "collection_upsert", "discount_code_create", "discount_automatic_create"].includes(kind)) {
+  if (!["product_update", "product_status_update", "product_draft_create", "collection_upsert", "discount_code_create", "discount_automatic_create"].includes(kind)) {
     return json(400, { error: "Unsupported action kind." });
   }
 
@@ -406,12 +453,13 @@ export async function runActionPropose(body: ActionProposeBody, authHeader: stri
   let summary = cleanText(body.summary, 500);
   let needsFiles = false;
 
-  if (kind === "product_update") {
+  if (kind === "product_update" || kind === "product_status_update") {
     const items = validateProductItems(body.items);
     if (!items) return json(400, { error: "Choose 1-10 valid product updates." });
     needsFiles = items.some((i) => Boolean(i.mediaAlt?.length));
     const states = await productStates(ctx.conn, items.map((i) => i.productId));
     if (!states) return json(502, { error: "Couldn't load every selected product from Shopify." });
+    if (kind === "product_status_update" && items.some(item => !item.status || Object.keys(item).some(key => !["productId","status"].includes(key)))) return json(400,{error:"A lifecycle proposal may only change product status."});
     const evidence = validateSeoEvidence(body.evidence);
     payload = {
       items,
@@ -424,19 +472,37 @@ export async function runActionPropose(body: ActionProposeBody, authHeader: stri
       ...(body.geoPlan && typeof body.geoPlan === "object" ? { geoPlan: body.geoPlan } : {}),
     };
     before = { products: states };
-    summary ||= `Update ${items.length} product listing${items.length === 1 ? "" : "s"}`;
+    summary ||= kind === "product_status_update" ? `Update ${items.length} product status${items.length === 1 ? "" : "es"}` : `Update ${items.length} product listing${items.length === 1 ? "" : "s"}`;
   } else if (kind === "product_draft_create") {
     const p = (body.product && typeof body.product === "object" ? body.product : {}) as Record<string, unknown>;
-    const title = cleanText(p.title, 255);
+    let title = cleanText(p.title, 255);
     if (!title) return json(400, { error: "A draft product needs a title." });
+    const optimizerVersion=cleanText(body.optimizerVersion,80);
+    let descriptionHtml=safeHtml(p.descriptionHtml);
+    let tags=stringList(p.tags,250);
+    let productType=cleanText(p.productType,255);
+    if(optimizerVersion==="product-research-listing-va-v1"){
+      const current={title,descriptionHtml,productType,tags};
+      if(!launchReadyDraft(current)){
+        const optimized=await optimizeResearchDraft(env,current,body.evidence);
+        if(optimized)({title,descriptionHtml,productType,tags}=optimized);
+        else if(!recoverableResearchDraft(current))return json(502,{error:"The researched candidate did not contain enough factual copy to create a safe product draft."});
+      }
+    }
+    const suppliedEvidence=body.evidence&&typeof body.evidence==="object"?body.evidence as Record<string,unknown>:null;
+    const listingVa=suppliedEvidence?.listingVa&&typeof suppliedEvidence.listingVa==="object"?suppliedEvidence.listingVa as Record<string,unknown>:{};
+    const draftEvidence=suppliedEvidence?{...suppliedEvidence,listingVa:{...listingVa,optimizedByDefault:optimizerVersion==="product-research-listing-va-v1",descriptionWords:draftWordCount(descriptionHtml),bullets:(descriptionHtml.match(/<li\b/gi)??[]).length}}:null;
     payload = {
       product: {
         title,
-        descriptionHtml: safeHtml(p.descriptionHtml),
+        descriptionHtml,
         vendor: cleanText(p.vendor, 255),
-        productType: cleanText(p.productType, 255),
-        tags: stringList(p.tags, 250),
+        productType,
+        tags,
+        price: Number.isFinite(Number(p.price)) && Number(p.price) > 0 ? Math.round(Number(p.price) * 100) / 100 : null,
       },
+      ...(draftEvidence?{evidence:draftEvidence}:{}),
+      ...(optimizerVersion?{optimizerVersion}:{}),
     };
     summary ||= `Create unpublished draft: ${title}`;
   } else if (kind === "collection_upsert") {
@@ -483,7 +549,7 @@ export async function runActionPropose(body: ActionProposeBody, authHeader: stri
 }
 
 async function preflight(row: ShopifyActionRow, conn: ShopifyConnection): Promise<boolean> {
-  if (row.kind === "product_update") {
+  if (row.kind === "product_update" || row.kind === "product_status_update") {
     const items = row.payload.items as ProductPatch[];
     const current = await productStates(conn, items.map((i) => i.productId));
     const before = row.before_state.products as ProductState[];
@@ -507,6 +573,7 @@ function productInput(item: ProductPatch): Record<string, unknown> {
     ...(item.tags !== undefined ? { tags: item.tags } : {}),
     ...(item.vendor !== undefined ? { vendor: item.vendor } : {}),
     ...(item.productType !== undefined ? { productType: item.productType } : {}),
+    ...(item.status !== undefined ? { status: item.status } : {}),
     ...(item.seoTitle !== undefined || item.seoDescription !== undefined
       ? { seo: { ...(item.seoTitle !== undefined ? { title: item.seoTitle } : {}), ...(item.seoDescription !== undefined ? { description: item.seoDescription } : {}) } }
       : {}),
@@ -540,29 +607,48 @@ async function executeProducts(row: ShopifyActionRow, conn: ShopifyConnection) {
 
 async function executeDraft(row: ShopifyActionRow, conn: ShopifyConnection) {
   const source = row.payload.product as Record<string, unknown>;
-  const product = { ...source, status: "DRAFT" };
+  const { price, ...fields } = source;
+  const product = { ...fields, status: "DRAFT" };
   const { data, errors } = await gql<{
-    productCreate?: { product?: { id: string; title: string; status: string; updatedAt: string }; userErrors?: { message?: string }[] };
+    productCreate?: { product?: { id: string; title: string; status: string; updatedAt: string; variants?:{nodes?:{id:string}[]} }; userErrors?: { message?: string }[] };
   }>(conn, `mutation ActionProductCreate($product: ProductCreateInput!) {
-    productCreate(product: $product) { product { id title status updatedAt } userErrors { field message } }
+    productCreate(product: $product) { product { id title status updatedAt variants(first:1){nodes{id}} } userErrors { field message } }
   }`, { product });
-  const allErrors = [...errors, ...(data?.productCreate?.userErrors ?? []).map((e) => e.message ?? "Draft creation failed.")];
-  return { results: [{ ok: Boolean(data?.productCreate?.product?.id) && allErrors.length === 0, product: data?.productCreate?.product, errors: allErrors }], after: { product: data?.productCreate?.product ?? null } };
+  const created=data?.productCreate?.product;
+  const createErrors = [...errors, ...(data?.productCreate?.userErrors ?? []).map((e) => e.message ?? "Draft creation failed.")];
+  const priceErrors: string[] = [];
+  if(created?.id && created.variants?.nodes?.[0]?.id && typeof price === "number"){
+    const priced=await gql<{productVariantsBulkUpdate?:{userErrors?:{message?:string}[]}}>(conn,`mutation PriceDraft($productId:ID!,$variants:[ProductVariantsBulkInput!]!){productVariantsBulkUpdate(productId:$productId,variants:$variants){userErrors{field message}}}`,{productId:created.id,variants:[{id:created.variants.nodes[0].id,price}]});
+    priceErrors.push(...priced.errors,...(priced.data?.productVariantsBulkUpdate?.userErrors??[]).map(e=>e.message??"Draft price update failed."));
+  }
+  const results = [{ ok: Boolean(created?.id) && createErrors.length === 0, product: created, errors: createErrors }];
+  if (typeof price === "number") results.push({ ok: Boolean(created?.id) && priceErrors.length === 0, product: created, errors: priceErrors });
+  return { results, after: { product: created ?? null } };
 }
 
 async function executeCollection(row: ShopifyActionRow, conn: ShopifyConnection) {
   const collection = row.payload.collection as Record<string, unknown>;
+  const desired=(collection.products as string[]|undefined)??[];
+  const {products: _products,...collectionInput}=collection;
   const updating = Boolean(collection.id);
   const mutation = updating
     ? `mutation ActionCollection($input: CollectionInput!) { collectionUpdate(input: $input) { collection { id updatedAt title } userErrors { field message } } }`
     : `mutation ActionCollection($input: CollectionInput!) { collectionCreate(input: $input) { collection { id updatedAt title } userErrors { field message } } }`;
   const key = updating ? "collectionUpdate" : "collectionCreate";
   const { data, errors } = await gql<Record<string, { collection?: { id: string; updatedAt: string; title: string }; userErrors?: { message?: string }[] }>>(
-    conn, mutation, { input: collection },
+    conn, mutation, { input: collectionInput },
   );
   const payload = data?.[key];
   const allErrors = [...errors, ...(payload?.userErrors ?? []).map((e) => e.message ?? "Collection change failed.")];
-  return { results: [{ ok: Boolean(payload?.collection?.id) && allErrors.length === 0, collection: payload?.collection, errors: allErrors }], after: { collection: payload?.collection ?? null } };
+  const id=payload?.collection?.id;
+  if(id){
+    const beforeIds=updating?(((row.before_state.collection as {products?:{nodes?:{id:string}[]}}|undefined)?.products?.nodes??[]).map(p=>p.id)):[];
+    const add=desired.filter(productId=>!beforeIds.includes(productId)), remove=beforeIds.filter(productId=>!desired.includes(productId));
+    if(add.length){const result=await gql<{collectionAddProducts?:{userErrors?:{message?:string}[]}}>(conn,`mutation AddCollectionProducts($id:ID!,$productIds:[ID!]!){collectionAddProducts(id:$id,productIds:$productIds){userErrors{field message}}}`,{id,productIds:add});allErrors.push(...result.errors,...(result.data?.collectionAddProducts?.userErrors??[]).map(e=>e.message??"Could not add collection products."));}
+    if(remove.length){const result=await gql<{collectionRemoveProducts?:{userErrors?:{message?:string}[]}}>(conn,`mutation RemoveCollectionProducts($id:ID!,$productIds:[ID!]!){collectionRemoveProducts(id:$id,productIds:$productIds){userErrors{field message}}}`,{id,productIds:remove});allErrors.push(...result.errors,...(result.data?.collectionRemoveProducts?.userErrors??[]).map(e=>e.message??"Could not remove collection products."));}
+    if(collection.sortOrder==="MANUAL"&&desired.length>1){const result=await gql<{collectionReorderProducts?:{job?:{id?:string};userErrors?:{message?:string}[]}}>(conn,`mutation ReorderCollection($id:ID!,$moves:[MoveInput!]!){collectionReorderProducts(id:$id,moves:$moves){job{id} userErrors{field message}}}`,{id,moves:desired.map((productId,index)=>({id:productId,newPosition:String(index)}))});allErrors.push(...result.errors,...(result.data?.collectionReorderProducts?.userErrors??[]).map(e=>e.message??"Could not reorder collection products."));}
+  }
+  return { results: [{ ok: Boolean(id) && allErrors.length === 0, collection: payload?.collection, errors: allErrors }], after: { collection: id ? await collectionState(conn,id) : null } };
 }
 
 function discountInput(spec: DiscountSpec, withCode: boolean): Record<string, unknown> {
@@ -642,7 +728,7 @@ export async function runActionExecute(actionIdRaw: unknown, authHeader: string 
     return json(409, { error: "Shopify changed since this preview. Prepare a fresh proposal.", action: row });
   }
 
-  const execution = row.kind === "product_update"
+  const execution = row.kind === "product_update" || row.kind === "product_status_update"
     ? await executeProducts(row, ctx.conn)
     : row.kind === "product_draft_create"
       ? await executeDraft(row, ctx.conn)
@@ -706,13 +792,13 @@ export async function runActionReject(actionIdRaw: unknown, authHeader: string |
 }
 
 async function undoMutation(row: ShopifyActionRow, conn: ShopifyConnection): Promise<{ ok: boolean; error?: string }> {
-  if (row.kind === "product_update") {
+  if (row.kind === "product_update" || row.kind === "product_status_update") {
     const before = row.before_state.products as ProductState[];
     for (const p of before) {
       const { data, errors } = await gql<{ productUpdate?: { product?: { id: string }; userErrors?: { message?: string }[] } }>(
         conn,
         `mutation UndoProduct($input: ProductUpdateInput!) { productUpdate(product: $input) { product { id } userErrors { field message } } }`,
-        { input: { id: p.id, title: p.title, descriptionHtml: p.descriptionHtml, tags: p.tags, vendor: p.vendor, productType: p.productType, seo: p.seo } },
+        { input: { id: p.id, title: p.title, descriptionHtml: p.descriptionHtml, tags: p.tags, vendor: p.vendor, productType: p.productType, seo: p.seo, status:p.status } },
       );
       if (!data?.productUpdate?.product?.id || errors.length || data.productUpdate.userErrors?.length) return { ok: false, error: "A product could not be restored." };
       if (p.media.nodes.length) await gql(conn, `mutation UndoFiles($files: [FileUpdateInput!]!) { fileUpdate(files: $files) { files { id } userErrors { message } } }`, { files: p.media.nodes.map((m) => ({ id: m.id, alt: m.alt ?? "" })) });
@@ -728,9 +814,16 @@ async function undoMutation(row: ShopifyActionRow, conn: ShopifyConnection): Pro
   if (row.kind === "collection_upsert") {
     const before = row.before_state.collection as Record<string, unknown> | undefined;
     if (!before) return { ok: false, error: "New collections are not deleted automatically; archive them in Shopify." };
-    const input = { id: before.id, title: before.title, descriptionHtml: before.descriptionHtml, handle: before.handle, sortOrder: before.sortOrder, seo: before.seo, products: ((before.products as { nodes?: { id: string }[] })?.nodes ?? []).map((p) => p.id) };
+    const desired = ((before.products as { nodes?: { id: string }[] })?.nodes ?? []).map((p) => p.id);
+    const input = { id: before.id, title: before.title, descriptionHtml: before.descriptionHtml, handle: before.handle, sortOrder: before.sortOrder, seo: before.seo };
     const { data } = await gql<Record<string, { collection?: { id: string } }>>(conn, `mutation UndoCollection($input: CollectionInput!) { collectionUpdate(input: $input) { collection { id } userErrors { message } } }`, { input });
-    return data?.collectionUpdate?.collection?.id ? { ok: true } : { ok: false, error: "Couldn't restore the collection." };
+    if (!data?.collectionUpdate?.collection?.id) return { ok: false, error: "Couldn't restore the collection." };
+    const current = await collectionState(conn, String(before.id));
+    const currentIds = ((current?.products as { nodes?: { id:string }[] } | undefined)?.nodes ?? []).map(product=>product.id);
+    const add = desired.filter(id=>!currentIds.includes(id)), remove = currentIds.filter(id=>!desired.includes(id));
+    if(add.length){const result=await gql<{collectionAddProducts?:{userErrors?:unknown[]}}>(conn,`mutation UndoAdd($id:ID!,$productIds:[ID!]!){collectionAddProducts(id:$id,productIds:$productIds){userErrors{message}}}`,{id:before.id,productIds:add});if(result.errors.length||result.data?.collectionAddProducts?.userErrors?.length)return {ok:false,error:"Couldn't restore collection membership."};}
+    if(remove.length){const result=await gql<{collectionRemoveProducts?:{userErrors?:unknown[]}}>(conn,`mutation UndoRemove($id:ID!,$productIds:[ID!]!){collectionRemoveProducts(id:$id,productIds:$productIds){userErrors{message}}}`,{id:before.id,productIds:remove});if(result.errors.length||result.data?.collectionRemoveProducts?.userErrors?.length)return {ok:false,error:"Couldn't restore collection membership."};}
+    return { ok:true };
   }
   const id = row.after_state?.discountId;
   if (typeof id !== "string") return { ok: false, error: "Created discount ID is missing." };
@@ -740,7 +833,7 @@ async function undoMutation(row: ShopifyActionRow, conn: ShopifyConnection): Pro
 }
 
 async function undoPreflight(row: ShopifyActionRow, conn: ShopifyConnection): Promise<boolean> {
-  if (row.kind === "product_update") {
+  if (row.kind === "product_update" || row.kind === "product_status_update") {
     const applied = row.after_state?.products as ProductState[] | undefined;
     if (!applied?.length) return false;
     const current = await productStates(conn, applied.map((product) => product.id));
@@ -826,7 +919,7 @@ function metricFor(row: ShopifyActionRow, before: MetricOrder[], after: MetricOr
     return { windowDays: days, attribution: "exact_discount", orders: attributed.length, revenue: Math.round(sum(attributed) * 100) / 100, aov: attributed.length ? Math.round(sum(attributed) / attributed.length * 100) / 100 : 0 };
   }
   const ids = new Set<string>();
-  if (row.kind === "product_update") for (const item of row.payload.items as { productId: string }[]) ids.add(item.productId);
+  if (row.kind === "product_update" || row.kind === "product_status_update") for (const item of row.payload.items as { productId: string }[]) ids.add(item.productId);
   if (row.kind === "collection_upsert") for (const id of ((row.payload.collection as { products?: string[] }).products ?? [])) ids.add(id);
   if (row.kind === "product_draft_create") {
     const id = (row.after_state?.product as { id?: string } | undefined)?.id;

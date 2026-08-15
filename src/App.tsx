@@ -29,12 +29,13 @@ import { EmailDeliveryPanel } from "./components/EmailDeliveryPanel";
 import { BroadcastCampaignPanel } from "./components/BroadcastCampaignPanel";
 import { SeoManager } from "./components/SeoManager";
 import { CustomerSuccessManager } from "./components/CustomerSuccessManager";
+import { ProductManager } from "./components/ProductManager";
 import { RetentionPanel } from "./components/RetentionPanel";
 import { SupportPanel } from "./components/SupportPanel";
 
 const AvatarScene = lazy(() => import("./avatar/AvatarScene").then(module => ({ default: module.AvatarScene })));
 
-type View = "marketing" | "customer-success" | "seo" | "voice" | "chat";
+type View = "marketing" | "customer-success" | "seo" | "product" | "voice" | "chat";
 // New key intentionally migrates existing users into the role-first workspace.
 const VIEW_KEY = "shop-avatar-role-view-v2";
 
@@ -63,6 +64,11 @@ const CUSTOMER_SUCCESS_STARTERS = [
   "Find my most urgent customer issue",
   "Who should I ask for a review?",
   "Which customers are at risk?",
+];
+const PRODUCT_STARTERS = [
+  "Find my biggest product opportunity",
+  "Which listing should I improve first?",
+  "Recommend a collection or bundle",
 ];
 
 export default function App() {
@@ -224,7 +230,7 @@ export default function App() {
   // The choice is remembered across visits.
   const [view, setViewState] = useState<View>(() => {
     const saved = loadJSON<{ view?: string }>(VIEW_KEY, { view: "marketing" }).view;
-    return saved === "voice" || saved === "chat" || saved === "marketing" || saved === "customer-success" || saved === "seo" ? saved : "marketing";
+    return saved === "voice" || saved === "chat" || saved === "marketing" || saved === "customer-success" || saved === "seo" || saved === "product" ? saved : "marketing";
   });
   const setView = (v: View) => {
     setViewState(v);
@@ -295,7 +301,7 @@ export default function App() {
     // browser's autoplay policy lets the first spoken reply play.
     void speechEngine.unlock();
     ensureWarm();
-    a.send(text, { manager: view === "marketing" || view === "customer-success" || view === "seo" ? view : undefined });
+    a.send(text, { manager: view === "marketing" || view === "customer-success" || view === "seo" || view === "product" ? view : undefined });
   };
   const handleMarketingAsk = (text: string) => {
     setChatOpen(true);
@@ -323,13 +329,15 @@ export default function App() {
   const marketingView = view === "marketing";
   const customerSuccessView = view === "customer-success";
   const seoView = view === "seo";
-  const managerView = marketingView || customerSuccessView || seoView;
+  const productView = view === "product";
+  const managerView = marketingView || customerSuccessView || seoView || productView;
 
   useEffect(() => {
     if (marketingView) a.setManagerContext("marketing");
     else if (customerSuccessView) a.setManagerContext("customer-success");
     else if (seoView) a.setManagerContext("seo");
-  }, [marketingView, customerSuccessView, seoView, a.setManagerContext]);
+    else if (productView) a.setManagerContext("product");
+  }, [marketingView, customerSuccessView, seoView, productView, a.setManagerContext]);
 
   // Hands-free auto-relisten belongs to the voice stage only.
   useEffect(() => {
@@ -423,6 +431,11 @@ export default function App() {
             {store && (
               <button type="button" className={`tasks-btn ${seoView ? "active" : ""}`} onClick={() => setView("seo")}>
                 SEO Manager
+              </button>
+            )}
+            {store && (
+              <button type="button" className={`tasks-btn ${productView ? "active" : ""}`} onClick={() => setView("product")}>
+                Product Manager
               </button>
             )}
             {store && managerView && !chatOpen && (
@@ -547,8 +560,15 @@ export default function App() {
           ) : seoView ? (
             <SeoManager active={seoView} onAsk={handleMarketingAsk} onProposal={(action) => {
               setActionsOpen(true);
+              window.dispatchEvent(new CustomEvent("evolution:shopify-action-created", { detail: { id:action.id, kind:action.kind } }));
               a.postAssistantMessage(`Your SEO update is ready for review: ${action.summary}. Open Actions to compare the current listing with the suggested version before approving it.`);
             }}/>
+          ) : productView && store ? (
+             <ProductManager active={productView} storeUrl={store.url} onAsk={handleMarketingAsk} onProposal={(action) => {
+               setActionsOpen(true);
+               window.dispatchEvent(new CustomEvent("evolution:shopify-action-created", { detail: { id:action.id, kind:action.kind } }));
+               a.postAssistantMessage(`Your Product Manager proposal is ready: ${action.summary}. Review the exact Shopify change in Actions before approving it.`);
+             }} onNeedFacts={(message)=>{setChatOpen(true);a.postAssistantMessage(message);}}/>
           ) : <Suspense fallback={<div className="avatar-loading" aria-label="Loading avatar" />}><AvatarScene
             avatarUrl={a.settings.avatarUrl}
             thinking={thinking}
@@ -695,6 +715,12 @@ export default function App() {
                     ))
                   : seoView
                   ? SEO_STARTERS.map((s) => (
+                      <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
+                        {s}
+                      </button>
+                    ))
+                  : productView
+                  ? PRODUCT_STARTERS.map((s) => (
                       <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
                         {s}
                       </button>

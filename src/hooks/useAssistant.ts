@@ -30,7 +30,7 @@ import { FILE_FIXES_SKILL_ID, type SkillChip } from "../lib/skills";
 
 export type AssistantStatus = "idle" | "thinking" | "speaking";
 export type MicState = "idle" | "listening" | "transcribing";
-export type ManagerRole = "marketing" | "customer-success" | "seo";
+export type ManagerRole = "marketing" | "customer-success" | "seo" | "product";
 
 function managerGreeting(manager: ManagerRole): string {
   if (manager === "customer-success") {
@@ -38,6 +38,9 @@ function managerGreeting(manager: ManagerRole): string {
   }
   if (manager === "seo") {
     return "Hey, I’m your SEO Manager. I’ll review your products, find relevant search terms, and prepare clear before-and-after improvements. Nothing changes until you approve it.";
+  }
+  if (manager === "product") {
+    return "Hey, I’m your Product Manager. I’ll research new products, improve shopper-facing listings, and recommend catalog and collection changes. Every Shopify change remains a proposal until you approve it.";
   }
   return "Hey, I’m your Marketing Manager. I’m monitoring your store for email revenue opportunities. Ask me to recover carts, win back customers, or plan a campaign—nothing sends without your approval.";
 }

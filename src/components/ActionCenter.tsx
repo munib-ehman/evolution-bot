@@ -24,6 +24,11 @@ export function ActionCenter({ open, onClose }: { open: boolean; onClose: () => 
     finally { setLoading(false); }
   };
   useEffect(() => { if (open) void refresh(); }, [open]);
+  useEffect(() => {
+    const created = () => { if (open) void refresh(); };
+    window.addEventListener("evolution:shopify-action-created", created);
+    return () => window.removeEventListener("evolution:shopify-action-created", created);
+  }, [open]);
   const changed = (next: ShopifyActionProposal) => {
     setActions((rows) => rows.map((r) => r.id === next.id ? next : r));
     window.dispatchEvent(new CustomEvent("evolution:shopify-action-changed", { detail: { id:next.id, kind:next.kind, status:next.status } }));

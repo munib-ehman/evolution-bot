@@ -33,6 +33,7 @@ import { getConnection } from "./_shopify";
 import { SKILL_TOOLS, buildProductsDigest, type SkillEnv, type ToolCtx, type ToolSchema } from "./_skillTools";
 import { log } from "./_log";
 import { runActionPropose } from "./_actions";
+import { productManagerOptimize } from "./_productManager";
 import { runRecoveryCarts, runRecoveryDraft } from "./_recovery";
 import { runRetentionCustomers, runRetentionDraft } from "./_retention";
 import { runBroadcastAction } from "./_broadcastCampaigns";
@@ -142,14 +143,27 @@ const PROPOSAL_SCHEMAS: Record<string, ToolSchema> = {
           },
           evidence: {
             type: "object",
-            description: "Required for SEO proposals. Only include claims supported by live research URLs. Never invent search volume, rankings, reviews, materials, features, or demand.",
+            description: "Evidence for the active role. SEO uses keyword/marketplace evidence. Product Manager uses listingVa with a listing audit and merchant-confirmed facts. Never invent search volume, rankings, reviews, materials, features, or demand.",
             properties: {
               keywords: { type: "array", items: { type: "object", properties: { keyword: { type: "string" }, evidence: { type: "string" }, sourceUrl: { type: "string" } }, required: ["keyword", "evidence", "sourceUrl"] } },
               marketplace: { type: "array", items: { type: "object", properties: { source: { type: "string" }, observation: { type: "string" }, metric: { type: "string" }, sourceUrl: { type: "string" } }, required: ["source", "observation", "sourceUrl"] } },
               rationale: { type: "string" },
               limitations: { type: "string" },
+              listingVa: {
+                type: "object",
+                properties: {
+                  audit: { type: "array", items: { type: "string" } },
+                  shopperIntent: { type: "string" },
+                  titleStrategy: { type: "string" },
+                  descriptionStrategy: { type: "string" },
+                  tagStrategy: { type: "string" },
+                  imagePlan: { type: "array", items: { type: "string" } },
+                  missingFacts: { type: "array", items: { type: "string" } },
+                  preserved: { type: "array", items: { type: "string" } },
+                },
+              },
             },
-            required: ["keywords", "marketplace", "rationale", "limitations"],
+            required: ["rationale", "limitations"],
           },
         },
         required: ["summary", "items"],
@@ -251,14 +265,14 @@ const MAX_TOOL_ROUNDS = 3;
 const GROQ_TIMEOUT_MS = 25_000;
 const SEO_SYNTHESIS_MODEL = "llama-3.1-8b-instant";
 /** Client history is advisory; the server enforces its own tighter cap. */
-const MAX_HISTORY_TURNS = 6;
+const MAX_HISTORY_TURNS = 16;
 
 export interface AgentChatBody {
   messages?: unknown;
   manager?: unknown;
 }
 
-type ManagerRole = "marketing" | "customer-success" | "seo";
+type ManagerRole = "marketing" | "customer-success" | "seo" | "product";
 
 interface ChatTurn {
   role: "user" | "assistant";
@@ -399,6 +413,19 @@ async function createRecoveryCampaign(
   };
 }
 
+export function extractPseudoToolCalls(text:string,allowed:string[]):{text:string;calls:GroqToolCall[]}{
+  const calls:GroqToolCall[]=[];
+  const cleaned=text.replace(/<function=([a-z0-9_]+)>\s*([\s\S]*?)\s*<\/function>/gi,(full,nameRaw,argsRaw)=>{
+    const name=String(nameRaw);
+    if(!allowed.includes(name))return "";
+    let args="{}";
+    try{const parsed=JSON.parse(String(argsRaw).trim()||"{}");args=JSON.stringify(parsed&&typeof parsed==="object"?parsed:{});}catch{return "";}
+    calls.push({id:`pseudo_${crypto.randomUUID()}`,type:"function",function:{name,arguments:args}});
+    return "";
+  }).replace(/<\/?function(?:=[^>]*)?>/gi,"").trim();
+  return {text:cleaned,calls};
+}
+
 async function researchSeoEvidence(env: SkillEnv, productDetail: unknown): Promise<string | null> {
   const response = await fetch(`${GROQ_BASE}/chat/completions`, {
     method: "POST",
@@ -478,6 +505,8 @@ async function createBroadcastCampaign(env: SkillEnv, authHeader: string | null,
 function buildSystemPrompt(shop: string, catalogBlock: string, persistentContext: string, manager?: ManagerRole): string {
   const roleIdentity = manager === "seo"
     ? `You are currently the SEO Manager. Stay within Product SEO and AI/GEO discoverability. Do not act as the Marketing Manager, recommend email campaigns, or create recovery, win-back, or broadcast campaigns. Treat older conversation from another workspace as background only, never as the current task. When the merchant asks you to generate, add, prepare, or create a recommended SEO change, you must use tools and produce an approval proposal now; never merely say that you will prepare it, and never tell the merchant which tools should be called.`
+    : manager === "product"
+      ? `You are currently the Product Manager. Focus on product research, shopper-visible product titles and descriptions, catalog taxonomy, assortment, collections, and merchandising. Use live Shopify product, sales, and abandoned-checkout evidence. Do not modify SEO title or meta description; those belong to the SEO Manager. Product and collection changes must be approval proposals. Never claim page conversion because page-view data is unavailable. Bundle ideas are recommendations only. When your previous message paused a named listing job and asked the merchant for missing product facts, treat their next factual reply as permission to resume that exact job: fetch the named product, use their reply as merchant-confirmed facts, and prepare the complete shopper-visible listing proposal. Do not ask them to edit Shopify first and do not repeat the same questions.`
     : manager === "customer-success"
       ? `You are currently the Customer Success Manager. Focus on customer support risks, honest review generation, and customer retention. Use live Shopify order and customer signals. Treat older conversation from another workspace as background only and never introduce yourself as the Marketing or SEO Manager. For review requests, use only get_retention_snapshot.reviewEligiblePurchases; never infer a purchased product from the catalog, price, or another order. A review candidate must come from a successfully fulfilled order in the tool result. For overdue fulfillment, first recommend that the merchant verify inventory, fulfillment status, and a real ship date; offer cancellation or refund when appropriate. Draft customer replies using only verified facts, and never promise shipment, an update, or a resolution that the merchant has not confirmed. Customer email sending exists only in the structured Customer Support queue and requires the merchant to review and approve the exact message; chat cannot send and must never claim a message was sent.`
     : manager === "marketing"
@@ -574,6 +603,12 @@ export function selectedAgentToolNames(turns: ChatTurn[], manager?: ManagerRole)
     add("get_ship_queue", "get_orders_summary", "get_retention_snapshot", "get_products", "get_product_detail");
     return [...selected];
   }
+  if (manager === "product") {
+    add("get_products", "get_product_detail", "get_product_sales", "get_abandoned_checkouts", "get_orders_summary");
+    const requestedProposal=forcedProposalTool(turns);
+    if(requestedProposal)add(requestedProposal);
+    return [...selected];
+  }
 
   if (/\b(abandon|checkout|cart recovery|recovery campaign)\b/.test(context)) {
     add("get_abandoned_checkouts", "create_recovery_campaign", "prepare_discount");
@@ -598,6 +633,51 @@ export function selectedAgentToolNames(turns: ChatTurn[], manager?: ManagerRole)
   }
   if (selected.size === 1) add("get_orders_summary", "get_latest_audit");
   return [...selected];
+}
+
+export function repairProductManagerUpdateArgs(
+  args:Record<string,unknown>,
+  products:{id:string;title:string}[],
+  recentConversation:string,
+):Record<string,unknown>{
+  const mentioned=[...products].sort((a,b)=>b.title.length-a.title.length).find(product=>recentConversation.toLowerCase().includes(product.title.toLowerCase()));
+  if(!mentioned||!Array.isArray(args.items)||!args.items.length)return args;
+  return {...args,items:args.items.map((value,index)=>{
+    if(index!==0)return value;
+    const item:Record<string,unknown>={...(value as Record<string,unknown>),productId:mentioned.id};
+    delete item.seoTitle;
+    delete item.seoDescription;
+    return item;
+  })};
+}
+
+export function hasConfirmedProductFacts(text:string):boolean{
+  const value=text.toLowerCase();
+  const groups=[/\b(made of|material|construction|carbon|wood|fiber|fibreglass|metal|plastic)\b/,/\b(feature|grip|slide|layer|clip|size|weight|length|width|specification)\b/,/\b(beginner|intermediate|advanced|customer|rider|intended|use|adult|kids?)\b/,/\b(include|comes with|cover|kit|glaze|box|package)\b/,/\b(care|clean|compatib|snow|wash|storage)\b/];
+  return value.length>=80&&groups.filter(pattern=>pattern.test(value)).length>=2;
+}
+
+const NON_FACTUAL_FOLLOWUP=/^(?:mean\??|what(?: the hell)?|why|how|again|retry|try again|go ahead|do it|look (?:in|into) (?:your )?memory|i (?:already )?(?:told|said|mentioned).*)[.!?\s]*$/i;
+
+export function pausedListingState(turns:ChatTurn[]):{promptIndex:number;facts:string}|null{
+  let promptIndex=-1;
+  for(let index=turns.length-2;index>=0;index--){
+    const turn=turns[index];
+    if(turn.role==="assistant"&&/paused the listing job for/i.test(turn.content)){promptIndex=index;break;}
+  }
+  if(promptIndex<0)return null;
+  const facts=turns.slice(promptIndex+1).filter(turn=>turn.role==="user"&&!NON_FACTUAL_FOLLOWUP.test(turn.content.trim())).map(turn=>turn.content.trim()).join("\n").slice(-6_000);
+  return {promptIndex,facts};
+}
+
+function missingProductFactLabels(text:string):string[]{
+  const value=text.toLowerCase(), missing:string[]=[];
+  if(!/\b(made of|material|construction|carbon|wood|fiber|fibreglass|metal|plastic)\b/.test(value))missing.push("material/construction");
+  if(!/\b(feature|grip|slide|layer|clip|size|weight|length|width|specification)\b/.test(value))missing.push("key features/specifications");
+  if(!/\b(beginner|intermediate|advanced|customer|rider|intended|adult|kids?)\b/.test(value))missing.push("intended rider/use");
+  if(!/\b(include|comes with|cover|kit|glaze|box|package)\b/.test(value))missing.push("what is included");
+  if(!/\b(care|clean|compatib|wash|storage|sunlight)\b/.test(value))missing.push("care/compatibility");
+  return missing;
 }
 
 async function buildCatalogBlock(ctx: ToolCtx): Promise<string> {
@@ -650,7 +730,7 @@ export async function runAgentChat(
   if (!conn) return jsonResponse(409, { error: "Connect your Shopify store first." });
 
   const ctx: ToolCtx = { env, userId: user.id, userEmail: user.email, conn, origin };
-  const manager: ManagerRole | undefined = body.manager === "marketing" || body.manager === "customer-success" || body.manager === "seo" ? body.manager : undefined;
+  const manager: ManagerRole | undefined = body.manager === "marketing" || body.manager === "customer-success" || body.manager === "seo" || body.manager === "product" ? body.manager : undefined;
   const shop = conn.shop_domain.replace(".myshopify.com", "");
   const model = env.groqModel || CHAT_MODEL_DEFAULT;
   const clarifyCampaign = manager === "marketing" && needsCampaignClarification(turns);
@@ -659,7 +739,9 @@ export async function runAgentChat(
     ? forcedSeoTool(turns)
     : manager === "marketing"
       ? forcedCampaignTool(turns) ?? forcedProposalTool(turns)
-      : null;
+      : manager === "product"
+        ? forcedProposalTool(turns)
+        : null;
   const selectedNames = selectedAgentToolNames(turns, manager);
   if (forcedTool && !selectedNames.includes(forcedTool)) selectedNames.push(forcedTool);
   const tools = selectedNames.map((n) => PROPOSAL_SCHEMAS[n] ?? SKILL_TOOLS[n].schema);
@@ -671,6 +753,28 @@ export async function runAgentChat(
       try {
         if (clarifyCampaign) {
           controller.enqueue(sse({ choices: [{ delta: { content: "Which campaign should I create?\n\n- One-time email — a promotion, launch, or announcement to subscribed customers\n- Win-back — re-engage eligible lapsed customers\n- Cart recovery — follow up on abandoned checkouts\n\nI’ll create a draft only; nothing will be sent until you approve it." } }] }));
+          return;
+        }
+        const latestUser=turns.at(-1);
+        const pausedState=manager==="product"?pausedListingState(turns):null;
+        if(pausedState&&latestUser?.role==="user"){
+          if(!hasConfirmedProductFacts(pausedState.facts)){
+            const known=/\bcarbon(?:-| )?fiber\b/i.test(pausedState.facts)?"I remember that it is carbon fiber. ":"";
+            const missing=missingProductFactLabels(pausedState.facts);
+            controller.enqueue(sse({choices:[{delta:{content:`${known}I still need only ${missing.slice(0,3).join(", ")||"one concrete product detail"}. I won’t ask you to repeat facts you already gave, and I won’t invent safety or performance claims.`}}]}));
+            return;
+          }
+          progress("Researching and writing the complete product listing…");
+          const digest=await buildProductsDigest(conn,100);
+          if("error" in digest){controller.enqueue(sse({error:digest.error}));return;}
+          const context=turns.slice(pausedState.promptIndex).map(turn=>turn.content.toLowerCase()).join("\n");
+          const product=(digest.products as {id:string;title:string}[]).sort((a,b)=>b.title.length-a.title.length).find(row=>context.includes(row.title.toLowerCase()));
+          if(!product){controller.enqueue(sse({choices:[{delta:{content:"I kept your facts, but I couldn’t safely match them to one live Shopify product. Please name the product once more; I won’t ask for the facts again."}}]}));return;}
+          const response=await productManagerOptimize({productId:product.id,confirmedFacts:{merchantNotes:pausedState.facts}},authHeader,env);
+          const result=await response.json().catch(()=>({})) as {action?:unknown;error?:string};
+          if(!response.ok||!result.action){controller.enqueue(sse({choices:[{delta:{content:`I saved your answers, but the professional listing writer couldn’t finish: ${result.error??"unknown error"} Nothing was changed.`}}]}));return;}
+          controller.enqueue(sse({action:result.action}));
+          controller.enqueue(sse({choices:[{delta:{content:"I used your facts as source material, completed the marketplace-informed Listing VA draft, and created the approval card. Review the structured title, description, package contents, care guidance, and preserved fields before applying it."}}]}));
           return;
         }
         if (forcedTool === "create_recovery_campaign" || forcedTool === "create_winback_campaign") {
@@ -850,13 +954,18 @@ export async function runAgentChat(
             return;
           }
 
-          const calls = (msg.tool_calls ?? []).filter((c) => c.type === "function");
+          let calls = (msg.tool_calls ?? []).filter((c) => c.type === "function");
+          if(calls.length===0&&msg.content?.includes("<function=")){
+            const recovered=extractPseudoToolCalls(msg.content,selectedNames);
+            if(recovered.calls.length){calls=recovered.calls;msg.content=recovered.text||null;log("warn","agent-chat","recovered_pseudo_tool_call",{tools:calls.map(call=>call.function.name)});}
+            else msg.content=recovered.text;
+          }
           if (calls.length === 0 || lastRound) {
             if (seoProposalRequested && !proposalEmitted) {
               controller.enqueue(sse({ choices: [{ delta: { content: "I couldn't create the SEO approval proposal, so there is no action to approve and nothing was changed. Please retry; if it fails again, check the Actions service configuration." } }] }));
               return;
             }
-            const text = (msg.content ?? "").trim();
+            const text = (msg.content ?? "").replace(/<function=[\s\S]*?<\/function>/gi,"").replace(/<\/?function(?:=[^>]*)?>/gi,"").trim();
             if (!text) {
               controller.enqueue(sse({ error: "The copilot brain returned an empty reply." }));
               return;
@@ -907,6 +1016,14 @@ export async function runAgentChat(
                   return;
                 }
               } else if (isProposal) {
+                if(name==="prepare_product_updates"&&manager==="product"){
+                  const digest=await buildProductsDigest(conn,100);
+                  if("error" in digest){
+                    controller.enqueue(sse({choices:[{delta:{content:`I collected your product facts, but couldn't reload the live catalog to bind them to the Shopify product: ${digest.error} Nothing was changed.`}}]}));
+                    return;
+                  }
+                  args=repairProductManagerUpdateArgs(args,digest.products as {id:string;title:string}[],turns.slice(-8).map(turn=>turn.content).join("\n"));
+                }
                 if (name === "prepare_product_updates" && manager === "seo") {
                   const ids = Array.isArray(args.items) ? args.items.map(item=>String((item as Record<string,unknown>).productId??"")) : [];
                   const missing = ids.filter(id=>!detailedProductIds.has(id));

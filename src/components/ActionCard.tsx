@@ -7,6 +7,7 @@ const toDescriptionHtml = (value:string) => value.trim().split(/\n\s*\n/).filter
 
 const label: Record<ShopifyActionProposal["kind"], string> = {
   product_update: "Product update",
+  product_status_update: "Product lifecycle change",
   product_draft_create: "Unpublished product draft",
   collection_upsert: "Collection change",
   discount_code_create: "Discount code",
@@ -14,9 +15,9 @@ const label: Record<ShopifyActionProposal["kind"], string> = {
 };
 
 function preview(action: ShopifyActionProposal): string[] {
-  if (action.kind === "product_update") {
-    const items = action.payload.items as { title?: string; productId?: string; seoTitle?:string; seoDescription?:string; descriptionHtml?:string; tags?:string[]; vendor?:string; productType?:string; mediaAlt?:{id:string;alt:string}[] }[] | undefined;
-    const before = action.before_state.products as {id:string;title:string;descriptionHtml?:string;seo?:{title?:string|null;description?:string|null};tags?:string[];vendor?:string;productType?:string}[]|undefined;
+  if (action.kind === "product_update" || action.kind === "product_status_update") {
+    const items = action.payload.items as { title?: string; productId?: string; status?:string; seoTitle?:string; seoDescription?:string; descriptionHtml?:string; tags?:string[]; vendor?:string; productType?:string; mediaAlt?:{id:string;alt:string}[] }[] | undefined;
+    const before = action.before_state.products as {id:string;title:string;status?:string;descriptionHtml?:string;seo?:{title?:string|null;description?:string|null};tags?:string[];vendor?:string;productType?:string}[]|undefined;
     return (items ?? []).flatMap((item) => {
       const previous = before?.find(product=>product.id===item.productId);
       const name = item.title || previous?.title || item.productId || "Product";
@@ -28,12 +29,14 @@ function preview(action: ShopifyActionProposal): string[] {
         item.vendor !== undefined ? `Vendor/brand: ${previous?.vendor||"(empty)"} → ${item.vendor}` : "",
         item.productType !== undefined ? `Product type: ${previous?.productType||"(empty)"} → ${item.productType}` : "",
         item.mediaAlt?.length ? `Image alt text: ${item.mediaAlt.length} image${item.mediaAlt.length===1?"":"s"}` : "",
+        item.status !== undefined ? `Status: ${previous?.status??"current"} → ${item.status}` : "",
       ].filter(Boolean);
       return [name, ...changes];
     });
   }
   if (action.kind === "product_draft_create") {
-    return [String((action.payload.product as { title?: string })?.title ?? "New draft")];
+    const product=action.payload.product as {title?:string;price?:number|null;descriptionHtml?:string;productType?:string;tags?:string[]};
+    return [String(product?.title??"New draft"),"Status: Unpublished Shopify draft",product?.productType?`Product type: ${product.productType}`:"",product?.descriptionHtml?`Optimized product description: ${plainText(product.descriptionHtml)}`:"",product?.tags?.length?`Catalog tags: ${product.tags.join(", ")}`:"",product?.price?`Recommended initial price: ${product.price}`:"Price needs confirmation"].filter(Boolean);
   }
   if (action.kind === "collection_upsert") {
     return [String((action.payload.collection as { title?: string })?.title ?? "Collection")];
@@ -47,20 +50,24 @@ function preview(action: ShopifyActionProposal): string[] {
 }
 
 function evidencePreview(action: ShopifyActionProposal): string[] {
+  if (action.kind === "product_status_update") return preview(action);
   if (action.kind !== "product_update" || !action.payload.evidence) return preview(action);
   const items = action.payload.items as {productId?:string;title?:string;seoTitle?:string;seoDescription?:string;descriptionHtml?:string;tags?:string[]}[]|undefined;
   const before = action.before_state.products as {id:string;title:string;descriptionHtml?:string;seo?:{title?:string|null;description?:string|null};tags?:string[]}[]|undefined;
   const plain = (value?:string|null) => (value||"(empty)").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim();
   return (items??[]).flatMap(item=>{
     const previous = before?.find(product=>product.id===item.productId);
+    const listingVa = Boolean((action.payload.evidence as {listingVa?:unknown}|undefined)?.listingVa);
     return [
-      item.title||previous?.title||item.productId||"Product",
+      previous?.title||item.title||item.productId||"Product",
+      listingVa&&item.title!==undefined?`Storefront title BEFORE: ${previous?.title||"(empty)"}`:"",
+      listingVa&&item.title!==undefined?`Storefront title PROPOSED: ${item.title}`:"",
       item.seoTitle!==undefined?`Search title BEFORE: ${previous?.seo?.title||"(default product title)"}`:"",
       item.seoTitle!==undefined?`Search title PROPOSED: ${item.seoTitle}`:"",
       item.seoDescription!==undefined?`Meta description BEFORE: ${previous?.seo?.description||"(empty)"}`:"",
       item.seoDescription!==undefined?`Meta description PROPOSED: ${item.seoDescription}`:"",
       item.descriptionHtml!==undefined?`Description BEFORE: ${plain(previous?.descriptionHtml).slice(0,180)}`:"",
-      item.descriptionHtml!==undefined?`Description PROPOSED: ${plain(item.descriptionHtml).slice(0,240)}`:"",
+      item.descriptionHtml!==undefined?`Description PROPOSED: ${plain(item.descriptionHtml)}`:"",
       item.tags!==undefined?`Tags BEFORE: ${previous?.tags?.join(", ")||"(none)"}`:"",
       item.tags!==undefined?`Tags PROPOSED: ${item.tags.join(", ")}`:"",
     ].filter(Boolean);
@@ -109,7 +116,7 @@ export function ActionCard({ initial, onChanged }: { initial: ShopifyActionPropo
     finally { setBusy(false); }
   };
   const undoable = (action.status === "succeeded" || action.status === "partial") && Boolean(action.executed_at) && Date.now() - Date.parse(action.executed_at!) <= 86_400_000;
-  const evidence = action.kind === "product_update" ? action.payload.evidence as {
+  const evidence = action.kind === "product_update" || action.kind === "product_status_update" ? action.payload.evidence as {
     keywords?: {keyword:string;evidence:string;sourceUrl:string}[];
     marketplace?: {source:string;observation:string;metric?:string;sourceUrl:string}[];
     rationale?: string;
@@ -117,15 +124,27 @@ export function ActionCard({ initial, onChanged }: { initial: ShopifyActionPropo
     review?: {currentListing?:string;shopperIntent?:string;keywordUse?:string;titleAdvice?:string;descriptionAdvice?:string;tagAdvice?:string};
     geo?: {label?:string;improves?:string[];safeguards?:string[];manualGaps?:string[]};
     catalogContext?: {category?:string;existingTags?:string[];attributes?:{label:string;value:string;source:"category"|"product"}[]};
+    listingVa?: {audit?:string[];shopperIntent?:string;titleStrategy?:string;descriptionStrategy?:string;tagStrategy?:string;imagePlan?:string[];missingFacts?:string[];preserved?:string[]};
   } | undefined : undefined;
+  const researchEvidence = action.kind === "product_draft_create" ? action.payload.evidence as {research?:{market?:string;fit?:string;sources?:{title?:string;url?:string}[];sourcing?:{supplier?:string;unitCost?:string;url?:string}[]};listingVa?:{optimizedByDefault?:boolean;descriptionWords?:number;bullets?:number;protected?:string[]};limitations?:string}|undefined : undefined;
   return (
     <section className={`action-card action-${action.status}`}>
       <div className="action-card-head"><strong>{label[action.kind]}</strong><span>{action.status}</span></div>
       <p>{action.summary}</p>
       {evidence && <div className="action-evidence">
-        <h4>Why these changes</h4>
+        <h4>{evidence.listingVa ? "Product Listing VA review" : "Why these changes"}</h4>
         {evidence.rationale && <p>{evidence.rationale}</p>}
-        {evidence.review && <div className="seo-strategy-review">
+        {evidence.listingVa && <div className="seo-strategy-review">
+          {!!evidence.listingVa.audit?.length&&<><h4>Listing audit</h4><ul>{evidence.listingVa.audit.map(item=><li key={item}>{item}</li>)}</ul></>}
+          {evidence.listingVa.shopperIntent&&<><h4>Shopper intent and marketplace language</h4><p>{evidence.listingVa.shopperIntent}</p></>}
+          {evidence.listingVa.titleStrategy&&<><h4>Storefront title strategy</h4><p>{evidence.listingVa.titleStrategy}</p></>}
+          {evidence.listingVa.descriptionStrategy&&<><h4>Product description strategy</h4><p>{evidence.listingVa.descriptionStrategy}</p></>}
+          {evidence.listingVa.tagStrategy&&<><h4>Catalog tag strategy</h4><p>{evidence.listingVa.tagStrategy}</p></>}
+          {!!evidence.listingVa.imagePlan?.length&&<><h4>Product media plan</h4><ul>{evidence.listingVa.imagePlan.map(item=><li key={item}>{item}</li>)}</ul></>}
+          {!!evidence.listingVa.missingFacts?.length&&<><h4>Information still needed</h4><ul>{evidence.listingVa.missingFacts.map(item=><li key={item}>{item}</li>)}</ul></>}
+          {!!evidence.listingVa.preserved?.length&&<><h4>Protected fields</h4><p>{evidence.listingVa.preserved.join(" · ")}</p></>}
+        </div>}
+        {!evidence.listingVa && evidence.review && <div className="seo-strategy-review">
           {evidence.review.currentListing && <><h4>What’s happening with the current listing</h4><p>{evidence.review.currentListing}</p></>}
           {evidence.review.shopperIntent && <><h4>What shoppers appear to be looking for</h4><p>{evidence.review.shopperIntent}</p></>}
           {evidence.review.keywordUse && <><h4>How to use the keywords</h4><p>{evidence.review.keywordUse}</p></>}
@@ -140,18 +159,22 @@ export function ActionCard({ initial, onChanged }: { initial: ShopifyActionPropo
         {evidence.limitations && <p className="action-warning"><strong>Evidence limits:</strong> {evidence.limitations}</p>}
         <h4>Before / proposed</h4>
       </div>}
+      {researchEvidence?.research&&<div className="action-evidence"><h4>Private launch evidence</h4><p>{researchEvidence.research.fit}</p><p><strong>Market:</strong> {researchEvidence.research.market??"store default"}</p>{researchEvidence.listingVa?.optimizedByDefault&&<p><strong>Listing VA optimized by default:</strong> {researchEvidence.listingVa.descriptionWords??0} description words · {researchEvidence.listingVa.bullets??0} product highlights</p>}{Boolean(researchEvidence.research.sources?.length)&&<><h4>Research sources</h4><ul>{researchEvidence.research.sources?.map((source,index)=><li key={`${source.url}:${index}`}>{source.url?<a href={source.url} target="_blank" rel="noreferrer">{source.title||`Source ${index+1}`}</a>:source.title}</li>)}</ul></>}{Boolean(researchEvidence.research.sourcing?.length)&&<><h4>Supplier searches</h4><ul>{researchEvidence.research.sourcing?.map((source,index)=><li key={`${source.supplier}:${index}`}>{source.url?<a href={source.url} target="_blank" rel="noreferrer"><strong>{source.supplier}</strong></a>:<strong>{source.supplier}</strong>}{source.unitCost?` · ${source.unitCost}`:""}</li>)}</ul></>}{Boolean(researchEvidence.listingVa?.protected?.length)&&<p><strong>Safety:</strong> {researchEvidence.listingVa?.protected?.join(" · ")}</p>}{researchEvidence.limitations&&<p className="action-warning">{researchEvidence.limitations}</p>}</div>}
       {!editing && <ul>{evidencePreview(action).map((line, i) => <li key={`${line}:${i}`}>{line}</li>)}</ul>}
       {editing && <div className="action-edit-form">{draftItems.map((item,index)=><fieldset key={item.productId}><legend>{item.title || "Product listing"}</legend>
+        {item.title !== undefined && <label>Storefront title<input value={item.title} maxLength={255} onChange={event=>setDraft(index,{title:event.target.value})} /></label>}
         {item.seoTitle !== undefined && <label>Search title<input value={item.seoTitle} maxLength={60} onChange={event=>setDraft(index,{seoTitle:event.target.value})} /><small>{item.seoTitle.length}/60 characters</small></label>}
         {item.seoDescription !== undefined && <label>Meta description<textarea value={item.seoDescription} maxLength={160} rows={3} onChange={event=>setDraft(index,{seoDescription:event.target.value})} /><small>{item.seoDescription.length}/160 characters</small></label>}
         {item.descriptionHtml !== undefined && <label>Product description<textarea value={item.descriptionText} rows={6} onChange={event=>setDraft(index,{descriptionText:event.target.value})} /></label>}
         {item.tags !== undefined && <label>Tags<input value={item.tags.join(", ")} onChange={event=>setDraft(index,{tags:event.target.value.split(",").map(value=>value.trim()).filter(Boolean)})} /><small>Separate tags with commas</small></label>}
+        {item.vendor !== undefined && <label>Vendor / brand<input value={item.vendor} maxLength={255} onChange={event=>setDraft(index,{vendor:event.target.value})} /></label>}
+        {item.productType !== undefined && <label>Product type<input value={item.productType} maxLength={255} onChange={event=>setDraft(index,{productType:event.target.value})} /></label>}
       </fieldset>)}</div>}
       {action.status === "proposed" && <p className="action-warning">Nothing changes until you approve.</p>}
       {action.error && <p className="overlay-error">{action.error}</p>}
       {error && <p className="overlay-error">{error}</p>}
       <div className="action-card-buttons">
-        {action.status === "proposed" && !editing && <><button type="button" className="link" disabled={busy} onClick={() => void reject()}>Reject</button><button type="button" className="link" disabled={busy} onClick={() => setEditing(true)}>Edit suggestion</button><button type="button" className="primary" disabled={busy} onClick={() => void apply()}>{busy ? "Applying…" : "Approve and apply"}</button></>}
+        {action.status === "proposed" && !editing && <><button type="button" className="link" disabled={busy} onClick={() => void reject()}>Reject</button>{action.kind === "product_update" && <button type="button" className="link" disabled={busy} onClick={() => setEditing(true)}>Edit suggestion</button>}<button type="button" className="primary" disabled={busy} onClick={() => void apply()}>{busy ? "Applying…" : "Approve and apply"}</button></>}
         {action.status === "proposed" && editing && <><button type="button" className="link" disabled={busy} onClick={() => setEditing(false)}>Cancel</button><button type="button" className="primary" disabled={busy} onClick={() => void saveEdits()}>{busy ? "Saving…" : "Save edits"}</button></>}
         {undoable && <button type="button" className="link" disabled={busy} onClick={() => void undo()}>{busy ? "Working…" : "Undo"}</button>}
       </div>

@@ -2,6 +2,7 @@ import { supabase } from "./auth";
 
 export type ShopifyActionKind =
   | "product_update"
+  | "product_status_update"
   | "product_draft_create"
   | "collection_upsert"
   | "discount_code_create"

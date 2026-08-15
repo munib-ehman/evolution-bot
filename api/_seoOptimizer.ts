@@ -114,7 +114,7 @@ export function containsUnsupportedClaims(copy: string, factualText: string): bo
   return CLAIM_WORDS.some(claim => normalizedCopy.includes(claim) && !normalizedFacts.includes(claim));
 }
 
-function sourceUrl(source: string, query: string, market: string): string {
+export function sourceUrl(source: string, query: string, market: string): string {
   const amazonDomain: Record<string,string> = {us:"amazon.com",gb:"amazon.co.uk",ca:"amazon.ca",au:"amazon.com.au",de:"amazon.de",fr:"amazon.fr",it:"amazon.it",es:"amazon.es",in:"amazon.in",jp:"amazon.co.jp"};
   const ebayDomain: Record<string,string> = {us:"ebay.com",gb:"ebay.co.uk",ca:"ebay.ca",au:"ebay.com.au",de:"ebay.de",fr:"ebay.fr",it:"ebay.it",es:"ebay.es"};
   if (source === "amazon") return `https://www.${amazonDomain[market]??amazonDomain.us}/s?k=${encodeURIComponent(query)}`;
@@ -133,7 +133,7 @@ async function fetchText(url: string): Promise<string | null> {
   } catch { publicCache.set(url,{at:Date.now(),text:null}); return null; }
 }
 
-async function collectEvidence(seed: string, market: string, language: string) {
+export async function collectEvidence(seed: string, market: string, language: string) {
   const suggestUrl = `https://suggestqueries.google.com/complete/search?client=firefox&hl=${encodeURIComponent(language)}&q=${encodeURIComponent(seed)}`;
   const amazonUrl = sourceUrl("amazon", seed, market);
   const ebayUrl = sourceUrl("ebay", seed, market);
@@ -261,13 +261,8 @@ export async function runSeoOptimize(body: SeoOptimizeBody, authHeader: string |
     ?? safeListingFallback(product,primary.keyword,secondary,facts);
   const marketplaceEvidence = evidence.status.filter(row=>row.status==="available").map(row=>({source:row.source,observation:`${row.observations} current public result${row.observations===1?"":"s"} contributed to keyword scoring.`,metric:`${row.observations} observations`,sourceUrl:row.url}));
   const catalogContext = {category:clean(product.category?.fullName||product.category?.name,240),existingTags:(product.tags??[]).map(tag=>clean(tag,80)).filter(Boolean).slice(0,30),attributes:extractCatalogFacts(product)};
-  const mergedTags = [...new Set([...(product.tags??[]),...rendered.tags])].slice(0,20);
-  const confirmedType = clean(facts.productType,80);
-  const confirmedBrand = clean(facts.brand,120);
-  const inferredType = !product.productType ? confirmedType || clean(product.category?.name,80) : "";
-  const items: Record<string,unknown>[] = [{productId,seoTitle:rendered.seoTitle,seoDescription:rendered.seoDescription,tags:mergedTags,...(inferredType?{productType:inferredType}:{}),...(!product.vendor&&confirmedBrand?{vendor:confirmedBrand}:{})}];
-  if (rendered.descriptionHtml) items[0].descriptionHtml = rendered.descriptionHtml;
-  const geoPlan = { label:"AI/GEO optimization", improves:[...(inferredType?["Explicit product type"]:[]), "Fact-grounded answer context", "Consistent descriptive classification", ...(rendered.descriptionHtml ? ["Extractable storefront description"] : [])], safeguards:["Existing tags are preserved", "No unsupported product claims", "No promise of AI citations or rankings", rendered.descriptionHtml ? "Description uses existing or merchant-confirmed facts" : "Storefront description remains unchanged until facts are confirmed"], manualGaps:[...(!product.vendor?["Confirm the product brand/vendor"]:[]),...((product.media?.nodes??[]).some(image=>!image.alt)?["Review missing image alt text against the actual images"]:[]),...(!rendered.descriptionHtml?["Confirm product facts for a richer storefront description"]:[])] };
+  const items: Record<string,unknown>[] = [{productId,seoTitle:rendered.seoTitle,seoDescription:rendered.seoDescription}];
+  const geoPlan = { label:"AI/GEO analysis", improves:["Search title clarity","Meta-description intent alignment"], safeguards:["Storefront title, description, tags, taxonomy, and image alt text remain unchanged","No unsupported product claims","No promise of AI citations or rankings"], manualGaps:[...(!product.vendor?["Ask Product Manager to confirm the product brand/vendor"]:[]),...((product.media?.nodes??[]).some(image=>!image.alt)?["Ask Product Manager to review missing image alt text"]:[]),...(!rendered.descriptionHtml?["Ask Product Manager to collect facts for a richer storefront description"]:[])] };
   const proposal = await runActionPropose({kind:"product_update",summary:`SEO + AI/GEO update for ${product.title}`,items,evidence:{keywords:keywords.slice(0,5).map(row=>({keyword:row.keyword,evidence:`Score ${row.score}/100 from ${row.sources.join(", ")}.`,sourceUrl:row.sources.includes("amazon")?sourceUrl("amazon",seed,market):row.sources.includes("ebay")?sourceUrl("ebay",seed,market):evidence.status[0].url})),marketplace:marketplaceEvidence,catalogContext,rationale:`Selected “${primary.keyword}” using the Shopify category, confirmed catalog attributes, and the strongest available search and marketplace evidence.`,review:rendered.review,geo:geoPlan,limitations:`The connected sources do not provide dependable monthly search volume, and no optimizer can guarantee inclusion in AI answers. ${rendered.enoughForDescription?"The description uses confirmed product details.":"The storefront description was left unchanged because the product needs more confirmed details."}`},optimizerVersion:"seo-geo-tools-v4",targetMarket:{market,language},keywordPlan:{primary:primary.keyword,secondary,candidates:keywords},sourceStatus:evidence.status,confirmedFacts:facts,geoPlan},authHeader,env);
   const payload = await proposal.json().catch(()=>({})) as {action?:ShopifyActionRow;error?:string};
   return Response.json(payload.action?{action:payload.action,keywords,sources:evidence.status,missingFacts:rendered.enoughForDescription?[]:["material or construction","intended use or rider level","two verified product features"]}:{error:payload.error??"Could not save the SEO proposal."},{status:proposal.status});

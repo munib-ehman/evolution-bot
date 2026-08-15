@@ -26,6 +26,7 @@ import { runSkill, type SkillRunBody } from "./api/_skills";
 import { runStoreCatalog } from "./api/_catalog";
 import { runSeoSnapshot } from "./api/_seoManager";
 import { runSeoOptimize, type SeoOptimizeBody } from "./api/_seoOptimizer";
+import { productManagerArchive, productManagerOptimize, productManagerSnapshot } from "./api/_productManager";
 import { runRecoveryCarts, runRecoveryDraft } from "./api/_recovery";
 import { runRetentionCustomers, runRetentionDraft } from "./api/_retention";
 import { runOpsSnapshot } from "./api/_ops";
@@ -300,9 +301,9 @@ export function devApi(): Plugin {
         void (async () => {
           if (req.method === "GET") return send(res, 204);
           if (req.method !== "POST") return send(res, 405, "Method not allowed");
-          let body: { url?: unknown };
+          let body: { url?: unknown; targetMarket?: unknown };
           try {
-            body = JSON.parse(await readBody(req)) as { url?: unknown };
+            body = JSON.parse(await readBody(req)) as { url?: unknown; targetMarket?: unknown };
           } catch {
             res.statusCode = 400;
             res.setHeader("Content-Type", "application/json");
@@ -689,6 +690,34 @@ export function devApi(): Plugin {
           if (req.method !== "GET") return send(res, 405, "Method not allowed");
           const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
           await pipeResponse(res, await runSeoSnapshot(auth, auditEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/product-manager-snapshot", (req, res) => {
+        void (async () => {
+          if (req.method !== "GET") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await productManagerSnapshot(auth, auditEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/product-manager-optimize", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: { productId?: unknown; confirmedFacts?: unknown };
+          try { body = JSON.parse(await readBody(req)) as typeof body; } catch { return send(res, 400, "Invalid JSON body"); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await productManagerOptimize(body, auth, auditEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/product-manager-archive", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: { productId?: unknown; title?: unknown };
+          try { body = JSON.parse(await readBody(req)) as typeof body; } catch { return send(res, 400, "Invalid JSON body"); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await productManagerArchive(body, auth, auditEnv));
         })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
       });
 

@@ -4,15 +4,16 @@
 
 Evolution is transitioning from selling individual skills to selling complete AI roles for Shopify merchants. A role is the customer-facing product; skills are the workflows and tools used internally by that role.
 
-The first three roles, in delivery order, are:
+The first four roles, in delivery order, are:
 
 1. Marketing Manager
 2. Customer Success Manager
 3. SEO Manager
+4. Product Manager
 
 Only one role is built at a time. Each role must work end to end against real Shopify data, produce useful output, respect merchant approvals, handle failures, and pass its acceptance checks before work begins on the next role.
 
-Product and Operations Managers remain future roles and are not part of this first delivery cycle.
+Operations Manager remains a future role.
 
 ## Shared product model
 
@@ -129,6 +130,26 @@ The SEO Manager continuously finds and prepares improvements that help products 
 
 Traffic, query, impression, and ranking measurement requires search analytics integration (for example, Google Search Console). Without it, Evolution can measure implementation coverage and Shopify-side outcomes but must not claim ranking improvements.
 
+## Day 4: Product Manager
+
+### Customer promise
+
+The Product Manager researches new opportunities, improves shopper-facing listings, and keeps the catalog deliberately merchandised.
+
+### Initial responsibilities
+
+1. Product Research
+2. Product Listing Optimization
+3. Merchandising
+
+### Implemented scope
+
+- Shopify-derived catalog readiness, sales, abandonment, inventory, and lifecycle priorities without claiming page conversion.
+- Market-selectable live research with evidence, private sourcing details, and approval-gated priced draft products.
+- Shopper-facing title, description, taxonomy, and media-alt ownership; SEO title and meta description remain with SEO Manager.
+- Manual collection creation/update, membership, ordering, bundle recommendations, and approval-gated product archiving with undo.
+- On-demand analysis plus idempotent weekly catalog snapshots.
+
 ## Delivery sequence for each role
 
 Use the same gate for every role:
@@ -148,7 +169,7 @@ Use the same gate for every role:
 - Marketing Manager: working. Abandoned-cart recovery, win-back campaigns, and consent-safe one-time campaigns have draft, approval, delivery, unsubscribe, and event-tracking paths.
 - Customer Success Manager: in progress. The role workspace prioritizes Shopify-derived support risks, fulfilled buyers eligible for review requests, and lapsed customers. Approval-gated support email delivery, duplicate suppression, and delivery tracking are implemented; richer reply handling and outcome analytics remain.
 - SEO Manager: working. Product SEO and AI/GEO auditing, evidence-backed proposals, approvals, and Shopify-side outcome tracking are implemented.
-- Product Manager: deferred.
+- Product Manager: working. Research-to-draft, storefront listing proposals, collection merchandising, archive approvals, weekly scans, role isolation, and Shopify-side outcome measurement are implemented.
 - Operations Manager: deferred.
 
 ## Confirmed Marketing Manager implementation decisions

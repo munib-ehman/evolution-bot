@@ -41,12 +41,25 @@ export interface HuntReport {
   summary: string;
   products: HuntProduct[];
   generatedAt: string;
+  targetMarket?: "US" | "Canada" | "GCC";
 }
 
 /** The owner's most recent saved hunt, or null (signed out / none yet). */
 export async function getLatestHunt(storeUrl: string): Promise<HuntReport | null> {
   if (!supabase) return null;
   try {
+    const shopDomain = new URL(storeUrl).host;
+    const { data: current } = await supabase
+      .from("product_research_runs")
+      .select("report")
+      .eq("shop_domain", shopDomain)
+      .eq("status", "completed")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (current?.report) return current.report as HuntReport;
+
+    // Backward compatibility for research created before Product Manager.
     const { data } = await supabase
       .from("product_hunts")
       .select("report")
@@ -68,6 +81,7 @@ export async function getLatestHunt(storeUrl: string): Promise<HuntReport | null
 export async function runProductHunt(
   url: string,
   onProgress: (text: string) => void,
+  targetMarket: "US" | "Canada" | "GCC" = "US",
 ): Promise<{ report: HuntReport | null; error: string | null }> {
   try {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -80,7 +94,7 @@ export async function runProductHunt(
     const res = await fetch("/api/product-hunt", {
       method: "POST",
       headers,
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, targetMarket }),
     });
 
     // Non-SSE responses are immediate failures (401/429/503…).

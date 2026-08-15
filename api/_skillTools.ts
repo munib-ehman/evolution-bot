@@ -73,6 +73,7 @@ interface ProductSource {
   productType: string;
   seoTitle: string;
   seoDescription: string;
+  createdAt: string;
 }
 
 /** Sold out = every variant tracked, at/under zero, and not set to oversell. */
@@ -96,6 +97,7 @@ const PRODUCTS_QUERY = `query ProductAudit($first: Int!, $after: String) {
       title
       status
       descriptionHtml
+      createdAt
       tags
       handle
       vendor
@@ -123,6 +125,7 @@ interface GqlProductsData {
       title?: string;
       status?: string;
       descriptionHtml?: string | null;
+      createdAt?: string;
       tags?: string[];
       handle?: string;
       vendor?: string | null;
@@ -177,6 +180,7 @@ async function fetchProductsGraphql(conn: ShopifyConnection, limit: number): Pro
         // Audit the effective storefront title, not only the optional override.
         seoTitle: (n.seo?.title ?? n.title ?? "").trim(),
         seoDescription: (n.seo?.description ?? "").trim(),
+        createdAt: n.createdAt ?? "",
       });
     }
     if (!productsPage.pageInfo?.hasNextPage || !productsPage.pageInfo.endCursor) break;
@@ -222,6 +226,7 @@ export async function buildProductsDigest(
       seoTitleQuality: p.seoTitle.length === 0 ? "missing" : p.seoTitle.length > 60 ? "long" : "ok",
       seoDescriptionQuality: p.seoDescription.length === 0 ? "missing" : p.seoDescription.length < 70 ? "thin" : p.seoDescription.length > 160 ? "long" : "ok",
       geoReady: p.descText.length >= 200 && Boolean(p.vendor) && Boolean(p.productType) && p.tagCount >= 3 && p.imagesNoAlt === 0,
+      createdAt: p.createdAt,
     };
   });
 
