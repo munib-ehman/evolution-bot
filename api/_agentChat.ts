@@ -205,10 +205,10 @@ const PROPOSAL_SCHEMAS: Record<string, ToolSchema> = {
             type: "object",
             properties: {
               id: { type: "string" }, title: { type: "string" }, descriptionHtml: { type: "string" }, handle: { type: "string" },
-              sortOrder: { type: "string" }, products: { type: "array", items: { type: "string" } },
+              sortOrder: { type: "string" }, products: { type: "array", items: { type: "string" }, minItems: 1 },
               seo: { type: "object", properties: { title: { type: "string" }, description: { type: "string" } } },
             },
-            required: ["title"],
+            required: ["title", "products"],
           },
         },
         required: ["summary", "collection"],
@@ -265,7 +265,7 @@ const MAX_TOOL_ROUNDS = 3;
 const GROQ_TIMEOUT_MS = 25_000;
 const SEO_SYNTHESIS_MODEL = "llama-3.1-8b-instant";
 /** Client history is advisory; the server enforces its own tighter cap. */
-const MAX_HISTORY_TURNS = 16;
+const MAX_HISTORY_TURNS = 8;
 
 export interface AgentChatBody {
   messages?: unknown;
@@ -339,7 +339,7 @@ async function loadPersistentContext(env: SkillEnv, userId: string, current: Cha
       .reverse()
       .map((turn) => `${turn.role}: ${turn.content.slice(0, 350)}`)
       .join("\n")
-      .slice(-2_400);
+      .slice(-1_000);
     const facts = memories.map((memory) => `- [${memory.category}] ${memory.content.slice(0, 300)}`).join("\n");
     return [
       "DURABLE MERCHANT MEMORY (explicit facts; authoritative until changed):",
@@ -506,7 +506,7 @@ function buildSystemPrompt(shop: string, catalogBlock: string, persistentContext
   const roleIdentity = manager === "seo"
     ? `You are currently the SEO Manager. Stay within Product SEO and AI/GEO discoverability. Do not act as the Marketing Manager, recommend email campaigns, or create recovery, win-back, or broadcast campaigns. Treat older conversation from another workspace as background only, never as the current task. When the merchant asks you to generate, add, prepare, or create a recommended SEO change, you must use tools and produce an approval proposal now; never merely say that you will prepare it, and never tell the merchant which tools should be called.`
     : manager === "product"
-      ? `You are currently the Product Manager. Focus on product research, shopper-visible product titles and descriptions, catalog taxonomy, assortment, collections, and merchandising. Use live Shopify product, sales, and abandoned-checkout evidence. Do not modify SEO title or meta description; those belong to the SEO Manager. Product and collection changes must be approval proposals. Never claim page conversion because page-view data is unavailable. Bundle ideas are recommendations only. When your previous message paused a named listing job and asked the merchant for missing product facts, treat their next factual reply as permission to resume that exact job: fetch the named product, use their reply as merchant-confirmed facts, and prepare the complete shopper-visible listing proposal. Do not ask them to edit Shopify first and do not repeat the same questions.`
+      ? `You are currently the Product Manager. Focus on product research, shopper-visible product titles and descriptions, catalog taxonomy, assortment, collections, and merchandising. Use live Shopify product, sales, and abandoned-checkout evidence. Do not modify SEO title or meta description; those belong to the SEO Manager. Product and collection changes must be approval proposals. A new manual collection must contain at least one real catalog product: fetch the catalog first, suggest the relevant products, and include their Shopify product IDs in prepare_collection. If the requested membership is ambiguous, ask the merchant which suggested products to include instead of preparing an empty collection. Never claim page conversion because page-view data is unavailable. Bundle ideas are recommendations only. When your previous message paused a named listing job and asked the merchant for missing product facts, treat their next factual reply as permission to resume that exact job: fetch the named product, use their reply as merchant-confirmed facts, and prepare the complete shopper-visible listing proposal. Do not ask them to edit Shopify first and do not repeat the same questions.`
     : manager === "customer-success"
       ? `You are currently the Customer Success Manager. Focus on customer support risks, honest review generation, and customer retention. Use live Shopify order and customer signals. Treat older conversation from another workspace as background only and never introduce yourself as the Marketing or SEO Manager. For review requests, use only get_retention_snapshot.reviewEligiblePurchases; never infer a purchased product from the catalog, price, or another order. A review candidate must come from a successfully fulfilled order in the tool result. For overdue fulfillment, first recommend that the merchant verify inventory, fulfillment status, and a real ship date; offer cancellation or refund when appropriate. Draft customer replies using only verified facts, and never promise shipment, an update, or a resolution that the merchant has not confirmed. Customer email sending exists only in the structured Customer Support queue and requires the merchant to review and approve the exact message; chat cannot send and must never claim a message was sent.`
     : manager === "marketing"
@@ -735,12 +735,13 @@ export async function runAgentChat(
   const model = env.groqModel || CHAT_MODEL_DEFAULT;
   const clarifyCampaign = manager === "marketing" && needsCampaignClarification(turns);
   const recentText = turns.slice(-6).map(turn=>turn.content.toLowerCase()).join("\n");
+  const requestedProductProposal = manager === "product" ? forcedProposalTool(turns) : null;
   const forcedTool = manager === "seo"
     ? forcedSeoTool(turns)
     : manager === "marketing"
       ? forcedCampaignTool(turns) ?? forcedProposalTool(turns)
       : manager === "product"
-        ? forcedProposalTool(turns)
+        ? requestedProductProposal === "prepare_collection" ? "get_products" : requestedProductProposal
         : null;
   const selectedNames = selectedAgentToolNames(turns, manager);
   if (forcedTool && !selectedNames.includes(forcedTool)) selectedNames.push(forcedTool);
@@ -851,6 +852,19 @@ export async function runAgentChat(
         let pendingForcedTool: (typeof AGENT_TOOL_NAMES)[number] | null = forcedTool;
         let proposalEmitted = false;
 
+        if (requestedProductProposal === "prepare_collection") {
+          progress("Loading products for the collection…");
+          const digest = await buildProductsDigest(conn, 100);
+          if ("error" in digest) {
+            controller.enqueue(sse({ choices: [{ delta: { content: `I couldn't load the live catalog: ${digest.error}. No collection proposal was created.` } }] }));
+            return;
+          }
+          const products = (digest.products as {id:string;title:string;status?:string;soldOut?:boolean}[])
+            .map(product => ({ id: product.id, title: product.title, status: product.status, soldOut: Boolean(product.soldOut) }));
+          convo.push({ role: "system", content: `Live Shopify products available for this collection:\n${JSON.stringify(products)}\n\nSelect only relevant products based on the merchant's latest request and recent conversation, then call prepare_collection. Include at least one exact product ID. If the request does not identify a sensible group, ask the merchant to choose from a short list instead of calling prepare_collection.` });
+          pendingForcedTool = "prepare_collection";
+        }
+
         // Product resolution and detail fetching are deterministic data work,
         // so do them in code instead of spending two LLM requests asking the
         // model to select obvious tools. The model is used once: to draft the
@@ -895,10 +909,7 @@ export async function runAgentChat(
           const lastRound = round === MAX_TOOL_ROUNDS;
           const forcedThisRound = pendingForcedTool;
           pendingForcedTool = null;
-          const res = await fetch(`${GROQ_BASE}/chat/completions`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.groqKey}` },
-            body: JSON.stringify({
+          const requestBody = JSON.stringify({
               model: seoProposalRequested ? SEO_SYNTHESIS_MODEL : model,
               messages: convo,
               temperature: 0.4,
@@ -909,9 +920,36 @@ export async function runAgentChat(
                   ? { type: "function", function: { name: forcedThisRound } }
                   : "auto",
               }),
-            }),
+            });
+          const requestGroq = () => fetch(`${GROQ_BASE}/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.groqKey}` },
+            body: requestBody,
             signal: AbortSignal.timeout(GROQ_TIMEOUT_MS),
           });
+          let res = await requestGroq();
+          if (res.status === 400) {
+            const functionDetail = await res.clone().text().catch(() => "");
+            if (/failed_generation|failed to call a function/i.test(functionDetail)) {
+              progress("Repairing the tool request…");
+              const repairPayload = { ...JSON.parse(requestBody), temperature: 0, parallel_tool_calls: false };
+              res = await fetch(`${GROQ_BASE}/chat/completions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.groqKey}` },
+                body: JSON.stringify(repairPayload),
+                signal: AbortSignal.timeout(GROQ_TIMEOUT_MS),
+              });
+            }
+          }
+          if (res.status === 429) {
+            const rateDetail = await res.clone().text().catch(() => "");
+            const waitSeconds = Number(rateDetail.match(/try again in ([\d.]+)s/i)?.[1] ?? 0);
+            if (waitSeconds > 0 && waitSeconds <= 10) {
+              progress(`Groq is briefly busy; retrying in ${Math.ceil(waitSeconds)}s…`);
+              await new Promise(resolve => setTimeout(resolve, Math.ceil(waitSeconds * 1_000) + 250));
+              res = await requestGroq();
+            }
+          }
           if (!res.ok) {
             const detail = await res.text().catch(() => "");
             log("error", "agent-chat", "groq_upstream", { status: res.status, round });

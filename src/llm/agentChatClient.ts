@@ -40,7 +40,7 @@ export interface AgentChatOptions {
 }
 
 /** Server rebuilds the system prompt; send user/assistant turns only. */
-const HISTORY_TURNS = 16;
+const HISTORY_TURNS = 8;
 
 async function sessionToken(refresh = false): Promise<string | null> {
   if (!supabase) return null;

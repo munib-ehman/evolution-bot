@@ -39,7 +39,9 @@ function preview(action: ShopifyActionProposal): string[] {
     return [String(product?.title??"New draft"),"Status: Unpublished Shopify draft",product?.productType?`Product type: ${product.productType}`:"",product?.descriptionHtml?`Optimized product description: ${plainText(product.descriptionHtml)}`:"",product?.tags?.length?`Catalog tags: ${product.tags.join(", ")}`:"",product?.price?`Recommended initial price: ${product.price}`:"Price needs confirmation"].filter(Boolean);
   }
   if (action.kind === "collection_upsert") {
-    return [String((action.payload.collection as { title?: string })?.title ?? "Collection")];
+    const title = String((action.payload.collection as { title?: string })?.title ?? "Collection");
+    const selected = (action.payload.selectedProducts as {id:string;title:string}[]|undefined) ?? [];
+    return [title, selected.length ? `${selected.length} product${selected.length===1?"":"s"}: ${selected.map(product=>product.title).join(", ")}` : "No products selected"];
   }
   const d = action.payload.discount as { code?: string; valueType?: string; value?: number; endsAt?: string };
   return [

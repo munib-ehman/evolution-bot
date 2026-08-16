@@ -510,6 +510,10 @@ export async function runActionPropose(body: ActionProposeBody, authHeader: stri
     const id = c.id == null ? null : gid("Collection", c.id);
     const title = cleanText(c.title, 255);
     if (!title || (c.id != null && !id)) return json(400, { error: "Invalid collection proposal." });
+    const productIds = stringList(c.products, 100).map((v) => gid("Product", v)).filter((v): v is string => Boolean(v));
+    if (!id && productIds.length === 0) return json(400, { error: "Choose at least one product for a new collection." });
+    const selectedProducts = productIds.length ? await productStates(ctx.conn, productIds) : [];
+    if (selectedProducts === null) return json(400, { error: "One or more selected collection products do not exist in Shopify." });
     payload = {
       collection: {
         ...(id ? { id } : {}),
@@ -518,8 +522,9 @@ export async function runActionPropose(body: ActionProposeBody, authHeader: stri
         handle: cleanText(c.handle, 255),
         sortOrder: cleanText(c.sortOrder, 50) || "MANUAL",
         seo: { title: cleanText((c.seo as Record<string, unknown>)?.title, 70), description: cleanText((c.seo as Record<string, unknown>)?.description, 320) },
-        products: stringList(c.products, 100).map((v) => gid("Product", v)).filter(Boolean),
+        products: productIds,
       },
+      selectedProducts: selectedProducts.map(product => ({ id: product.id, title: product.title })),
     };
     if (id) {
       const state = await collectionState(ctx.conn, id);

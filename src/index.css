@@ -1940,23 +1940,29 @@ code {
 .manager-status i { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: #36a269; box-shadow: 0 0 0 5px #daf2e4; }
 .manager-priority { margin: 22px 0 14px; padding: 18px; border: 1px solid #d7e8dc; border-radius: 18px; background: linear-gradient(135deg, #f3fbf5, #fffaf3); }
 .manager-priority strong { display: block; margin-top: 5px; font-size: 15px; line-height: 1.4; }
-.manager-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 22px; }
-.manager-metrics article { padding: 14px; border: 1px solid var(--line); border-radius: 15px; background: var(--card); }
+.manager-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 30px; }
+.manager-metrics article { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
 .manager-metrics span, .manager-metrics small { display: block; color: var(--muted); font-size: 11px; }
 .manager-metrics strong { display: block; margin: 3px 0; font-size: 24px; }
 .manager-section-head { margin-bottom: 10px; align-items: end; }
 .manager-section-head h3 { margin: 3px 0 0; font-size: 18px; }
 .manager-section-head small { color: var(--muted); text-align: right; }
-.manager-workflows { display: grid; gap: 9px; }
-.workflow-card { display: grid; grid-template-columns: 34px minmax(150px, 1fr) auto; align-items: center; gap: 10px 14px; padding: 13px; border: 1px solid var(--line); border-radius: 15px; background: var(--card); }
+.manager-workflows { display: grid; gap: 12px; }
+.manager-workflows + .manager-workflows { margin-top: 30px; }
+.workflow-card { display: grid; grid-template-columns: 40px minmax(150px, 1fr) auto; align-items: center; gap: 12px 16px; padding: 17px 18px; border: 1px solid var(--line); border-radius: 17px; background: var(--card); }
 .workflow-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--cream-2); color: var(--g2); font-size: 11px; font-weight: 800; }
 .workflow-card h4 { margin: 0 0 3px; font-size: 14px; }
 .workflow-card p { margin: 0; color: var(--muted); font-size: 11.5px; }
 .workflow-state { padding: 5px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
 .workflow-state.ready { color: #26794a; background: #e4f5ea; }
 .workflow-state.setup { color: #8a6414; background: #fff3d8; }
-.workflow-actions { grid-column: 2 / 4; justify-content: flex-start; gap: 8px; }
-.workflow-actions button:not(.link) { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--cream); color: var(--ink); cursor: pointer; font-weight: 700; }
+.workflow-actions { grid-column: 2 / 4; justify-content: flex-start; gap: 9px; margin-top: 2px; }
+.workflow-actions button { min-height: 38px; padding: 8px 13px; border-radius: 10px; font: inherit; font-size: 12px; font-weight: 750; cursor: pointer; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .16s ease; }
+.workflow-actions button:not(.link) { border: 1px solid #ecd7c5; background: #fff8ef; color: var(--ink); box-shadow: 0 2px 7px rgba(83,43,26,.05); }
+.workflow-actions button:not(.link):hover { border-color: #e6b892; background: #fff; box-shadow: 0 5px 13px rgba(83,43,26,.09); transform: translateY(-1px); }
+.workflow-actions button.link { border: 1px solid transparent; color: #aa563b; text-decoration: none; }
+.workflow-actions button.link:hover { border-color: #f0d6c7; background: #fff7f1; }
+.workflow-actions button:disabled { opacity: .55; cursor: wait; transform: none; }
 .manager-notice { padding: 10px 12px; border-radius: 12px; background: #fff3e8; color: #8a4b21; font-size: 12px; }
 .manager-safety { margin: 16px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .support-case-list { display: grid; gap: 10px; margin-top: 14px; }
@@ -2060,9 +2066,14 @@ code {
 .seo-facts-modal footer > div { display:flex; align-items:center; gap:10px; }
 @media (max-width:680px) { .seo-facts-backdrop{padding:10px;place-items:end center}.seo-facts-modal{max-height:90vh;padding:20px;border-radius:22px 22px 12px 12px}.seo-facts-fields{grid-template-columns:1fr}.seo-facts-fields label:last-child{grid-column:auto}.seo-facts-modal footer{align-items:stretch;flex-direction:column}.seo-facts-modal footer > div{justify-content:flex-end;flex-wrap:wrap} }
 .avatar-loading { width:100%; height:100%; min-height:320px; border-radius:inherit; background:radial-gradient(circle at 50% 45%,rgba(255,180,111,.18),transparent 48%); }
-.product-manager-controls { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; padding:14px; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.55); }
+.product-manager-controls { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; padding:18px 20px; border:1px solid var(--line); border-radius:16px; background:rgba(255,255,255,.62); }
 .product-manager-controls label { display:grid; gap:6px; color:var(--muted); font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; }
-.product-manager-controls select, .product-manager input { min-height:38px; padding:8px 10px; border:1px solid var(--line); border-radius:9px; background:white; color:var(--ink); font:inherit; }
+.product-manager-controls select, .product-manager input { min-height:42px; padding:9px 38px 9px 13px; border:1px solid #ead8ca; border-radius:11px; background-color:white; color:var(--ink); font:inherit; font-weight:700; outline:none; transition:border-color .16s ease,box-shadow .16s ease; }
+.product-manager-controls select { min-width:170px; appearance:none; background-image:linear-gradient(45deg,transparent 50%,#7c584a 50%),linear-gradient(135deg,#7c584a 50%,transparent 50%); background-position:calc(100% - 17px) 18px,calc(100% - 12px) 18px; background-size:5px 5px,5px 5px; background-repeat:no-repeat; cursor:pointer; }
+.product-manager-controls select:focus, .product-manager input:focus { border-color:#f28a61; box-shadow:0 0 0 3px rgba(242,138,97,.15); }
+.product-manager-controls > button { min-height:42px; padding:9px 17px; border:0; border-radius:11px; background:var(--grad); color:white; font:inherit; font-weight:800; cursor:pointer; box-shadow:0 7px 16px rgba(255,90,80,.22); transition:transform .16s ease,box-shadow .16s ease; }
+.product-manager-controls > button:hover { transform:translateY(-1px); box-shadow:0 10px 20px rgba(255,90,80,.28); }
+.product-manager-controls > button:disabled { opacity:.58; cursor:wait; transform:none; }
 .product-manager-controls span { color:var(--muted); font-size:12px; }
 .pm-research-grid, .pm-product-list { display:grid; gap:12px; margin-top:12px; }
 .pm-research-grid .workflow-card details { grid-column:2 / -1; color:var(--muted); font-size:12px; }
@@ -2074,7 +2085,9 @@ code {
 .pm-order li { display:flex; align-items:center; gap:5px; color:var(--ink2); font-size:12px; }
 .pm-order li span { flex:1; }
 .pm-order li button { min-height:28px; padding:2px 7px; }
-@media(max-width:760px){.pm-checks{grid-template-columns:1fr}.pm-research-grid .workflow-card details{grid-column:1 / -1}}
+@media(max-width:760px){.pm-checks{grid-template-columns:1fr}.pm-research-grid .workflow-card details{grid-column:1 / -1}.product-manager-controls{align-items:stretch;flex-direction:column}.product-manager-controls select,.product-manager-controls>button{width:100%}}
+
+@media (max-width: 1120px) and (min-width: 761px) { .manager-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 @media (max-width: 760px) {
   .marketing-manager { padding: 18px; }
