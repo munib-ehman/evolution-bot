@@ -98,7 +98,7 @@ export async function runRetentionCustomers(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResult(401, { error: "Sign in first." });
-  if (!(await isOperator(env, user.id))) return { ...OPERATOR_REQUIRED };
+  if (!(await isOperator(env, user.id, user.email))) return { ...OPERATOR_REQUIRED };
 
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResult(409, { error: "Connect your Shopify store first." });
@@ -113,7 +113,7 @@ export async function runRetentionCustomers(
     return jsonResult(502, { error: "Couldn't reach the Shopify customers API." });
   }
 
-  const lapsedWithEmail = (lapsed ?? []).filter((c) => c.email.includes("@"));
+  const lapsedWithEmail = (lapsed ?? []).filter((c) => c.email.includes("@") && c.marketingState === "SUBSCRIBED");
   const buyersWithEmail = (buyers ?? []).filter((b) => b.email.includes("@"));
   return jsonResult(200, {
     lapsedWindow: { minDays: LAPSED_MIN_DAYS, maxDays: LAPSED_MAX_DAYS },
@@ -174,7 +174,7 @@ export async function runRetentionDraft(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResult(401, { error: "Sign in first." });
-  if (!(await isOperator(env, user.id))) return { ...OPERATOR_REQUIRED };
+  if (!(await isOperator(env, user.id, user.email))) return { ...OPERATOR_REQUIRED };
 
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResult(409, { error: "Connect your Shopify store first." });

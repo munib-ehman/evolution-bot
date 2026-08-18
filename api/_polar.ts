@@ -14,8 +14,8 @@
  *       external_customer_id + metadata.user_id, returns the hosted URL.
  *   handlePolarWebhook — Standard Webhooks signature verification, then
  *       subscription.active → operator/polar, subscription.revoked → free.
- *       Like the Shopify webhook: 200 after a valid signature no matter what
- *       (Polar retries non-2xx up to 10 times), 401 only on a bad signature.
+ *       Returns a retryable error when the plan update fails, and 401 only on
+ *       a bad signature.
  */
 import { resolveUserFull, type AuditEnv } from "./_audit";
 import { getConnection } from "./_shopify";
@@ -149,9 +149,10 @@ export async function runPolarPortal(
 }
 
 // ---------------------------------------------------------------------------
-// Standard Webhooks signature (https://www.standardwebhooks.com/): HMAC-SHA256
-// over `${id}.${timestamp}.${body}`, keyed with the base64-DECODED whsec_
-// secret; header carries space-separated `v1,<base64sig>` candidates.
+// Standard Webhooks verification implemented with Web Crypto so this module
+// remains compatible with Vercel's Edge runtime. Polar's SDK treats the
+// configured secret as UTF-8 bytes (including the `whsec_` prefix), rather
+// than base64-decoding the suffix.
 
 const TIMESTAMP_TOLERANCE_SECS = 5 * 60;
 const encoder = new TextEncoder();
@@ -168,38 +169,34 @@ export async function verifyPolarSignature(
     return false;
   }
 
-  let keyBytes: Uint8Array<ArrayBuffer>;
   try {
-    const b64 = secret.startsWith("whsec_") ? secret.slice(6) : secret;
-    keyBytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const signature = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      encoder.encode(`${headers.id}.${headers.timestamp}.${rawBody}`),
+    );
+    const expected = btoa(String.fromCharCode(...new Uint8Array(signature)));
+
+    for (const candidate of headers.signature.split(" ")) {
+      const [version, value] = candidate.split(",", 2);
+      if (version !== "v1" || !value || value.length !== expected.length) continue;
+      let diff = 0;
+      for (let i = 0; i < expected.length; i++) {
+        diff |= expected.charCodeAt(i) ^ value.charCodeAt(i);
+      }
+      if (diff === 0) return true;
+    }
+    return false;
   } catch {
     return false;
   }
-
-  const key = await crypto.subtle.importKey(
-    "raw",
-    keyBytes,
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    encoder.encode(`${headers.id}.${headers.timestamp}.${rawBody}`),
-  );
-  const expected = btoa(String.fromCharCode(...new Uint8Array(sig)));
-
-  // The header may list several versioned signatures (key rotation).
-  for (const candidate of headers.signature.split(" ")) {
-    const [version, value] = candidate.split(",", 2);
-    if (version !== "v1" || !value) continue;
-    if (value.length !== expected.length) continue;
-    let diff = 0;
-    for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ value.charCodeAt(i);
-    if (diff === 0) return true;
-  }
-  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -240,7 +237,8 @@ export async function handlePolarWebhook(
   try {
     payload = JSON.parse(rawBody) as PolarWebhookPayload;
   } catch {
-    return { status: 200, body: { received: true } };
+    log("warn", "polar-webhook", "payload_rejected", {});
+    return { status: 400, body: { error: "Invalid webhook payload." } };
   }
   const type = payload.type ?? "";
   const userId = payloadUserId(payload);
@@ -253,7 +251,7 @@ export async function handlePolarWebhook(
       ? `user_id=eq.${userId}`
       : `user_id=eq.${userId}&plan_source=eq.polar`;
     try {
-      await fetch(`${env.supabaseUrl}/rest/v1/profiles?${filter}`, {
+      const response = await fetch(`${env.supabaseUrl}/rest/v1/profiles?${filter}`, {
         method: "PATCH",
         headers: {
           apikey: env.serviceRoleKey ?? "",
@@ -264,11 +262,14 @@ export async function handlePolarWebhook(
         body: JSON.stringify(active ? { plan: "operator", plan_source: "polar" } : { plan: "free" }),
         signal: AbortSignal.timeout(6_000),
       });
+      if (!response.ok) {
+        log("error", "polar-webhook", "plan_sync_failed", { userId, type, status: response.status });
+        return { status: 502, body: { error: "Plan update failed." } };
+      }
       log("info", "polar-webhook", "plan_synced", { userId, type });
     } catch {
-      // Answer 200 anyway — Polar's retries would re-run the same PATCH, but
-      // a support ping beats a retry storm; the log line is the alert.
       log("error", "polar-webhook", "plan_sync_failed", { userId, type });
+      return { status: 502, body: { error: "Plan update failed." } };
     }
   }
 

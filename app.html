@@ -2,10 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- Shopify App Bridge MUST be the first script (App Store requirement).
-         Outside the Shopify admin it detects it isn't framed and stays inert. -->
     <meta name="shopify-api-key" content="%VITE_SHOPIFY_API_KEY%" />
-    <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+    <!-- App Bridge requires Shopify's embedded launch parameters. Loading it on
+         the standalone login page produces a missing-shop runtime exception. -->
+    <script>
+      if (new URLSearchParams(location.search).has("shop")) {
+        const appBridge = document.createElement("script");
+        appBridge.src = "https://cdn.shopify.com/shopifycloud/app-bridge.js";
+        document.head.appendChild(appBridge);
+      }
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#fff8f0" />
     <!-- The app is login-gated; the marketing site at / is what search engines index. -->

@@ -25,9 +25,12 @@ export const OPERATOR_REQUIRED = {
 } as const;
 
 export async function isOperator(
-  env: Pick<AuditEnv, "supabaseUrl" | "serviceRoleKey">,
+  env: Pick<AuditEnv, "supabaseUrl" | "serviceRoleKey" | "adminEmails">,
   userId: string,
+  userEmail?: string | null,
 ): Promise<boolean> {
+  const admins = (env.adminEmails ?? "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
+  if (userEmail && admins.includes(userEmail.toLowerCase())) return true;
   if (!env.supabaseUrl || !env.serviceRoleKey) return true; // demo deployment: no billing
   try {
     const res = await fetch(

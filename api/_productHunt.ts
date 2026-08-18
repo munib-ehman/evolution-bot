@@ -15,6 +15,10 @@
  */
 import { GROQ_BASE, CHAT_MODEL_DEFAULT, RESEARCH_MODEL_DEFAULT } from "./_shared";
 import { normalizeStoreUrl, fetchText, stripHtml, resolveUserFull, type AuditEnv } from "./_audit";
+import { getConnection, type ShopifyEnv } from "./_shopify";
+import { buildProductsDigest } from "./_skillTools";
+import { collectEvidence, sourceUrl } from "./_seoOptimizer";
+import { isOperator } from "./_plan";
 import { checkRateLimit } from "./_ratelimit";
 import { log } from "./_log";
 
@@ -58,11 +62,14 @@ export interface HuntReport {
   summary: string;
   products: HuntProduct[];
   generatedAt: string;
+  targetMarket?: "US" | "Canada" | "GCC";
 }
 
 /** Hunts are the priciest free call we run (a live search pass) — cap hard. */
 const HUNT_LIMIT_USER_PER_DAY = 5;
 const RESEARCH_TIMEOUT_MS = 90_000;
+const EVIDENCE_CACHE_MS=30*60*1000;
+const evidenceCache=new Map<string,{raw:string;at:number}>();
 
 const enc = new TextEncoder();
 const sse = (obj: unknown) => enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
@@ -78,7 +85,7 @@ function jsonResponse(status: number, body: Record<string, unknown>): Response {
 // ---------------------------------------------------------------------------
 // Step 1 — what does this store sell? (public data only)
 
-interface CatalogDigest {
+export interface CatalogDigest {
   host: string;
   storeTitle: string;
   storeDescription: string;
@@ -146,83 +153,54 @@ const REPORT_SHAPE = `{
   ]
 }`;
 
-/**
- * Stage A runs on the compound (search-capable) model and writes research
- * NOTES in markdown — the same shape as the proven product_research skill.
- * Demanding strict JSON here reliably suppresses compound's search tool
- * (verified 2026-07-29: it then refuses with "I can't search"), so the JSON
- * structuring is a separate stage-B call on the chat model.
- */
-const RESEARCH_SYSTEM = `You are Evolution's product hunter — the research engine behind an AI COO for ecommerce stores. The user message carries a digest of the founder's REAL store catalog — use it to pin down the niche, audience, and price band. Everything about the MARKET must come from live web searches you run now: current trending-product and marketplace best-seller roundups in and adjacent to the niche, demand signals (search-trend and social-trend reports, TikTok/Instagram traction), and actual supplier listings (AliExpress, Alibaba, CJdropshipping, Zendrop, Faire) for unit costs. Put a source link next to every trend claim, price benchmark, and supplier. If a search didn't verify something, leave it out — never invent products, stats, or links.
+type ResearchPlan={niche:string;audience:string;candidates:{name:string;query:string;reason:string}[]};
 
-Write research notes in markdown:
-- First: the store's niche and audience in one line each, then 2 sentences on which product you'd launch first and why.
-- Then "## {n}. {Product}" per product — exactly 3 products, genuinely different from each other, and none of them something the store already sells (its current titles are in the digest):
-  - **Why it's winning now** — the trend evidence you found, each claim with its source URL.
-  - **Numbers** — 3-5 concrete stats from your searches: supplier unit cost, typical retail, review counts, trend direction, social traction. A founder should feel the demand is real.
-  - **Sourcing** — 2-3 named suppliers with what to search there, the listing/search URL you found, and the unit cost you saw.
-  - **Draft listing** — a product-page title under 70 characters, a suggested retail price that fits the store's price band with 60%+ margin over the unit cost, 5 benefit-first bullets, and a 120-170 word product description. No invented reviews or certifications, no medical or income claims.
-  - **Fit** — one sentence on why it suits THIS store and its price band.`;
+async function planResearchTerms(digest:CatalogDigest,env:AuditEnv,targetMarket:"US"|"Canada"|"GCC"):Promise<ResearchPlan|null>{
+  const anchors=catalogAnchors(digest.productTitles);
+  try{
+    const res=await fetch(`${GROQ_BASE}/chat/completions`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${env.groqKey}`},body:JSON.stringify({model:env.groqModel||CHAT_MODEL_DEFAULT,temperature:.15,max_tokens:900,response_format:{type:"json_object"},messages:[{role:"system",content:"Return JSON only. You create search plans, not research findings. From the real Shopify catalog, identify its dominant niche and propose 5 adjacent products the same shopper could buy. Each search query must explicitly contain the dominant catalog category. Do not claim demand, prices, reviews, trends, or supplier availability; custom collectors will verify those. Exclude products already present. Return {niche,audience,candidates:[{name,query,reason}]} with exactly 5 concise candidates."},{role:"user",content:JSON.stringify({catalog:digest.productTitles,anchors,priceBand:digest.priceBand,targetMarket})}]}),signal:AbortSignal.timeout(20_000)});
+    if(!res.ok)return null;
+    const data=await res.json() as {choices?:{message?:{content?:string}}[]};
+    const parsed=extractJsonObject(data.choices?.[0]?.message?.content??"");
+    if(!parsed)return null;
+    const candidates=(Array.isArray(parsed.candidates)?parsed.candidates:[]).map(value=>{const row=value as Record<string,unknown>;return{name:str(row.name,100),query:str(row.query,120).toLowerCase(),reason:str(row.reason,240)};}).filter(row=>row.name&&row.query&&anchors.some(anchor=>row.query.includes(anchor))).slice(0,5);
+    if(candidates.length<3)return null;
+    return {niche:str(parsed.niche,120)||anchors.join(" "),audience:str(parsed.audience,160)||`Shoppers buying ${anchors[0]}`,candidates};
+  }catch{return null;}
+}
+
+function fallbackResearchPlan(digest:CatalogDigest):ResearchPlan|null{
+  const anchor=catalogAnchors(digest.productTitles)[0];
+  if(!anchor)return null;
+  return {niche:anchor,audience:`Shoppers buying ${anchor} products`,candidates:["accessories","maintenance tool","protective gear","travel storage","replacement parts"].map(suffix=>({name:`${anchor} ${suffix}`.replace(/\b\w/g,char=>char.toUpperCase()),query:`${anchor} ${suffix}`,reason:`Adjacent ${anchor} catalog opportunity to verify.`}))};
+}
+
+async function collectCustomResearch(plan:ResearchPlan,digest:CatalogDigest,targetMarket:"US"|"Canada"|"GCC"){
+  const market=targetMarket==="Canada"?"ca":targetMarket==="GCC"?"ae":"us";
+  const existing=digest.productTitles.map(title=>title.toLowerCase());
+  const rows=await Promise.all(plan.candidates.map(async candidate=>{
+    const evidence=await collectEvidence(candidate.query,market,"en");
+    const available=evidence.status.filter(source=>source.status==="available");
+    const marketplaceTitles=evidence.marketplaces.flatMap(group=>group.titles).slice(0,12);
+    const observations=available.reduce((total,source)=>total+source.observations,0);
+    const duplicate=existing.some(title=>title.includes(candidate.name.toLowerCase())||candidate.name.toLowerCase().includes(title));
+    return {...candidate,score:duplicate?0:Math.min(100,available.length*20+Math.min(observations,40)),observations,suggestions:evidence.suggestions.slice(0,10),marketplaceTitles,sources:available.map(source=>({title:`${source.source} results for ${candidate.query}`,url:source.url,observations:source.observations})),sourcing:[{supplier:"Alibaba",searchTerm:candidate.query,url:`https://www.alibaba.com/trade/search?SearchText=${encodeURIComponent(candidate.query)}`},{supplier:"AliExpress",searchTerm:candidate.query,url:`https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(candidate.query)}`}],searchUrls:{google:sourceUrl("google",candidate.query,market),amazon:sourceUrl("amazon",candidate.query,market),ebay:sourceUrl("ebay",candidate.query,market)}};
+  }));
+  return rows.filter(row=>row.score>=20).sort((a,b)=>b.score-a.score).slice(0,3);
+}
 
 export async function researchCall(
   digest: CatalogDigest,
   env: AuditEnv,
+  targetMarket: "US" | "Canada" | "GCC" = "US",
 ): Promise<{ content: string | null; failure: ResearchFailure }> {
-  try {
-    const res = await fetch(`${GROQ_BASE}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.groqKey}` },
-      body: JSON.stringify({
-        model: env.groqResearchModel || RESEARCH_MODEL_DEFAULT,
-        temperature: 0.3,
-        // 3 products × (evidence + stats + sourcing + full listing) is long —
-        // a tight cap truncates the notes and stage B can only salvage 1-2.
-        max_tokens: 5000,
-        stream: false,
-        messages: [
-          { role: "system", content: RESEARCH_SYSTEM },
-          {
-            role: "user",
-            content: JSON.stringify({
-              store: digest.host,
-              storeTitle: digest.storeTitle,
-              storeDescription: digest.storeDescription,
-              priceBand: digest.priceBand,
-              currentCatalog: digest.productTitles,
-            }),
-          },
-        ],
-      }),
-      signal: AbortSignal.timeout(RESEARCH_TIMEOUT_MS),
-    });
-    if (!res.ok) {
-      const detail = (await res.json().catch(() => null)) as {
-        error?: { code?: string; type?: string };
-      } | null;
-      const code = detail?.error?.code ?? detail?.error?.type ?? "unknown";
-      log("warn", "hunt", "research_upstream_error", { status: res.status, code });
-      return {
-        content: null,
-        failure:
-          res.status === 401 || res.status === 403
-            ? "auth"
-            : res.status === 429
-              ? "rate_limit"
-              : res.status === 413
-                ? "payload"
-                : "upstream",
-      };
-    }
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const content = data.choices?.[0]?.message?.content ?? null;
-    return { content, failure: content ? null : "empty" };
-  } catch (err) {
-    log("warn", "hunt", "research_failed", { err: String(err) });
-    return {
-      content: null,
-      failure: err instanceof DOMException && err.name === "TimeoutError" ? "timeout" : "upstream",
-    };
-  }
+  const plan=await planResearchTerms(digest,env,targetMarket)??fallbackResearchPlan(digest);
+  if(!plan)return {content:null,failure:"empty"};
+  try{
+    const candidates=await collectCustomResearch(plan,digest,targetMarket);
+    if(!candidates.length)return {content:null,failure:"empty"};
+    return {content:JSON.stringify({engine:"evolution-custom-product-research-v1",catalog:{niche:plan.niche,audience:plan.audience,anchors:catalogAnchors(digest.productTitles),priceBand:digest.priceBand,currentProducts:digest.productTitles},targetMarket,candidates}),failure:null};
+  }catch(err){log("warn","hunt","custom_collection_failed",{err:String(err)});return {content:null,failure:err instanceof DOMException&&err.name==="TimeoutError"?"timeout":"upstream"};}
 }
 
 type ResearchFailure = "auth" | "rate_limit" | "payload" | "timeout" | "upstream" | "empty" | null;
@@ -264,7 +242,7 @@ export async function reformatCall(
         messages: [
           {
             role: "system",
-            content: `Convert the research notes you are given into EXACTLY this JSON shape, preserving every fact, number, and URL as-is (never invent new ones; drop what doesn't fit). The "niche", "audience" and "summary" fields come from the notes' opening lines. One exception to as-is — the "listing" object is sales copy, not research: write each description as polished, benefit-first copy of 120-170 words, and if the notes are missing any listing field for a product (title, price, bullets), write it yourself from that product's facts in the notes (price consistent with the retail numbers given). Never add certifications, reviews, or statistics that aren't in the notes:\n${REPORT_SHAPE}`,
+            content: `Analyze the JSON evidence collected by Evolution's custom product-research engine and return EXACTLY this report shape. The input's catalog and source observations are authoritative. Rank candidates by score, catalog fit, and breadth of available sources. Preserve every fact, count, search term, and URL as-is; never invent demand, sales, prices, review counts, costs, specifications, certifications, or supplier availability. Observation counts mean results inspected, not sales or search volume. Supplier search URLs prove only that a search can be opened, so omit unitCost unless the evidence explicitly contains it. Listing copy may explain the candidate product type and its fit, but must not invent product-specific materials, dimensions, compatibility, or performance. Suggested retail may use the connected store's price band and must be labeled as a recommendation, not market evidence. Produce fewer than three products if fewer are present in the evidence:\n${REPORT_SHAPE}`,
           },
           { role: "user", content: raw.slice(0, 24_000) },
         ],
@@ -333,7 +311,7 @@ function sourcingUrl(supplier: string, searchTerm: string): string | undefined {
   return entry ? entry.build(searchTerm) : undefined;
 }
 
-function sanitizeReport(parsed: Record<string, unknown>, storeUrl: string): HuntReport | null {
+function sanitizeReport(parsed: Record<string, unknown>, storeUrl: string, targetMarket:"US"|"Canada"|"GCC"="US"): HuntReport | null {
   const rawProducts = Array.isArray(parsed.products) ? parsed.products : [];
   const products: HuntProduct[] = [];
   for (const raw of rawProducts.slice(0, 3)) {
@@ -395,6 +373,7 @@ function sanitizeReport(parsed: Record<string, unknown>, storeUrl: string): Hunt
     summary: str(parsed.summary, 800),
     products,
     generatedAt: new Date().toISOString(),
+    targetMarket,
   };
 }
 
@@ -431,28 +410,55 @@ export async function verifySources(report: HuntReport): Promise<void> {
 
 async function persistHunt(env: AuditEnv, report: HuntReport, userId: string): Promise<void> {
   if (!env.supabaseUrl || !env.serviceRoleKey) return;
-  try {
-    const res = await fetch(`${env.supabaseUrl}/rest/v1/product_hunts`, {
-      method: "POST",
-      headers: {
-        apikey: env.serviceRoleKey,
-        Authorization: `Bearer ${env.serviceRoleKey}`,
-        "Content-Type": "application/json",
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify({
-        user_id: userId,
-        store_url: report.storeUrl,
-        niche: report.niche,
-        report,
-      }),
-      signal: AbortSignal.timeout(4_000),
-    });
-    if (!res.ok) log("warn", "hunt", "persist_failed", { status: res.status });
-  } catch (err) {
-    log("warn", "hunt", "persist_unreachable", { err: String(err) });
-    /* best-effort; the report already streamed to the client */
+  const headers = {
+    apikey: env.serviceRoleKey,
+    Authorization: `Bearer ${env.serviceRoleKey}`,
+    "Content-Type": "application/json",
+    Prefer: "return=minimal",
+  };
+  const insert = async (table:string, body:Record<string,unknown>) => {
+    try {
+      const res = await fetch(`${env.supabaseUrl}/rest/v1/${table}`, {
+        method:"POST", headers, body:JSON.stringify(body), signal:AbortSignal.timeout(8_000),
+      });
+      if(!res.ok) log("warn","hunt","persist_failed",{table,status:res.status});
+      return res.ok;
+    } catch(err) {
+      log("warn","hunt","persist_unreachable",{table,err:String(err)});
+      return false;
+    }
+  };
+  // The Product Manager table is canonical. Keep the legacy write independent:
+  // a timeout or missing migration in either table must not skip the other one.
+  await Promise.all([
+    insert("product_research_runs", {
+      user_id:userId,shop_domain:new URL(report.storeUrl).host,target_market:report.targetMarket??"US",
+      status:"completed",report,catalog_snapshot:{niche:report.niche,audience:report.audience},
+    }),
+    insert("product_hunts", {
+      user_id:userId,store_url:report.storeUrl,niche:report.niche,report,
+    }),
+  ]);
+}
+
+const CATALOG_STOPWORDS=new Set(["the","a","an","and","for","with","product","premium","collection","multi","location"]);
+export function catalogAnchors(titles:string[]):string[]{
+  const counts=new Map<string,number>();
+  for(const title of titles){
+    const unique=new Set(title.toLowerCase().match(/[a-z][a-z-]{3,}/g)??[]);
+    for(const token of unique)if(!CATALOG_STOPWORDS.has(token))counts.set(token,(counts.get(token)??0)+1);
   }
+  const threshold=Math.max(2,Math.ceil(titles.length*.3));
+  return [...counts].filter(([,count])=>count>=threshold).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([token])=>token);
+}
+
+export function reportFitsCatalog(report:HuntReport,digest:CatalogDigest):boolean{
+  const anchors=catalogAnchors(digest.productTitles);
+  if(!anchors.length)return false;
+  return report.products.length>0&&report.products.every(product=>{
+    const text=[report.niche,product.name,product.hook,product.fit,product.whyWinning].join(" ").toLowerCase();
+    return anchors.some(anchor=>text.includes(anchor));
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -464,27 +470,22 @@ export async function executeHunt(
   storeUrl: string,
   env: AuditEnv,
   progress: (text: string) => void,
+  targetMarket: "US" | "Canada" | "GCC" = "US",
+  connectedDigest?: CatalogDigest,
 ): Promise<{ report: HuntReport | null; error: string | null }> {
   progress("Reading your catalog to pin down your niche…");
-  const digest = await readCatalog(host);
+  const digest = connectedDigest??await readCatalog(host);
   if (!digest) {
     return { report: null, error: "We couldn't read enough of that store to pin down its niche. Check the URL in My store and try again." };
   }
 
-  // One retry: compound sometimes skips its search tool and refuses in a
-  // sentence, or loops — a fresh call almost always recovers.
-  let research = await researchCall(digest, env);
-  let raw = research.content;
-  if (raw) raw = trimDegenerateTail(raw);
-  if (!raw && (research.failure === "auth" || research.failure === "rate_limit" || research.failure === "payload")) {
-    return { report: null, error: researchFailureMessage(research.failure) };
-  }
-  if (!raw || raw.length < 900) {
-    progress("First pass came back thin — hunting again…");
-    research = await researchCall(digest, env);
-    raw = research.content;
-    if (raw) raw = trimDegenerateTail(raw);
-  }
+  const cacheKey=`${digest.host}|${targetMarket}|${digest.productTitles.join("|")}`;
+  const cached=evidenceCache.get(cacheKey);
+  let research:Awaited<ReturnType<typeof researchCall>>={content:cached&&Date.now()-cached.at<EVIDENCE_CACHE_MS?cached.raw:null,failure:null};
+  if(research.content)progress("Reusing the verified evidence already collected for this catalog…");
+  else research=await researchCall(digest,env,targetMarket);
+  let raw=research.content;
+  if(raw)evidenceCache.set(cacheKey,{raw,at:Date.now()});
   if (!raw || raw.length < 300) {
     return { report: null, error: researchFailureMessage(research.failure) };
   }
@@ -497,9 +498,10 @@ export async function executeHunt(
     const { content, capacity } = await reformatCall(raw, env);
     capacityFail = capacity;
     const parsed = content ? extractJsonObject(content) : null;
-    const report = parsed ? sanitizeReport(parsed, storeUrl) : null;
-    if (report) {
+    const report = parsed ? sanitizeReport(parsed, storeUrl, targetMarket) : null;
+    if (report&&reportFitsCatalog(report,digest)) {
       await verifySources(report);
+      evidenceCache.delete(cacheKey);
       return { report, error: null };
     }
   }
@@ -516,9 +518,9 @@ export async function executeHunt(
 // Orchestrator
 
 export async function runProductHunt(
-  body: { url?: unknown },
+  body: { url?: unknown; targetMarket?: unknown },
   authHeader: string | null,
-  env: AuditEnv,
+  env: ShopifyEnv,
 ): Promise<Response> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResponse(401, { error: "Sign in to run the product hunt." });
@@ -529,19 +531,20 @@ export async function runProductHunt(
 
   const normalized = normalizeStoreUrl(body.url);
   if ("error" in normalized) return jsonResponse(400, { error: normalized.error });
+  const targetMarket = (["US","Canada","GCC"] as unknown[]).includes(body.targetMarket) ? body.targetMarket as "US"|"Canada"|"GCC" : "US";
+  const conn=await getConnection(env,userId);
+  if(!conn)return jsonResponse(409,{error:"Connect Shopify before researching products so I can keep every candidate inside your real catalog niche."});
+  const live=await buildProductsDigest(conn,100);
+  if("error" in live)return jsonResponse(502,{error:live.error});
+  const liveProducts=live.products as {title?:string;priceMin?:number|null;priceMax?:number|null}[];
+  const prices=liveProducts.flatMap(product=>[product.priceMin,product.priceMax]).filter((value):value is number=>typeof value==="number"&&value>0);
+  const connectedDigest:CatalogDigest={host:conn.shop_domain,storeTitle:conn.shop_domain.replace(".myshopify.com",""),storeDescription:"Connected Shopify catalog",priceBand:prices.length?`${Math.round(Math.min(...prices))}–${Math.round(Math.max(...prices))} (store currency)`:null,productTitles:liveProducts.map(product=>product.title??"").filter(Boolean)};
 
-  // Founder/admin accounts iterate on the feature — no daily cap for them.
-  const isAdmin = Boolean(
-    user.email &&
-      (env.adminEmails ?? "")
-        .split(",")
-        .map((e) => e.trim().toLowerCase())
-        .filter(Boolean)
-        .includes(user.email.toLowerCase()),
-  );
-
-  const allowed =
-    isAdmin || (await checkRateLimit(env, `hunt:u:${userId}`, 86_400, HUNT_LIMIT_USER_PER_DAY));
+  // Product Manager is a paid Operator surface: its research is unlimited.
+  // The shared endpoint also powers the separate free Product Hunt, where the
+  // small daily allowance still protects the expensive research pipeline.
+  const paidOperator=await isOperator(env,userId,user.email);
+  const allowed=paidOperator||(await checkRateLimit(env,`hunt:u:${userId}`,86_400,HUNT_LIMIT_USER_PER_DAY));
   if (!allowed) {
     log("warn", "hunt", "rate_limited", {});
     return jsonResponse(429, {
@@ -572,7 +575,7 @@ export async function runProductHunt(
           if (stageIdx < stages.length - 1) progress(stages[++stageIdx]);
         }, 9_000);
 
-        const { report, error } = await executeHunt(normalized.host, normalized.url, env, progress);
+        const { report, error } = await executeHunt(normalized.host, normalized.url, env, progress, targetMarket, connectedDigest);
         if (heartbeat) clearInterval(heartbeat);
         if (!report) {
           controller.enqueue(sse({ error }));

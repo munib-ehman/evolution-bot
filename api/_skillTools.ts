@@ -18,9 +18,11 @@ import {
   fetchOrdersWindow,
   fetchRecentBuyers,
   fetchShipQueue,
+  fetchSupportRiskOrders,
 } from "./_shopifyData";
 import { fetchOrderStats, stripHtml } from "./_audit";
 import { sendTaskEmail, type EmailEnv } from "./_email";
+import { runSupportCasesAction } from "./_supportCases";
 
 /** Includes the Shopify app creds so getConnection can refresh tokens. */
 export type SkillEnv = ShopifyEnv & EmailEnv;
@@ -31,6 +33,7 @@ export interface ToolCtx {
   userEmail: string | null;
   conn: ShopifyConnection | null;
   origin: string;
+  authHeader?: string | null;
 }
 
 /** OpenAI/Groq function-calling tool shape. */
@@ -60,6 +63,7 @@ const clampInt = (v: unknown, min: number, max: number, dflt: number): number =>
 
 /** Provider-neutral product shape the fetcher maps into. */
 interface ProductSource {
+  id: string;
   title: string;
   status: string;
   descText: string;
@@ -67,6 +71,12 @@ interface ProductSource {
   imagesNoAlt: number;
   variants: { price: number | null; qty: number | null; tracked: boolean; oversells: boolean }[];
   tagCount: number;
+  handle: string;
+  vendor: string;
+  productType: string;
+  seoTitle: string;
+  seoDescription: string;
+  createdAt: string;
 }
 
 /** Sold out = every variant tracked, at/under zero, and not set to oversell. */
@@ -86,10 +96,16 @@ const PRODUCTS_QUERY = `query ProductAudit($first: Int!, $after: String) {
   products(first: $first, after: $after) {
     pageInfo { hasNextPage endCursor }
     nodes {
+      id
       title
       status
       descriptionHtml
+      createdAt
       tags
+      handle
+      vendor
+      productType
+      seo { title description }
       mediaCount { count }
       media(first: 10) { nodes { alt } }
       variants(first: 10) {
@@ -108,10 +124,16 @@ interface GqlProductsData {
   products?: {
     pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
     nodes?: {
+      id?: string;
       title?: string;
       status?: string;
       descriptionHtml?: string | null;
+      createdAt?: string;
       tags?: string[];
+      handle?: string;
+      vendor?: string | null;
+      productType?: string | null;
+      seo?: { title?: string | null; description?: string | null } | null;
       mediaCount?: { count?: number } | null;
       media?: { nodes?: { alt?: string | null }[] };
       variants?: {
@@ -141,6 +163,7 @@ async function fetchProductsGraphql(conn: ShopifyConnection, limit: number): Pro
     for (const n of productsPage.nodes) {
       const media = n.media?.nodes ?? [];
       out.push({
+        id: n.id ?? "",
         title: n.title ?? "(untitled)",
         status: (n.status ?? "ACTIVE").toLowerCase(),
         descText: stripHtml(n.descriptionHtml),
@@ -153,6 +176,14 @@ async function fetchProductsGraphql(conn: ShopifyConnection, limit: number): Pro
           oversells: v.inventoryPolicy === "CONTINUE",
         })),
         tagCount: (n.tags ?? []).length,
+        handle: (n.handle ?? "").trim(),
+        vendor: (n.vendor ?? "").trim(),
+        productType: (n.productType ?? "").trim(),
+        // Shopify uses the product title when no custom SEO title is stored.
+        // Audit the effective storefront title, not only the optional override.
+        seoTitle: (n.seo?.title ?? n.title ?? "").trim(),
+        seoDescription: (n.seo?.description ?? "").trim(),
+        createdAt: n.createdAt ?? "",
       });
     }
     if (!productsPage.pageInfo?.hasNextPage || !productsPage.pageInfo.endCursor) break;
@@ -177,6 +208,7 @@ export async function buildProductsDigest(
   const products = sources.slice(0, limit).map((p) => {
     const prices = p.variants.map((v) => v.price).filter((n): n is number => n !== null);
     return {
+      id: p.id,
       title: p.title.slice(0, 60),
       status: p.status,
       descChars: p.descText.length,
@@ -187,6 +219,17 @@ export async function buildProductsDigest(
       priceMin: prices.length ? Math.min(...prices) : null,
       priceMax: prices.length ? Math.max(...prices) : null,
       tags: p.tagCount,
+      handle: p.handle,
+      vendor: Boolean(p.vendor),
+      productType: Boolean(p.productType),
+      vendorName: p.vendor,
+      productTypeName: p.productType,
+      seoTitleChars: p.seoTitle.length,
+      seoDescriptionChars: p.seoDescription.length,
+      seoTitleQuality: p.seoTitle.length === 0 ? "missing" : p.seoTitle.length > 60 ? "long" : "ok",
+      seoDescriptionQuality: p.seoDescription.length === 0 ? "missing" : p.seoDescription.length < 70 ? "thin" : p.seoDescription.length > 160 ? "long" : "ok",
+      geoReady: p.descText.length >= 200 && Boolean(p.vendor) && Boolean(p.productType) && p.tagCount >= 3 && p.imagesNoAlt === 0,
+      createdAt: p.createdAt,
     };
   });
 
@@ -207,6 +250,13 @@ export async function buildProductsDigest(
       withImagesMissingAlt: products.filter((p) => p.imagesNoAlt > 0).length,
       soldOut: products.filter((p) => p.soldOut).length,
       duplicateTitles,
+      seoTitlesMissing: products.filter((p) => p.seoTitleQuality === "missing").length,
+      seoTitlesLong: products.filter((p) => p.seoTitleQuality === "long").length,
+      seoDescriptionsMissing: products.filter((p) => p.seoDescriptionQuality === "missing").length,
+      seoDescriptionsWeak: products.filter((p) => p.seoDescriptionQuality === "thin" || p.seoDescriptionQuality === "long").length,
+      missingProductType: products.filter((p) => !p.productType).length,
+      missingVendor: products.filter((p) => !p.vendor).length,
+      geoReady: products.filter((p) => p.geoReady).length,
     },
   };
 }
@@ -233,6 +283,27 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
     async run(ctx, args) {
       if (!ctx.conn) return { error: "No Shopify store connected." };
       return buildProductsDigest(ctx.conn, clampInt(args.limit, 1, 100, 100));
+    },
+  },
+
+  get_product_detail: {
+    schema: {
+      type: "function",
+      function: {
+        name: "get_product_detail",
+        description: "Fetch the factual Shopify fields needed before preparing an SEO or GEO product update: current title, description, SEO fields, vendor, product type, tags, and image IDs/alt text. Always call this before drafting SEO/GEO changes.",
+        parameters: { type: "object", properties: { productId: { type: "string" } }, required: ["productId"] },
+      },
+    },
+    async run(ctx, args) {
+      if (!ctx.conn) return { error: "No Shopify store connected." };
+      const productId = typeof args.productId === "string" && /^gid:\/\/shopify\/Product\/\d+$/.test(args.productId) ? args.productId : "";
+      if (!productId) return { error: "A valid Shopify product ID is required." };
+      const data = await shopifyGraphql<{ product?: { id:string; title:string; descriptionHtml?:string|null; vendor?:string|null; productType?:string|null; tags?:string[]; seo?:{title?:string|null;description?:string|null}|null; media?:{nodes?:{id?:string;alt?:string|null}[]} } }>(ctx.conn.shop_domain, ctx.conn.access_token, `query SeoProduct($id: ID!) { product(id: $id) { id title descriptionHtml vendor productType tags seo { title description } media(first: 20) { nodes { id alt } } } }`, { id: productId });
+      const product = data?.product;
+      if (!product) return { error: "Shopify could not find that product." };
+      const descriptionHtml = (product.descriptionHtml ?? "").slice(0, 20_000);
+      return { id:product.id, title:product.title, vendor:product.vendor??"", productType:product.productType??"", tags:(product.tags??[]).slice(0,100), seo:product.seo??{}, descriptionText:stripHtml(descriptionHtml).slice(0,10_000), descriptionHtml, media:(product.media?.nodes??[]).map(item=>({id:item.id,alt:item.alt??""})) };
     },
   },
 
@@ -397,6 +468,59 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
     },
   },
 
+  get_operations_case: {
+    schema: {
+      type: "function",
+      function: {
+        name: "get_operations_case",
+        description: "Build a verified operations case for one overdue order: current unfulfilled state, payment, age, items, whether a customer delay email is drafted/sent, and the next unresolved decision. Use before recommending a fulfillment resolution.",
+        parameters: { type: "object", properties: { order: { type: "string", description: "Shopify order name, for example #1001" } }, required: ["order"] },
+      },
+    },
+    async run(ctx,args) {
+      if (!ctx.conn) return { error: "No Shopify store connected." };
+      const orderName=typeof args.order==="string"?args.order.trim().slice(0,80):"";
+      const risks=await fetchSupportRiskOrders(ctx.conn);
+      if(!Array.isArray(risks))return {error:risks==="access-denied"?"Shopify protected customer-data access is required.":"Couldn't load the live fulfillment case."};
+      const order=risks.find(item=>item.name.toLowerCase()===orderName.toLowerCase());
+      if(!order)return {error:"That order is no longer in the unfulfilled support queue."};
+      type OperationsNotification={status?:string;resolution?:string;sent_at?:string|null};
+      let notification:OperationsNotification|null=null;
+      if(ctx.env.supabaseUrl&&ctx.env.serviceRoleKey){
+        const key=ctx.env.serviceRoleKey;
+        const response=await fetch(`${ctx.env.supabaseUrl}/rest/v1/support_notifications?user_id=eq.${ctx.userId}&order_id=eq.${encodeURIComponent(order.id)}&select=status,resolution,sent_at&order=created_at.desc&limit=1`,{headers:{apikey:key,...(key.startsWith("sb_secret_")?{}:{Authorization:`Bearer ${key}`})}}).catch(()=>null);
+        if(response?.ok)notification=((await response.json())as OperationsNotification[])[0]??null;
+      }
+      const waitingHours=Math.max(0,Math.floor((Date.now()-Date.parse(order.createdAt))/3_600_000));
+      return {orderId:order.id,order:order.name,fulfillmentState:"UNFULFILLED",shipmentEvidence:"No fulfilled shipment is recorded in the unshipped-order queue.",waitingHours,paymentStatus:order.financialStatus,items:order.items.map(item=>({title:item.title,quantity:item.qty})),customerContact:{available:Boolean(order.email),status:notification?.status??"not_drafted",resolution:notification?.resolution??null,sentAt:notification?.sent_at??null},nextDecision:notification?.status==="sent"?"Confirm physical handoff or tracking before fulfillment.":"Draft and approve a customer delay update, then confirm physical handoff or tracking before fulfillment."};
+    },
+  },
+
+  prepare_customer_delay_update: {
+    schema: {
+      type: "function",
+      function: {
+        name: "prepare_customer_delay_update",
+        description: "Create and persist an approval-ready customer delay email for one overdue Shopify order. This never approves or sends the email. If the order has no customer email, it fails and no draft is created.",
+        parameters: { type: "object", properties: { order: { type: "string", description: "Shopify order name, for example #1001" } }, required: ["order"] },
+      },
+    },
+    async run(ctx,args) {
+      if(!ctx.conn)return {error:"No Shopify store connected."};
+      const orderName=typeof args.order==="string"?args.order.trim().slice(0,80):"";
+      const risks=await fetchSupportRiskOrders(ctx.conn);
+      if(!Array.isArray(risks))return {error:risks==="access-denied"?"Shopify protected customer-data access is required.":"Couldn't load the live fulfillment case."};
+      const order=risks.find(item=>item.name.toLowerCase()===orderName.toLowerCase());
+      if(!order)return {error:"That order is no longer an overdue unfulfilled case."};
+      if(!order.email.includes("@"))return {error:`Order ${order.name} has no customer email address, so no delay draft can be created. Add or confirm the email in Shopify first.`};
+      if(!ctx.env.supabaseUrl||!ctx.env.serviceRoleKey)return {error:"Support notification storage is not configured."};
+      const response=await runSupportCasesAction({action:"draft",orderId:order.id,resolution:"investigating"},ctx.authHeader??null,ctx.env);
+      const result=await response.json() as {notification?:{order_id?:string;order_name?:string;status?:string;subject?:string;body?:string};error?:string};
+      if(!response.ok||!result.notification)return {error:result.error??"Could not create the customer delay draft."};
+      return {created:true,approved:false,sent:false,orderId:result.notification.order_id,order:result.notification.order_name,status:result.notification.status,subject:result.notification.subject,body:result.notification.body,nextStep:"Open the support case, review the exact email, check approval, then send."};
+    },
+  },
+
   get_inventory_watch: {
     schema: {
       type: "function",
@@ -447,9 +571,14 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
       }
       if (!lapsed && !buyers) return { error: "Couldn't reach the Shopify customers API." };
       const lapsedRows = lapsed ?? [];
+      const buyerRows = buyers ?? [];
       const byTitle = new Map<string, number>();
       for (const c of lapsedRows) {
         for (const item of c.lastItems) byTitle.set(item.title, (byTitle.get(item.title) ?? 0) + 1);
+      }
+      const reviewItems = new Map<string, number>();
+      for (const buyer of buyerRows) {
+        for (const item of buyer.items) reviewItems.set(item.title, (reviewItems.get(item.title) ?? 0) + item.qty);
       }
       return {
         lapsedCustomers: lapsedRows.length,
@@ -458,8 +587,12 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
           .sort((a, b) => b[1] - a[1])
           .slice(0, 8)
           .map(([title, customers]) => ({ title, customers })),
-        recentBuyersForReviews: (buyers ?? []).length,
-        windows: { lapsedDays: "60-365", buyersDays: "7-30" },
+        recentBuyersForReviews: buyerRows.length,
+        reviewEligiblePurchases: [...reviewItems.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([title, quantity]) => ({ title, quantity })),
+        windows: { lapsedDays: "60-365", fulfilledForReviewDays: "7-30" },
       };
     },
   },
