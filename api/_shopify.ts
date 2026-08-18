@@ -17,7 +17,7 @@ import { log } from "./_log";
 
 export const SHOPIFY_API_VERSION = "2026-04";
 export const SHOPIFY_SCOPES_DEFAULT =
-  "write_products,write_files,write_discounts,read_orders,read_checkouts,read_customers,write_customers";
+  "write_products,write_files,write_discounts,read_orders,write_orders,read_checkouts,read_customers,write_customers,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders";
 /** OAuth states older than this are refused (stops replayed links). */
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 

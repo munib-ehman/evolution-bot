@@ -20,6 +20,7 @@ export type ShopifyActionKind =
   | "product_status_update"
   | "product_draft_create"
   | "collection_upsert"
+  | "order_email_update"
   | "discount_code_create"
   | "discount_automatic_create";
 
@@ -104,6 +105,7 @@ export interface ActionProposeBody {
   product?: unknown;
   collection?: unknown;
   discount?: unknown;
+  orderEmail?: unknown;
   evidence?: unknown;
   optimizerVersion?: unknown;
   targetMarket?: unknown;
@@ -172,6 +174,7 @@ function scopes(conn: ShopifyConnection): Set<string> {
 }
 
 function requiredScope(kind: ShopifyActionKind): string[] {
+  if (kind === "order_email_update") return ["write_orders"];
   if (kind === "discount_code_create" || kind === "discount_automatic_create") return ["write_discounts"];
   if (kind === "product_update" || kind === "product_status_update") return ["write_products"];
   return ["write_products"];
@@ -444,7 +447,7 @@ export async function runActionPropose(body: ActionProposeBody, authHeader: stri
   const ctx = await authContext(authHeader, env);
   if ("error" in ctx) return ctx.error;
   const kind = String(body.kind ?? "") as ShopifyActionKind;
-  if (!["product_update", "product_status_update", "product_draft_create", "collection_upsert", "discount_code_create", "discount_automatic_create"].includes(kind)) {
+  if (!["product_update", "product_status_update", "product_draft_create", "collection_upsert", "order_email_update", "discount_code_create", "discount_automatic_create"].includes(kind)) {
     return json(400, { error: "Unsupported action kind." });
   }
 
@@ -532,6 +535,11 @@ export async function runActionPropose(body: ActionProposeBody, authHeader: stri
       before = { collection: state };
     }
     summary ||= `${id ? "Update" : "Create"} collection: ${title}`;
+  } else if (kind === "order_email_update") {
+    const input=(body.orderEmail&&typeof body.orderEmail==="object"?body.orderEmail:{}) as Record<string,unknown>;
+    const orderId=gid("Order",input.orderId); const orderName=cleanText(input.orderName,80); const email=cleanText(input.email,320).toLowerCase();
+    if(!orderId||!orderName||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return json(400,{error:"A valid Shopify order and customer email are required."});
+    payload={orderEmail:{orderId,orderName,email}}; before={orderEmail:{orderId,orderName,email:cleanText(input.currentEmail,320)}}; summary||=`Add customer email to ${orderName}`;
   } else {
     const discount = validateDiscount(body.discount, kind === "discount_code_create");
     if (!discount) return json(400, { error: "Invalid or unsafe discount proposal." });
@@ -656,6 +664,13 @@ async function executeCollection(row: ShopifyActionRow, conn: ShopifyConnection)
   return { results: [{ ok: Boolean(id) && allErrors.length === 0, collection: payload?.collection, errors: allErrors }], after: { collection: id ? await collectionState(conn,id) : null } };
 }
 
+async function executeOrderEmail(row:ShopifyActionRow,conn:ShopifyConnection){
+  const input=row.payload.orderEmail as {orderId:string;orderName:string;email:string};
+  const {data,errors}=await gql<{orderUpdate?:{order?:{id:string;name:string;email?:string|null};userErrors?:{message?:string}[]}}>(conn,`mutation ActionOrderEmail($input:OrderInput!){orderUpdate(input:$input){order{id name email} userErrors{field message}}}`,{input:{id:input.orderId,email:input.email}});
+  const updated=data?.orderUpdate?.order; const allErrors=[...errors,...(data?.orderUpdate?.userErrors??[]).map(error=>error.message??"Order email update failed.")];
+  return{results:[{ok:Boolean(updated?.id)&&allErrors.length===0,orderId:input.orderId,errors:allErrors}],after:{orderEmail:{orderId:input.orderId,orderName:input.orderName,email:updated?.email??input.email}}};
+}
+
 function discountInput(spec: DiscountSpec, withCode: boolean): Record<string, unknown> {
   const items = spec.productIds?.length ? { products: { productsToAdd: spec.productIds } } : { all: true };
   const minimumRequirement = spec.minimumSubtotal != null
@@ -739,7 +754,9 @@ export async function runActionExecute(actionIdRaw: unknown, authHeader: string 
       ? await executeDraft(row, ctx.conn)
       : row.kind === "collection_upsert"
         ? await executeCollection(row, ctx.conn)
-        : await executeDiscount(row, ctx.conn);
+        : row.kind === "order_email_update"
+          ? await executeOrderEmail(row,ctx.conn)
+          : await executeDiscount(row, ctx.conn);
   const succeeded = execution.results.filter((v) => v.ok).length;
   const status: ShopifyActionStatus = succeeded === execution.results.length ? "succeeded" : succeeded ? "partial" : "failed";
   const error = status === "succeeded" ? null : execution.results.flatMap((v) => v.errors as string[] ?? []).join("; ").slice(0, 1_000);

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { executeAction, rejectAction, undoAction, updateAction, type ShopifyActionProposal } from "../lib/actions";
+import { draftSupportEmail } from "../lib/supportCases";
 
 type EditableProduct = { title?:string; productId:string; seoTitle?:string; seoDescription?:string; descriptionHtml?:string; descriptionText?:string; tags?:string[]; vendor?:string; productType?:string; mediaAlt?:{id:string;alt:string}[] };
 const plainText = (value?:string) => (value ?? "").replace(/<br\s*\/?>/gi,"\n").replace(/<\/p>/gi,"\n\n").replace(/<[^>]*>/g," ").replace(/&amp;/gi,"&").replace(/&lt;/gi,"<").replace(/&gt;/gi,">").replace(/\n{3,}/g,"\n\n").trim();
@@ -10,6 +11,7 @@ const label: Record<ShopifyActionProposal["kind"], string> = {
   product_status_update: "Product lifecycle change",
   product_draft_create: "Unpublished product draft",
   collection_upsert: "Collection change",
+  order_email_update: "Order contact update",
   discount_code_create: "Discount code",
   discount_automatic_create: "Automatic promotion",
 };
@@ -42,6 +44,10 @@ function preview(action: ShopifyActionProposal): string[] {
     const title = String((action.payload.collection as { title?: string })?.title ?? "Collection");
     const selected = (action.payload.selectedProducts as {id:string;title:string}[]|undefined) ?? [];
     return [title, selected.length ? `${selected.length} product${selected.length===1?"":"s"}: ${selected.map(product=>product.title).join(", ")}` : "No products selected"];
+  }
+  if(action.kind==="order_email_update"){
+    const update=action.payload.orderEmail as {orderName?:string;email?:string};
+    return [String(update?.orderName??"Order"),`Customer email: ${String(update?.email??"")}`];
   }
   const d = action.payload.discount as { code?: string; valueType?: string; value?: number; endsAt?: string };
   return [
@@ -106,7 +112,13 @@ export function ActionCard({ initial, onChanged }: { initial: ShopifyActionPropo
   const apply = async () => {
     if (busy || !window.confirm(`Apply this change to Shopify?\n\n${action.summary}`)) return;
     setBusy(true); setError(null);
-    try { const next = await executeAction(action.id); setAction(next); onChanged?.(next); }
+    try {
+      const next = await executeAction(action.id); setAction(next); onChanged?.(next);
+      if(next.kind==="order_email_update"&&next.status==="succeeded"){
+        const orderId=(next.payload.orderEmail as {orderId?:string}|undefined)?.orderId;
+        if(orderId){await draftSupportEmail(orderId,"investigating","");window.dispatchEvent(new CustomEvent("evolution:support-case-prepared",{detail:{orderId}}));}
+      }
+    }
     catch (e) { setError(e instanceof Error ? e.message : "Action failed."); }
     finally { setBusy(false); }
   };
@@ -172,7 +184,7 @@ export function ActionCard({ initial, onChanged }: { initial: ShopifyActionPropo
         {item.vendor !== undefined && <label>Vendor / brand<input value={item.vendor} maxLength={255} onChange={event=>setDraft(index,{vendor:event.target.value})} /></label>}
         {item.productType !== undefined && <label>Product type<input value={item.productType} maxLength={255} onChange={event=>setDraft(index,{productType:event.target.value})} /></label>}
       </fieldset>)}</div>}
-      {action.status === "proposed" && <p className="action-warning">Nothing changes until you approve.</p>}
+      {action.status === "proposed" && <p className="action-warning">{action.kind==="order_email_update"?"Approval updates Shopify, then opens the customer delay draft for review. Nothing is sent.":"Nothing changes until you approve."}</p>}
       {action.error && <p className="overlay-error">{action.error}</p>}
       {error && <p className="overlay-error">{error}</p>}
       <div className="action-card-buttons">

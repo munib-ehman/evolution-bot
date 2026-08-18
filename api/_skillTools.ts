@@ -18,9 +18,11 @@ import {
   fetchOrdersWindow,
   fetchRecentBuyers,
   fetchShipQueue,
+  fetchSupportRiskOrders,
 } from "./_shopifyData";
 import { fetchOrderStats, stripHtml } from "./_audit";
 import { sendTaskEmail, type EmailEnv } from "./_email";
+import { runSupportCasesAction } from "./_supportCases";
 
 /** Includes the Shopify app creds so getConnection can refresh tokens. */
 export type SkillEnv = ShopifyEnv & EmailEnv;
@@ -31,6 +33,7 @@ export interface ToolCtx {
   userEmail: string | null;
   conn: ShopifyConnection | null;
   origin: string;
+  authHeader?: string | null;
 }
 
 /** OpenAI/Groq function-calling tool shape. */
@@ -462,6 +465,59 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
           items: o.items.map((i) => (i.qty > 1 ? `${i.qty}× ${i.title}` : i.title)).join(", "),
         })),
       };
+    },
+  },
+
+  get_operations_case: {
+    schema: {
+      type: "function",
+      function: {
+        name: "get_operations_case",
+        description: "Build a verified operations case for one overdue order: current unfulfilled state, payment, age, items, whether a customer delay email is drafted/sent, and the next unresolved decision. Use before recommending a fulfillment resolution.",
+        parameters: { type: "object", properties: { order: { type: "string", description: "Shopify order name, for example #1001" } }, required: ["order"] },
+      },
+    },
+    async run(ctx,args) {
+      if (!ctx.conn) return { error: "No Shopify store connected." };
+      const orderName=typeof args.order==="string"?args.order.trim().slice(0,80):"";
+      const risks=await fetchSupportRiskOrders(ctx.conn);
+      if(!Array.isArray(risks))return {error:risks==="access-denied"?"Shopify protected customer-data access is required.":"Couldn't load the live fulfillment case."};
+      const order=risks.find(item=>item.name.toLowerCase()===orderName.toLowerCase());
+      if(!order)return {error:"That order is no longer in the unfulfilled support queue."};
+      type OperationsNotification={status?:string;resolution?:string;sent_at?:string|null};
+      let notification:OperationsNotification|null=null;
+      if(ctx.env.supabaseUrl&&ctx.env.serviceRoleKey){
+        const key=ctx.env.serviceRoleKey;
+        const response=await fetch(`${ctx.env.supabaseUrl}/rest/v1/support_notifications?user_id=eq.${ctx.userId}&order_id=eq.${encodeURIComponent(order.id)}&select=status,resolution,sent_at&order=created_at.desc&limit=1`,{headers:{apikey:key,...(key.startsWith("sb_secret_")?{}:{Authorization:`Bearer ${key}`})}}).catch(()=>null);
+        if(response?.ok)notification=((await response.json())as OperationsNotification[])[0]??null;
+      }
+      const waitingHours=Math.max(0,Math.floor((Date.now()-Date.parse(order.createdAt))/3_600_000));
+      return {orderId:order.id,order:order.name,fulfillmentState:"UNFULFILLED",shipmentEvidence:"No fulfilled shipment is recorded in the unshipped-order queue.",waitingHours,paymentStatus:order.financialStatus,items:order.items.map(item=>({title:item.title,quantity:item.qty})),customerContact:{available:Boolean(order.email),status:notification?.status??"not_drafted",resolution:notification?.resolution??null,sentAt:notification?.sent_at??null},nextDecision:notification?.status==="sent"?"Confirm physical handoff or tracking before fulfillment.":"Draft and approve a customer delay update, then confirm physical handoff or tracking before fulfillment."};
+    },
+  },
+
+  prepare_customer_delay_update: {
+    schema: {
+      type: "function",
+      function: {
+        name: "prepare_customer_delay_update",
+        description: "Create and persist an approval-ready customer delay email for one overdue Shopify order. This never approves or sends the email. If the order has no customer email, it fails and no draft is created.",
+        parameters: { type: "object", properties: { order: { type: "string", description: "Shopify order name, for example #1001" } }, required: ["order"] },
+      },
+    },
+    async run(ctx,args) {
+      if(!ctx.conn)return {error:"No Shopify store connected."};
+      const orderName=typeof args.order==="string"?args.order.trim().slice(0,80):"";
+      const risks=await fetchSupportRiskOrders(ctx.conn);
+      if(!Array.isArray(risks))return {error:risks==="access-denied"?"Shopify protected customer-data access is required.":"Couldn't load the live fulfillment case."};
+      const order=risks.find(item=>item.name.toLowerCase()===orderName.toLowerCase());
+      if(!order)return {error:"That order is no longer an overdue unfulfilled case."};
+      if(!order.email.includes("@"))return {error:`Order ${order.name} has no customer email address, so no delay draft can be created. Add or confirm the email in Shopify first.`};
+      if(!ctx.env.supabaseUrl||!ctx.env.serviceRoleKey)return {error:"Support notification storage is not configured."};
+      const response=await runSupportCasesAction({action:"draft",orderId:order.id,resolution:"investigating"},ctx.authHeader??null,ctx.env);
+      const result=await response.json() as {notification?:{order_id?:string;order_name?:string;status?:string;subject?:string;body?:string};error?:string};
+      if(!response.ok||!result.notification)return {error:result.error??"Could not create the customer delay draft."};
+      return {created:true,approved:false,sent:false,orderId:result.notification.order_id,order:result.notification.order_name,status:result.notification.status,subject:result.notification.subject,body:result.notification.body,nextStep:"Open the support case, review the exact email, check approval, then send."};
     },
   },
 

@@ -11,7 +11,7 @@ const RESOLUTIONS: { value: SupportResolution; label: string }[] = [
 ];
 const age = (iso: string) => `${Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 3_600_000))} hours`;
 
-export function SupportPanel({ open, onClose, onOpenDelivery }: { open: boolean; onClose: () => void; onOpenDelivery: () => void }) {
+export function SupportPanel({ open, onClose, onOpenDelivery, focusOrderId }: { open: boolean; onClose: () => void; onOpenDelivery: () => void; focusOrderId?: string | null }) {
   const [cases, setCases] = useState<SupportCase[]>([]);
   const [delivery, setDelivery] = useState<EmailDeliverySettings | null>(null);
   const [loading, setLoading] = useState(false);
@@ -33,6 +33,7 @@ export function SupportPanel({ open, onClose, onOpenDelivery }: { open: boolean;
     finally { setLoading(false); }
   };
   useEffect(() => { if (open) void refresh(); }, [open]);
+  useEffect(()=>{if(!open||!focusOrderId||!cases.length)return;const supportCase=cases.find(item=>item.id===focusOrderId);if(!supportCase)return;setActive(supportCase.id);setResolution(supportCase.notification?.resolution??"investigating");setDetail("");setSubject(supportCase.notification?.subject??"");setMessage(supportCase.notification?.body??"");setApproved(false);},[open,focusOrderId,cases]);
 
   const select = (supportCase: SupportCase) => {
     setActive(supportCase.id); setResolution(supportCase.notification?.resolution ?? "investigating"); setDetail("");
@@ -74,7 +75,7 @@ export function SupportPanel({ open, onClose, onOpenDelivery }: { open: boolean;
           {sent ? <><p className="recovery-approved-note">Email sent {supportCase.notification?.sent_at ? new Date(supportCase.notification.sent_at).toLocaleString() : ""}. Duplicate sending is blocked.</p><button type="button" disabled={busy || resolved} onClick={() => void resolve(supportCase)}>{resolved ? "Resolved" : "Mark resolved"}</button></> : <>
             <label>Verified next action<select value={resolution} onChange={(event) => { setResolution(event.target.value as SupportResolution); setApproved(false); }} disabled={busy}>{RESOLUTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
             {(resolution === "ship_date" || resolution === "custom") && <label>{resolution === "ship_date" ? "Confirmed ship date and wording" : "Verified resolution details"}<textarea rows={3} value={detail} onChange={(event) => setDetail(event.target.value)} placeholder={resolution === "ship_date" ? "Example: by Friday, August 21" : "Only include facts you have confirmed"} /></label>}
-            <button type="button" disabled={busy || !supportCase.email} onClick={() => void generate(supportCase)}>{busy ? "Working…" : supportCase.notification ? "Regenerate email" : "Generate customer email"}</button>
+            <button type="button" disabled={busy || !supportCase.email} title={!supportCase.email?"Add or confirm the customer email on this Shopify order first.":undefined} onClick={() => void generate(supportCase)}>{busy ? "Working…" : !supportCase.email?"Customer email required":supportCase.notification ? "Regenerate email" : "Generate customer email"}</button>
             {supportCase.notification && <div className="support-email-review"><span className="manager-kicker">Exact email for approval</span><label>Subject<input value={subject} onChange={(event) => { setSubject(event.target.value); setApproved(false); }} /></label><label>Message<textarea rows={9} value={message} onChange={(event) => { setMessage(event.target.value); setApproved(false); }} /></label><label className="support-approval"><input type="checkbox" checked={approved} onChange={(event) => setApproved(event.target.checked)} /> I reviewed this message and approve sending it to the customer for {supportCase.name}.</label><button type="button" className="primary" disabled={busy || !approved || delivery?.status !== "ready"} onClick={() => void send(supportCase)}>Approve &amp; send email</button></div>}
           </>}
         </div>}

@@ -30,12 +30,13 @@ import { BroadcastCampaignPanel } from "./components/BroadcastCampaignPanel";
 import { SeoManager } from "./components/SeoManager";
 import { CustomerSuccessManager } from "./components/CustomerSuccessManager";
 import { ProductManager } from "./components/ProductManager";
+import { OperationsManager } from "./components/OperationsManager";
 import { RetentionPanel } from "./components/RetentionPanel";
 import { SupportPanel } from "./components/SupportPanel";
 
 const AvatarScene = lazy(() => import("./avatar/AvatarScene").then(module => ({ default: module.AvatarScene })));
 
-type View = "marketing" | "customer-success" | "seo" | "product" | "voice" | "chat";
+type View = "marketing" | "customer-success" | "seo" | "product" | "operations" | "voice" | "chat";
 // New key intentionally migrates existing users into the role-first workspace.
 const VIEW_KEY = "shop-avatar-role-view-v2";
 
@@ -70,6 +71,11 @@ const PRODUCT_STARTERS = [
   "Which listing should I improve first?",
   "Recommend a collection or bundle",
 ];
+const OPERATIONS_STARTERS = [
+  "Find my most urgent operational risk",
+  "Which order needs a fulfillment decision?",
+  "Review my returns and customer issues",
+];
 
 export default function App() {
   const a = useAssistant();
@@ -92,6 +98,7 @@ export default function App() {
   const [retentionOpen, setRetentionOpen] = useState(false);
   const [opsOpen, setOpsOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
+  const [supportFocusOrderId,setSupportFocusOrderId]=useState<string|null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
@@ -112,6 +119,7 @@ export default function App() {
     setBroadcastOpen(false);
     setActionsOpen(true);
   }, [a.actionRevision]);
+  useEffect(()=>{const open=(event:Event)=>{const orderId=(event as CustomEvent<{orderId?:string}>).detail?.orderId;if(!orderId)return;setSupportFocusOrderId(orderId);setSupportOpen(true);};window.addEventListener("evolution:support-case-prepared",open);return()=>window.removeEventListener("evolution:support-case-prepared",open);},[]);
 
   // The pricing CTA must open billing for non-gated accounts too (operators
   // revisiting, admins whose profile row is still free) — FreeHome handles
@@ -230,7 +238,7 @@ export default function App() {
   // The choice is remembered across visits.
   const [view, setViewState] = useState<View>(() => {
     const saved = loadJSON<{ view?: string }>(VIEW_KEY, { view: "marketing" }).view;
-    return saved === "voice" || saved === "chat" || saved === "marketing" || saved === "customer-success" || saved === "seo" || saved === "product" ? saved : "marketing";
+    return saved === "voice" || saved === "chat" || saved === "marketing" || saved === "customer-success" || saved === "seo" || saved === "product" || saved === "operations" ? saved : "marketing";
   });
   const setView = (v: View) => {
     setViewState(v);
@@ -301,7 +309,7 @@ export default function App() {
     // browser's autoplay policy lets the first spoken reply play.
     void speechEngine.unlock();
     ensureWarm();
-    a.send(text, { manager: view === "marketing" || view === "customer-success" || view === "seo" || view === "product" ? view : undefined });
+    a.send(text, { manager: view === "marketing" || view === "customer-success" || view === "seo" || view === "product" || view === "operations" ? view : undefined });
   };
   const handleMarketingAsk = (text: string) => {
     setChatOpen(true);
@@ -330,14 +338,16 @@ export default function App() {
   const customerSuccessView = view === "customer-success";
   const seoView = view === "seo";
   const productView = view === "product";
-  const managerView = marketingView || customerSuccessView || seoView || productView;
+  const operationsView = view === "operations";
+  const managerView = marketingView || customerSuccessView || seoView || productView || operationsView;
 
   useEffect(() => {
     if (marketingView) a.setManagerContext("marketing");
     else if (customerSuccessView) a.setManagerContext("customer-success");
     else if (seoView) a.setManagerContext("seo");
     else if (productView) a.setManagerContext("product");
-  }, [marketingView, customerSuccessView, seoView, productView, a.setManagerContext]);
+    else if (operationsView) a.setManagerContext("operations");
+  }, [marketingView, customerSuccessView, seoView, productView, operationsView, a.setManagerContext]);
 
   // Hands-free auto-relisten belongs to the voice stage only.
   useEffect(() => {
@@ -438,6 +448,11 @@ export default function App() {
                 Product Manager
               </button>
             )}
+            {store && (
+              <button type="button" className={`tasks-btn ${operationsView ? "active" : ""}`} onClick={() => { setOpsOpen(false); setView("operations"); }}>
+                Operations Manager
+              </button>
+            )}
             {store && managerView && !chatOpen && (
               <button type="button" className="tasks-btn" onClick={() => setChatOpen(true)}>
                 Open chat
@@ -471,21 +486,6 @@ export default function App() {
                 }}
               >
                 Actions
-              </button>
-            )}
-            {store && (
-              <button
-                type="button"
-                className="tasks-btn"
-                onClick={() => {
-                  setTasksOpen(false);
-                  setActionsOpen(false);
-                  setRetentionOpen(false);
-                  setRecoveryOpen(false);
-                  setOpsOpen((v) => !v);
-                }}
-              >
-                Ops
               </button>
             )}
             <button
@@ -569,6 +569,8 @@ export default function App() {
                window.dispatchEvent(new CustomEvent("evolution:shopify-action-created", { detail: { id:action.id, kind:action.kind } }));
                a.postAssistantMessage(`Your Product Manager proposal is ready: ${action.summary}. Review the exact Shopify change in Actions before approving it.`);
              }} onNeedFacts={(message)=>{setChatOpen(true);a.postAssistantMessage(message);}}/>
+          ) : operationsView ? (
+            <OperationsManager active={operationsView} onAsk={handleMarketingAsk} onOpenLiveOps={()=>setOpsOpen(true)} onOpenIssues={(orderId)=>{setSupportFocusOrderId(orderId??null);setSupportOpen(true);}}/>
           ) : <Suspense fallback={<div className="avatar-loading" aria-label="Loading avatar" />}><AvatarScene
             avatarUrl={a.settings.avatarUrl}
             thinking={thinking}
@@ -725,6 +727,12 @@ export default function App() {
                         {s}
                       </button>
                     ))
+                  : operationsView
+                  ? OPERATIONS_STARTERS.map((s) => (
+                      <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
+                        {s}
+                      </button>
+                    ))
                   : skillsAvailable
                   ? SKILL_CHIPS.map((c) => (
                       <button key={c.id} type="button" className="chip" title={c.blurb} onClick={() => handleSkill(c)}>
@@ -816,7 +824,7 @@ export default function App() {
       )}
 
       {authEmail && store && <OpsPanel open={opsOpen} onClose={() => setOpsOpen(false)} />}
-      {authEmail && store && <SupportPanel open={supportOpen} onClose={() => setSupportOpen(false)} onOpenDelivery={() => { setSupportOpen(false); setDeliveryOpen(true); }} />}
+      {authEmail && store && <SupportPanel open={supportOpen} focusOrderId={supportFocusOrderId} onClose={() => {setSupportOpen(false);setSupportFocusOrderId(null);}} onOpenDelivery={() => { setSupportOpen(false); setDeliveryOpen(true); }} />}
       {authEmail && store && <RetentionPanel open={customerQueueOpen} onClose={() => setCustomerQueueOpen(false)} storeName={store.url.replace(/^https?:\/\//, "").replace(/\.myshopify\.com.*$/, "").replace(/\/.*$/, "")} storeUrl={store.url} />}
       {authEmail && store && <ActionCenter open={actionsOpen} onClose={() => setActionsOpen(false)} />}
       {authEmail && store && <EmailDeliveryPanel open={deliveryOpen} onClose={() => setDeliveryOpen(false)} />}

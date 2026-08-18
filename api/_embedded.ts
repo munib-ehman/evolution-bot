@@ -177,6 +177,17 @@ async function exchangeSessionToken(
   }
 }
 
+const REQUIRED_OPERATOR_SCOPES=[
+  "write_orders",
+  "read_merchant_managed_fulfillment_orders",
+  "write_merchant_managed_fulfillment_orders",
+];
+
+function needsOperatorScopeRefresh(scopes:string|null|undefined):boolean{
+  const granted=new Set((scopes??"").split(",").map(scope=>scope.trim()).filter(Boolean));
+  return REQUIRED_OPERATOR_SCOPES.some(scope=>!granted.has(scope));
+}
+
 // ---------------------------------------------------------------------------
 // Supabase admin (GoTrue) helpers — service role only
 
@@ -369,7 +380,11 @@ export async function runShopifySession(
   // the session token for one (consent was collected by managed installation).
   const existingConn = userId ? await getConnection(env, userId) : null;
   let fields: Awaited<ReturnType<typeof exchangeSessionToken>> = null;
-  if (!existingConn) {
+  // A pre-existing row can hold a perfectly valid token with an older scope
+  // set. Reopening/reinstalling the embedded app must exchange the current
+  // Shopify session token when newly deployed operator scopes are missing;
+  // otherwise the old row survives forever and fulfillment stays blocked.
+  if (!existingConn || needsOperatorScopeRefresh(existingConn.scopes)) {
     fields = await exchangeSessionToken(shop, sessionToken, env);
     if (!fields) {
       log("warn", "shopify-session", "embedded_session_failed", { shop, step: "token-exchange" });

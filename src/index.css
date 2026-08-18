@@ -1963,6 +1963,12 @@ code {
 .workflow-actions button.link { border: 1px solid transparent; color: #aa563b; text-decoration: none; }
 .workflow-actions button.link:hover { border-color: #f0d6c7; background: #fff7f1; }
 .workflow-actions button:disabled { opacity: .55; cursor: wait; transform: none; }
+.ops-resolution-card { align-items:start; }
+.ops-evidence-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:13px; }
+.ops-evidence-grid > span { display:grid; gap:3px; padding:9px 10px; border:1px solid var(--line); border-radius:10px; background:#fffaf5; }
+.ops-evidence-grid small { color:var(--muted); font-size:9px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
+.ops-evidence-grid strong { font-size:11px; line-height:1.35; }
+.workflow-card .ops-next-step { margin-top:11px; padding:10px 12px; border-radius:10px; background:#f2f8f3; color:var(--ink2); line-height:1.45; }
 .manager-notice { padding: 10px 12px; border-radius: 12px; background: #fff3e8; color: #8a4b21; font-size: 12px; }
 .manager-safety { margin: 16px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .support-case-list { display: grid; gap: 10px; margin-top: 14px; }
@@ -2088,6 +2094,7 @@ code {
 @media(max-width:760px){.pm-checks{grid-template-columns:1fr}.pm-research-grid .workflow-card details{grid-column:1 / -1}.product-manager-controls{align-items:stretch;flex-direction:column}.product-manager-controls select,.product-manager-controls>button{width:100%}}
 
 @media (max-width: 1120px) and (min-width: 761px) { .manager-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1120px) { .ops-evidence-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 
 @media (max-width: 760px) {
   .marketing-manager { padding: 18px; }

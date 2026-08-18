@@ -30,7 +30,7 @@ import { FILE_FIXES_SKILL_ID, type SkillChip } from "../lib/skills";
 
 export type AssistantStatus = "idle" | "thinking" | "speaking";
 export type MicState = "idle" | "listening" | "transcribing";
-export type ManagerRole = "marketing" | "customer-success" | "seo" | "product";
+export type ManagerRole = "marketing" | "customer-success" | "seo" | "product" | "operations";
 
 function managerGreeting(manager: ManagerRole): string {
   if (manager === "customer-success") {
@@ -41,6 +41,9 @@ function managerGreeting(manager: ManagerRole): string {
   }
   if (manager === "product") {
     return "Hey, I’m your Product Manager. I’ll research new products, improve shopper-facing listings, and recommend catalog and collection changes. Every Shopify change remains a proposal until you approve it.";
+  }
+  if (manager === "operations") {
+    return "Hey, I’m your Operations Manager. I’ll investigate fulfillment delays, inventory risks, returns, and customer-impacting issues, then recommend the safest concrete resolution. I won’t claim a shipment, cancellation, refund, or customer message happened unless an approved action confirms it.";
   }
   return "Hey, I’m your Marketing Manager. I’m monitoring your store for email revenue opportunities. Ask me to recover carts, win back customers, or plan a campaign—nothing sends without your approval.";
 }
@@ -296,6 +299,10 @@ export function useAssistant() {
           updateMessage(assistantId, { broadcastProposal });
         }
       };
+      const onSupportCase=(orderId:string)=>{
+        if(controller.signal.aborted)return;
+        window.dispatchEvent(new CustomEvent("evolution:support-case-prepared",{detail:{orderId}}));
+      };
 
       try {
         // Store connected → the agentic path: the model can pull real store
@@ -314,6 +321,7 @@ export function useAssistant() {
               onRecoveryProposal,
               onWinbackProposal,
               onBroadcastProposal,
+              onSupportCase,
             });
           } catch (err) {
             if (controller.signal.aborted) {

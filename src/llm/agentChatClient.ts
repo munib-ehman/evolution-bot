@@ -29,7 +29,7 @@ export class AgentChatError extends Error {
 }
 
 export interface AgentChatOptions {
-  manager?: "marketing" | "customer-success" | "seo" | "product";
+  manager?: "marketing" | "customer-success" | "seo" | "product" | "operations";
   signal?: AbortSignal;
   onProgress?: (label: string) => void;
   onToken?: (text: string) => void;
@@ -37,6 +37,7 @@ export interface AgentChatOptions {
   onRecoveryProposal?: (proposal: RecoveryCampaignProposal) => void;
   onWinbackProposal?: (proposal: WinbackCampaignProposal) => void;
   onBroadcastProposal?: (proposal: BroadcastCampaign) => void;
+  onSupportCase?: (orderId: string) => void;
 }
 
 /** Server rebuilds the system prompt; send user/assistant turns only. */
@@ -118,6 +119,7 @@ export async function runAgentChat(history: Message[], opts: AgentChatOptions = 
           recoveryProposal?: RecoveryCampaignProposal;
           winbackProposal?: WinbackCampaignProposal;
           broadcastProposal?: BroadcastCampaign;
+          supportCase?: { orderId?: string };
         };
         try {
           json = JSON.parse(payload);
@@ -132,6 +134,7 @@ export async function runAgentChat(history: Message[], opts: AgentChatOptions = 
         if (json.recoveryProposal) opts.onRecoveryProposal?.(json.recoveryProposal);
         if (json.winbackProposal) opts.onWinbackProposal?.(json.winbackProposal);
         if (json.broadcastProposal) opts.onBroadcastProposal?.(json.broadcastProposal);
+        if (json.supportCase?.orderId) opts.onSupportCase?.(json.supportCase.orderId);
         const delta = json.choices?.[0]?.delta?.content;
         if (delta) {
           reply += delta;

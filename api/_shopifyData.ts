@@ -770,7 +770,7 @@ const SUPPORT_RISKS_QUERY = `query SupportRisks($first: Int!, $after: String) {
     pageInfo { hasNextPage endCursor }
     nodes {
       id name createdAt cancelledAt displayFinancialStatus email
-      customer { firstName }
+      customer { firstName defaultEmailAddress { emailAddress } }
       currentTotalPriceSet { shopMoney { amount } }
       lineItems(first: 10) { nodes { title quantity } }
     }
@@ -783,7 +783,7 @@ interface GqlSupportRisksData {
     nodes?: {
       id?: string; name?: string; createdAt?: string; cancelledAt?: string | null;
       displayFinancialStatus?: string | null; email?: string | null;
-      customer?: { firstName?: string | null } | null;
+      customer?: { firstName?: string | null; defaultEmailAddress?: { emailAddress?: string | null } | null } | null;
       currentTotalPriceSet?: { shopMoney?: { amount?: string } } | null;
       lineItems?: { nodes?: { title?: string; quantity?: number }[] };
     }[];
@@ -806,7 +806,11 @@ export async function fetchSupportRiskOrders(conn: ShopifyConnection): Promise<P
       out.push({
         id: order.id ?? "", name: order.name ?? "", createdAt: order.createdAt ?? "",
         financialStatus: order.displayFinancialStatus ?? "", totalPrice: money(order.currentTotalPriceSet?.shopMoney?.amount),
-        firstName: (order.customer?.firstName ?? "").trim(), email: (order.email ?? "").trim(),
+        firstName: (order.customer?.firstName ?? "").trim(),
+        // Shopify may keep the confirmed address on the customer while the
+        // legacy order-level email field is blank. Prefer the order address,
+        // then fall back to the linked customer's current default address.
+        email: (order.email ?? order.customer?.defaultEmailAddress?.emailAddress ?? "").trim(),
         items: (order.lineItems?.nodes ?? []).map((item: { title?: string; quantity?: number }) => ({ title: (item.title ?? "").trim() || "(untitled)", qty: item.quantity ?? 0 })),
       });
     }

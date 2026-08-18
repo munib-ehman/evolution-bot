@@ -52,6 +52,8 @@ const AGENT_TOOL_NAMES = [
   "get_abandoned_checkouts",
   "get_latest_audit",
   "get_ship_queue",
+  "get_operations_case",
+  "prepare_customer_delay_update",
   "get_inventory_watch",
   "get_retention_snapshot",
   "remember_business_fact",
@@ -272,7 +274,7 @@ export interface AgentChatBody {
   manager?: unknown;
 }
 
-type ManagerRole = "marketing" | "customer-success" | "seo" | "product";
+type ManagerRole = "marketing" | "customer-success" | "seo" | "product" | "operations";
 
 interface ChatTurn {
   role: "user" | "assistant";
@@ -509,6 +511,8 @@ function buildSystemPrompt(shop: string, catalogBlock: string, persistentContext
       ? `You are currently the Product Manager. Focus on product research, shopper-visible product titles and descriptions, catalog taxonomy, assortment, collections, and merchandising. Use live Shopify product, sales, and abandoned-checkout evidence. Do not modify SEO title or meta description; those belong to the SEO Manager. Product and collection changes must be approval proposals. A new manual collection must contain at least one real catalog product: fetch the catalog first, suggest the relevant products, and include their Shopify product IDs in prepare_collection. If the requested membership is ambiguous, ask the merchant which suggested products to include instead of preparing an empty collection. Never claim page conversion because page-view data is unavailable. Bundle ideas are recommendations only. When your previous message paused a named listing job and asked the merchant for missing product facts, treat their next factual reply as permission to resume that exact job: fetch the named product, use their reply as merchant-confirmed facts, and prepare the complete shopper-visible listing proposal. Do not ask them to edit Shopify first and do not repeat the same questions.`
     : manager === "customer-success"
       ? `You are currently the Customer Success Manager. Focus on customer support risks, honest review generation, and customer retention. Use live Shopify order and customer signals. Treat older conversation from another workspace as background only and never introduce yourself as the Marketing or SEO Manager. For review requests, use only get_retention_snapshot.reviewEligiblePurchases; never infer a purchased product from the catalog, price, or another order. A review candidate must come from a successfully fulfilled order in the tool result. For overdue fulfillment, first recommend that the merchant verify inventory, fulfillment status, and a real ship date; offer cancellation or refund when appropriate. Draft customer replies using only verified facts, and never promise shipment, an update, or a resolution that the merchant has not confirmed. Customer email sending exists only in the structured Customer Support queue and requires the merchant to review and approve the exact message; chat cannot send and must never claim a message was sent.`
+    : manager === "operations"
+      ? `You are currently the Operations Manager. Focus on fulfillment management, inventory blockers, returns, and customer-impacting operational issues. Start with live Shopify evidence, identify the likely blocker, and recommend the safest concrete resolution—not merely the problem. For requests to create, draft, or prepare a customer delay message, you MUST call prepare_customer_delay_update. Never say a draft was created unless that tool returns created:true. A created draft is never approved or sent: tell the merchant the exact case was opened for review and approval. Never claim an order shipped, a return was approved, a refund or cancellation occurred, inventory changed, or a customer was contacted unless an action result proves it. When execution is unsupported, clearly prepare the decision and exact next step for approval instead of pretending to act.`
     : manager === "marketing"
       ? `You are currently the Marketing Manager. Focus on lifecycle email revenue, including abandoned-cart recovery, win-back, and one-time campaigns. Do not present yourself as the SEO Manager unless the merchant explicitly asks to switch roles.`
       : `You are the founder's general store-aware copilot.`;
@@ -588,6 +592,28 @@ function needsCampaignClarification(turns: ChatTurn[]): boolean {
   return ambiguousCampaignRequest || turns.slice(-6, -1).some((turn) => campaignToolInText(turn.content));
 }
 
+function forcedOperationsTool(turns:ChatTurn[]):"get_operations_case"|"prepare_customer_delay_update"|null{
+  const latest=turns.at(-1)?.content??"";
+  if(/#\d+/.test(turns.slice(-4).map(turn=>turn.content).join("\n"))&&/\b(create|draft|prepare|write)\b.*\b(sorry|delay|customer|email|update|message)\b/i.test(latest))return "prepare_customer_delay_update";
+  return /#\d+/.test(latest)&&/\b(resolve|resolution|investigate|fulfill|fulfil|late|overdue|delay)\b/i.test(latest)?"get_operations_case":null;
+}
+
+function operationsOrderName(turns:ChatTurn[]):string|null{
+  const match=turns.slice(-6).map(turn=>turn.content).join("\n").match(/#\d+/g);
+  return match?.at(-1)??null;
+}
+
+function directOperationsIntent(turns:ChatTurn[]):"case"|"draft"|null{
+  const latest=turns.at(-1)?.content??"";
+  if(/\b(create|draft|prepare|write)\b.*\b(sorry|delay|customer|email|update|message)\b/i.test(latest))return "draft";
+  if(/\b(order details?|details?.*order|why.*(?:pending|remaining|unfulfilled|late)|still.*(?:pending|remaining|unfulfilled)|i have (?:an? )?email|email.*(?:present|confirmed?|available)|recheck|check again)\b/i.test(latest))return "case";
+  return null;
+}
+
+function latestEmail(turns:ChatTurn[]):string|null{
+  return turns.at(-1)?.content.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i)?.[0].toLowerCase()??null;
+}
+
 export function selectedAgentToolNames(turns: ChatTurn[], manager?: ManagerRole): (typeof AGENT_TOOL_NAMES)[number][] {
   const context = turns.slice(-6).map((turn) => turn.content.toLowerCase()).join("\n");
   const selected = new Set<(typeof AGENT_TOOL_NAMES)[number]>(["remember_business_fact"]);
@@ -601,6 +627,10 @@ export function selectedAgentToolNames(turns: ChatTurn[], manager?: ManagerRole)
   }
   if (manager === "customer-success") {
     add("get_ship_queue", "get_orders_summary", "get_retention_snapshot", "get_products", "get_product_detail");
+    return [...selected];
+  }
+  if (manager === "operations") {
+    add("get_operations_case", "prepare_customer_delay_update", "get_ship_queue", "get_inventory_watch", "get_orders_summary");
     return [...selected];
   }
   if (manager === "product") {
@@ -729,8 +759,8 @@ export async function runAgentChat(
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResponse(409, { error: "Connect your Shopify store first." });
 
-  const ctx: ToolCtx = { env, userId: user.id, userEmail: user.email, conn, origin };
-  const manager: ManagerRole | undefined = body.manager === "marketing" || body.manager === "customer-success" || body.manager === "seo" || body.manager === "product" ? body.manager : undefined;
+  const ctx: ToolCtx = { env, userId: user.id, userEmail: user.email, conn, origin, authHeader };
+  const manager: ManagerRole | undefined = body.manager === "marketing" || body.manager === "customer-success" || body.manager === "seo" || body.manager === "product" || body.manager === "operations" ? body.manager : undefined;
   const shop = conn.shop_domain.replace(".myshopify.com", "");
   const model = env.groqModel || CHAT_MODEL_DEFAULT;
   const clarifyCampaign = manager === "marketing" && needsCampaignClarification(turns);
@@ -742,6 +772,8 @@ export async function runAgentChat(
       ? forcedCampaignTool(turns) ?? forcedProposalTool(turns)
       : manager === "product"
         ? requestedProductProposal === "prepare_collection" ? "get_products" : requestedProductProposal
+      : manager === "operations"
+        ? forcedOperationsTool(turns)
         : null;
   const selectedNames = selectedAgentToolNames(turns, manager);
   if (forcedTool && !selectedNames.includes(forcedTool)) selectedNames.push(forcedTool);
@@ -754,6 +786,41 @@ export async function runAgentChat(
       try {
         if (clarifyCampaign) {
           controller.enqueue(sse({ choices: [{ delta: { content: "Which campaign should I create?\n\n- One-time email — a promotion, launch, or announcement to subscribed customers\n- Win-back — re-engage eligible lapsed customers\n- Cart recovery — follow up on abandoned checkouts\n\nI’ll create a draft only; nothing will be sent until you approve it." } }] }));
+          return;
+        }
+        const operationsIntent=manager==="operations"?directOperationsIntent(turns):null;
+        const operationsOrder=manager==="operations"?operationsOrderName(turns):null;
+        const suppliedEmail=manager==="operations"?latestEmail(turns):null;
+        if(suppliedEmail&&operationsOrder){
+          progress("Preparing the Shopify contact update…");
+          const caseResult=await SKILL_TOOLS.get_operations_case.run(ctx,{order:operationsOrder}) as Record<string,unknown>;
+          if(typeof caseResult.error==="string"){controller.enqueue(sse({choices:[{delta:{content:caseResult.error}}]}));return;}
+          const contact=caseResult.customerContact as {available?:boolean}|undefined;
+          if(contact?.available){controller.enqueue(sse({choices:[{delta:{content:`Shopify already returns a customer email for ${operationsOrder}. I did not overwrite it. You can ask me to create the delay draft now.`}}]}));return;}
+          const proposed=await runActionPropose({kind:"order_email_update",summary:`Add customer email to ${operationsOrder}`,orderEmail:{orderId:caseResult.orderId,orderName:operationsOrder,email:suppliedEmail,currentEmail:""}},authHeader,env);
+          const proposal=await proposed.json() as {action?:unknown;error?:string};
+          if(!proposed.ok||!proposal.action){controller.enqueue(sse({choices:[{delta:{content:proposal.error??"I couldn’t prepare the contact update."}}]}));return;}
+          controller.enqueue(sse({action:proposal.action}));
+          controller.enqueue(sse({choices:[{delta:{content:`I prepared ${suppliedEmail} as the customer email for ${operationsOrder}. Review and click Approve and apply; Evolution will update Shopify, create the delay draft, and open it for your review. Nothing will be sent.`}}]}));
+          return;
+        }
+        if(operationsIntent&&operationsOrder){
+          const toolName=operationsIntent==="draft"?"prepare_customer_delay_update":"get_operations_case";
+          progress(PROGRESS_LABELS[toolName]??"Checking the live order…");
+          const result=await SKILL_TOOLS[toolName].run(ctx,{order:operationsOrder}) as Record<string,unknown>;
+          if(typeof result.error==="string"){
+            controller.enqueue(sse({choices:[{delta:{content:result.error}}]}));
+            return;
+          }
+          if(operationsIntent==="draft"){
+            if(typeof result.orderId==="string")controller.enqueue(sse({supportCase:{orderId:result.orderId}}));
+            controller.enqueue(sse({choices:[{delta:{content:`The delay email draft for ${String(result.order??operationsOrder)} is ready for review. I opened the case with the exact subject and message. It is not approved or sent yet.`}}]}));
+            return;
+          }
+          const contact=result.customerContact as {available?:boolean;status?:string;sentAt?:string|null}|undefined;
+          const items=Array.isArray(result.items)?(result.items as {title?:string;quantity?:number}[]).map(item=>`${item.quantity??1}× ${item.title??"item"}`).join(", "):"No items returned";
+          const contactText=contact?.available?`Customer email: confirmed in Shopify. Update status: ${contact.status??"not drafted"}.`:`Customer email: missing. Send me the address in chat and I’ll prepare a one-click Shopify update for your approval.`;
+          controller.enqueue(sse({choices:[{delta:{content:`${String(result.order??operationsOrder)} is ${String(result.fulfillmentState??"UNFULFILLED").toLowerCase()} after ${String(result.waitingHours??0)} hours. Payment: ${String(result.paymentStatus??"unknown")}. Items: ${items}. No shipment is recorded. ${contactText}`}}]}));
           return;
         }
         const latestUser=turns.at(-1);
@@ -1122,6 +1189,9 @@ export async function runAgentChat(
                 }
                 if (name === "get_product_detail" && !(result as {error?:unknown}).error && typeof args.productId === "string") detailedProductIds.add(args.productId);
                 if (name === "get_product_detail" && seoProposalRequested && !(result as {error?:unknown}).error) pendingForcedTool = "prepare_product_updates";
+                if(name==="prepare_customer_delay_update"&&(result as {created?:boolean;orderId?:string}).created){
+                  controller.enqueue(sse({supportCase:{orderId:(result as {orderId?:string}).orderId}}));
+                }
               }
             }
             convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });

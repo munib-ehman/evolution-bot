@@ -5,6 +5,7 @@ export type ShopifyActionKind =
   | "product_status_update"
   | "product_draft_create"
   | "collection_upsert"
+  | "order_email_update"
   | "discount_code_create"
   | "discount_automatic_create";
 export type ShopifyActionStatus =

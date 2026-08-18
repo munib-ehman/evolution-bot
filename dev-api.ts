@@ -30,6 +30,7 @@ import { productManagerArchive, productManagerOptimize, productManagerSnapshot }
 import { runRecoveryCarts, runRecoveryDraft } from "./api/_recovery";
 import { runRetentionCustomers, runRetentionDraft } from "./api/_retention";
 import { runOpsSnapshot } from "./api/_ops";
+import { runCreateFulfillment } from "./api/_fulfillment";
 import { handleShopifyWebhook, runOpsLiveSetup } from "./api/_events";
 import { handleShopifyCompliance } from "./api/_compliance";
 import { runShopifySession } from "./api/_embedded";
@@ -534,6 +535,10 @@ export function devApi(): Plugin {
           const body = JSON.parse(await readBody(req) || "{}") as Record<string, unknown>;
           return pipeResponse(res, await runRecoveryCampaignAction(body, auth, recoveryCampaignEnv));
         })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/fulfillment-create", (req,res)=>{
+        void(async()=>{if(req.method!=="POST")return send(res,405,"Method not allowed");const auth=typeof req.headers.authorization==="string"?req.headers.authorization:null;const body=JSON.parse(await readBody(req)||"{}") as Record<string,unknown>;const result=await runCreateFulfillment(body,auth,skillEnv);res.statusCode=result.status;res.setHeader("Content-Type","application/json");res.setHeader("Cache-Control","no-store");res.end(JSON.stringify(result.body));})().catch(error=>{if(!res.headersSent)send(res,500,String(error));else res.end();});
       });
 
       server.middlewares.use("/api/support-cases", (req, res) => {
