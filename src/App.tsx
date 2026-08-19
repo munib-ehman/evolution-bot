@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import { AvatarScene } from "./avatar/AvatarScene";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { MessageList } from "./components/MessageList";
 import { Composer } from "./components/Composer";
 import { Splash } from "./components/Splash";
-import { ButterflyIcon, MicIcon, StopIcon, CloseIcon, KeyboardIcon } from "./components/icons";
+import { ButterflyIcon, MicIcon, StopIcon, CloseIcon, KeyboardIcon, VolumeIcon, VolumeOffIcon } from "./components/icons";
 import { useAssistant } from "./hooks/useAssistant";
 import { useAuthEmail } from "./components/AuthGate";
 import { authEnabled, signOut } from "./lib/auth";
@@ -13,20 +12,33 @@ import { speechEngine } from "./audio/speechEngine";
 import { ConnectStore } from "./components/ConnectStore";
 import { ToolsPanel } from "./components/ToolsPanel";
 import { RecoveryPanel } from "./components/RecoveryPanel";
-import { RetentionPanel } from "./components/RetentionPanel";
+import { WinbackPanel } from "./components/WinbackPanel";
 import { OpsPanel } from "./components/OpsPanel";
+import { ActionCenter } from "./components/ActionCenter";
 import { LiveToasts } from "./components/LiveToasts";
 import { UpgradePanel } from "./components/UpgradePanel";
 import { FreeHome } from "./components/FreeHome";
 import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
-import { ensureProfile, getLatestAudit, getPlan, getStore, getStoreCatalog, runAuditAsUser, type AuditReport, type ConnectedStore, type Plan, type StoreCatalog } from "./lib/store";
+import { EMPTY_ENTITLEMENTS, ensureProfile, getEntitlements, getLatestAudit, getPlan, getStore, getStoreCatalog, runAuditAsUser, type AuditReport, type ConnectedStore, type Plan, type StoreCatalog, type Entitlements, type ManagerRole } from "./lib/store";
 import { isEmbedded } from "./lib/embedded";
 import { consumeUpgradeIntent } from "./lib/upgradeIntent";
 import { SKILL_CHIPS, type SkillChip } from "./lib/skills";
+import { MarketingManager } from "./components/MarketingManager";
+import { EmailDeliveryPanel } from "./components/EmailDeliveryPanel";
+import { BroadcastCampaignPanel } from "./components/BroadcastCampaignPanel";
+import { SeoManager } from "./components/SeoManager";
+import { CustomerSuccessManager } from "./components/CustomerSuccessManager";
+import { ProductManager } from "./components/ProductManager";
+import { OperationsManager } from "./components/OperationsManager";
+import { RetentionPanel } from "./components/RetentionPanel";
+import { SupportPanel } from "./components/SupportPanel";
 
-type View = "voice" | "chat";
-const VIEW_KEY = "shop-avatar-view";
+const AvatarScene = lazy(() => import("./avatar/AvatarScene").then(module => ({ default: module.AvatarScene })));
+
+type View = "marketing" | "customer-success" | "seo" | "product" | "operations" | "voice" | "chat";
+// New key intentionally migrates existing users into the role-first workspace.
+const VIEW_KEY = "shop-avatar-role-view-v2";
 
 // Splash never flashes by (min), and never traps the user if the model stalls (max).
 const MIN_SPLASH_MS = 1600;
@@ -38,6 +50,31 @@ const STARTERS = [
   "Show me the catalog",
   "What's our best budget pick?",
   "What's our premium product?",
+];
+const MARKETING_STARTERS = [
+  "Find my best marketing opportunity",
+  "Build a cart recovery campaign",
+  "Create a win-back campaign",
+];
+const SEO_STARTERS = [
+  "Audit my product SEO",
+  "Find my biggest AI search opportunity",
+  "Which product should I optimize for SEO first?",
+];
+const CUSTOMER_SUCCESS_STARTERS = [
+  "Find my most urgent customer issue",
+  "Who should I ask for a review?",
+  "Which customers are at risk?",
+];
+const PRODUCT_STARTERS = [
+  "Find my biggest product opportunity",
+  "Which listing should I improve first?",
+  "Recommend a collection or bundle",
+];
+const OPERATIONS_STARTERS = [
+  "Find my most urgent operational risk",
+  "Which order needs a fulfillment decision?",
+  "Review my returns and customer issues",
 ];
 
 export default function App() {
@@ -51,6 +88,8 @@ export default function App() {
   const [store, setStore] = useState<ConnectedStore | null | undefined>(undefined);
   // null = still loading — the paywall must not flash the wrong side.
   const [plan, setPlan] = useState<Plan | null>(null);
+  const [entitlements,setEntitlements]=useState<Entitlements|null>(null);
+  const [upgradeRole,setUpgradeRole]=useState<ManagerRole>("marketing");
   // Pricing-page CTA (?upgrade=1) auto-opens the upgrade panel on arrival.
   const [wantUpgrade, setWantUpgrade] = useState(false);
   const [audit, setAudit] = useState<AuditReport | null>(null);
@@ -60,7 +99,31 @@ export default function App() {
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [retentionOpen, setRetentionOpen] = useState(false);
   const [opsOpen, setOpsOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportRole,setSupportRole]=useState<"customer-success"|"operations">("customer-success");
+  const [supportFocusOrderId,setSupportFocusOrderId]=useState<string|null>(null);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [deliveryRole,setDeliveryRole]=useState<"marketing"|"customer-success"|"operations">("marketing");
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [customerQueueOpen, setCustomerQueueOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true);
+
+  // A freshly persisted Shopify proposal belongs in the approval inbox. Open
+  // it immediately so the merchant never has to hunt for an invisible card.
+  useEffect(() => {
+    if (a.actionRevision === 0) return;
+    setTasksOpen(false);
+    setRecoveryOpen(false);
+    setRetentionOpen(false);
+    setOpsOpen(false);
+    setSupportOpen(false);
+    setDeliveryOpen(false);
+    setBroadcastOpen(false);
+    setActionsOpen(true);
+  }, [a.actionRevision]);
+  useEffect(()=>{const open=(event:Event)=>{const orderId=(event as CustomEvent<{orderId?:string}>).detail?.orderId;if(!orderId)return;setSupportRole("operations");setSupportFocusOrderId(orderId);setSupportOpen(true);};window.addEventListener("evolution:support-case-prepared",open);return()=>window.removeEventListener("evolution:support-case-prepared",open);},[]);
 
   // The pricing CTA must open billing for non-gated accounts too (operators
   // revisiting, admins whose profile row is still free) — FreeHome handles
@@ -73,14 +136,16 @@ export default function App() {
     if (!authEnabled || !authEmail) return;
     ensureProfile();
     void (async () => {
-      const [s, p, latest, cat] = await Promise.all([
+      const [s, p, roles, latest, cat] = await Promise.all([
         getStore(),
         getPlan(),
+        getEntitlements(),
         getLatestAudit(),
         getStoreCatalog(),
       ]);
       setStore(s);
       setPlan(p);
+      setEntitlements(roles);
       setAudit(latest);
       setCatalog(cat);
 
@@ -98,14 +163,19 @@ export default function App() {
       // Back from Polar checkout: the subscription.active webhook flips the
       // plan asynchronously — poll briefly so the app unlocks on its own.
       if (upgradeResult === "success" && p !== "operator") {
+        const initialRoleCount=Object.values(roles).filter(Boolean).length;
         for (let i = 0; i < 8; i++) {
           await new Promise((r) => setTimeout(r, 2000));
+          const freshRoles=await getEntitlements();
+          if(Object.values(freshRoles).filter(Boolean).length>initialRoleCount){setEntitlements(freshRoles);break;}
           const fresh = await getPlan();
           if (fresh === "operator") {
             setPlan(fresh);
+            setEntitlements(await getEntitlements());
             break;
           }
         }
+        setEntitlements(await getEntitlements());
       }
       if (shopifyResult === "connected") {
         const target = s?.url ?? params.get("shop");
@@ -115,8 +185,8 @@ export default function App() {
           const stats = fresh.stats;
           a.postAssistantMessage(
             stats
-              ? `Shopify is connected — I can see your real numbers now (read-only: I never edit or write anything on your store). Last 30 days: ${stats.orders30} orders, ${stats.abandoned30} abandoned checkouts. Your audit is updated — ask me anything about your store.`
-              : "Shopify is connected! I re-ran your audit with the deeper access — ask me anything about your store. And just so you know: my access is read-only, I never change anything in your store.",
+              ? `Shopify is connected — I can see your real numbers now. Last 30 days: ${stats.orders30} orders, ${stats.abandoned30} abandoned checkouts. I can also prepare store changes for your approval.`
+              : "Shopify is connected! I re-ran your audit with deeper access. I can prepare store changes, and nothing is applied until you approve it.",
           );
         } else {
           a.postAssistantMessage("Shopify is connected! Your next audit will use your real store data.");
@@ -126,8 +196,20 @@ export default function App() {
         // The connection just landed — the catalog fetch above likely 409'd.
         setCatalog(await getStoreCatalog());
       } else if (shopifyResult === "error") {
+        const reason = params.get("reason");
+        const detail = reason === "token-exchange"
+          ? "Shopify rejected the access-token exchange. Reopen the app from Shopify Admin after this deployment."
+          : reason === "save"
+            ? "Shopify approved access, but saving the connection failed. Check that the Shopify token migrations are applied."
+            : reason === "bad-state"
+              ? "The connection session expired or was opened in another tab. Start Reconnect again and finish it in the same tab."
+              : reason === "bad-hmac"
+                ? "Shopify's callback signature did not match the deployed client secret."
+                : reason === "not-configured" || reason === "no-db"
+                  ? "The deployed Shopify or database environment variables are incomplete."
+                  : "The connection callback was incomplete or rejected.";
         a.postAssistantMessage(
-          "Hmm, the Shopify connection didn't complete. Try again from the My store panel — or email us and we'll sort it out.",
+          `Shopify connection failed: ${detail}`,
         );
       }
     })();
@@ -145,6 +227,7 @@ export default function App() {
     setTasksOpen(false);
     setRetentionOpen(false);
     setOpsOpen(false);
+    setActionsOpen(false);
     a.postAssistantMessage(
       "Your store is disconnected — I no longer have any access to it. Connect this or a different store whenever you're ready and I'll take a fresh look.",
     );
@@ -156,19 +239,30 @@ export default function App() {
     void getStoreCatalog().then(setCatalog);
     a.postAssistantMessage(
       fresh
-        ? `Your store is connected! I ran your audit: ${fresh.score} out of 100. ${fresh.summary} Ask me anything — I can see your real data now (read-only: I never change anything in your store).`
-        : "Your store is connected! Ask me anything — I can see your real data now (read-only: I never change anything in your store).",
+        ? `Your store is connected! I ran your audit: ${fresh.score} out of 100. ${fresh.summary} Ask me anything, or ask me to prepare a concrete store change for your approval.`
+        : "Your store is connected! Ask me anything, or ask me to prepare a concrete store change for your approval.",
     );
   };
 
 
-  // Two experiences: an immersive voice stage (default) and a classic chat.
+  // Role workspace is the default; voice and full chat remain available.
   // The choice is remembered across visits.
-  const [view, setViewState] = useState<View>(() => loadJSON<{ view: View }>(VIEW_KEY, { view: "voice" }).view);
+  const [view, setViewState] = useState<View>(() => {
+    const saved = loadJSON<{ view?: string }>(VIEW_KEY, { view: "marketing" }).view;
+    return saved === "voice" || saved === "chat" || saved === "marketing" || saved === "customer-success" || saved === "seo" || saved === "product" || saved === "operations" ? saved : "marketing";
+  });
   const setView = (v: View) => {
     setViewState(v);
     saveJSON(VIEW_KEY, { view: v });
   };
+  const openManager=(role:ManagerRole)=>{if(!entitlements?.[role]){setUpgradeRole(role);setUpgradeOpen(true);return;}setView(role);};
+  useEffect(()=>{
+    if(!entitlements||!Object.values(entitlements).some(Boolean))return;
+    if((view==="marketing"||view==="customer-success"||view==="seo"||view==="product"||view==="operations")&&!entitlements[view]){
+      const first=(Object.keys(entitlements) as ManagerRole[]).find(role=>entitlements[role]);
+      if(first)setView(first);
+    }
+  },[entitlements,view]);
 
   // ── Boot splash → reveal choreography ──────────────────────────────────────
   const [avatarReady, setAvatarReady] = useState(false);
@@ -217,7 +311,7 @@ export default function App() {
   // The paywall: signed-in accounts without the Operator plan only get the
   // free view (audit + product hunt) — the server enforces the same boundary
   // on every paid API (api/_plan.ts). Admins bypass for internal ops.
-  const gatedFree = authEnabled && !!authEmail && !isAdmin(authEmail) && plan !== "operator";
+  const gatedFree = authEnabled && !!authEmail && entitlements !== null && !Object.values(entitlements).some(Boolean);
 
   // Pre-warm the (heavy) Kokoro voice as soon as the app reveals. Behind the
   // login gate every visitor is a committed lead, so the model download starts
@@ -234,7 +328,11 @@ export default function App() {
     // browser's autoplay policy lets the first spoken reply play.
     void speechEngine.unlock();
     ensureWarm();
-    a.send(text);
+    a.send(text, { manager: view === "marketing" || view === "customer-success" || view === "seo" || view === "product" || view === "operations" ? view : undefined });
+  };
+  const handleMarketingAsk = (text: string) => {
+    setChatOpen(true);
+    handleSend(text);
   };
   const handleMic = () => {
     void speechEngine.unlock();
@@ -255,6 +353,20 @@ export default function App() {
   const canTalk = voiceEnabled && a.micSupported;
   // Voice stage needs a working mic — otherwise fall back to chat gracefully.
   const voiceView = view === "voice" && canTalk;
+  const marketingView = view === "marketing";
+  const customerSuccessView = view === "customer-success";
+  const seoView = view === "seo";
+  const productView = view === "product";
+  const operationsView = view === "operations";
+  const managerView = marketingView || customerSuccessView || seoView || productView || operationsView;
+
+  useEffect(() => {
+    if (marketingView) a.setManagerContext("marketing");
+    else if (customerSuccessView) a.setManagerContext("customer-success");
+    else if (seoView) a.setManagerContext("seo");
+    else if (productView) a.setManagerContext("product");
+    else if (operationsView) a.setManagerContext("operations");
+  }, [marketingView, customerSuccessView, seoView, productView, operationsView, a.setManagerContext]);
 
   // Hands-free auto-relisten belongs to the voice stage only.
   useEffect(() => {
@@ -335,18 +447,49 @@ export default function App() {
 
         {authEmail && (
           <div className="header-right">
-            {store && (
-              <button
-                type="button"
-                className="tasks-btn"
-                onClick={() => {
-                  setTasksOpen(false);
-                  setRetentionOpen(false);
-                  setRecoveryOpen(false);
-                  setOpsOpen((v) => !v);
-                }}
-              >
-                Ops
+            {store && entitlements?.marketing && (
+              <button type="button" className={`tasks-btn ${marketingView ? "active" : ""} ${!entitlements?.marketing?"locked":""}`} onClick={() => openManager("marketing")}>
+                Marketing Manager
+              </button>
+            )}
+            {store && entitlements?.["customer-success"] && (
+              <button type="button" className={`tasks-btn ${customerSuccessView ? "active" : ""} ${!entitlements?.["customer-success"]?"locked":""}`} onClick={() => openManager("customer-success")}>
+                Customer Success Manager
+              </button>
+            )}
+            {store && entitlements?.seo && (
+              <button type="button" className={`tasks-btn ${seoView ? "active" : ""} ${!entitlements?.seo?"locked":""}`} onClick={() => openManager("seo")}>
+                SEO Manager
+              </button>
+            )}
+            {store && entitlements?.product && (
+              <button type="button" className={`tasks-btn ${productView ? "active" : ""} ${!entitlements?.product?"locked":""}`} onClick={() => openManager("product")}>
+                Product Manager
+              </button>
+            )}
+            {store && entitlements?.operations && (
+              <button type="button" className={`tasks-btn ${operationsView ? "active" : ""} ${!entitlements?.operations?"locked":""}`} onClick={() => { setOpsOpen(false); openManager("operations"); }}>
+                Operations Manager
+              </button>
+            )}
+            {store && managerView && !chatOpen && (
+              <button type="button" className="tasks-btn" onClick={() => setChatOpen(true)}>
+                Open chat
+              </button>
+            )}
+            <button
+              type="button"
+              className={`tasks-btn sound-toggle ${a.settings.ttsEngine === "off" || a.settings.textOnly ? "muted" : ""}`}
+              onClick={a.toggleSound}
+              aria-label={a.settings.ttsEngine === "off" || a.settings.textOnly ? "Enable spoken replies" : "Mute spoken replies"}
+              title={a.settings.ttsEngine === "off" || a.settings.textOnly ? "Turn sound on" : "Turn sound off"}
+            >
+              {a.settings.ttsEngine === "off" || a.settings.textOnly ? <VolumeOffIcon size={17} /> : <VolumeIcon size={17} />}
+              <span>{a.settings.ttsEngine === "off" || a.settings.textOnly ? "Sound off" : "Sound on"}</span>
+            </button>
+            {store && (marketingView || customerSuccessView || operationsView) && (
+              <button type="button" className="tasks-btn" onClick={() => { setTasksOpen(false); setActionsOpen(false); setOpsOpen(false); setRecoveryOpen(false); setRetentionOpen(false); setDeliveryRole(marketingView?"marketing":operationsView?"operations":"customer-success");setDeliveryOpen((v) => !v); }}>
+                Email setup
               </button>
             )}
             {store && (
@@ -356,25 +499,12 @@ export default function App() {
                 onClick={() => {
                   setTasksOpen(false);
                   setRetentionOpen(false);
-                  setOpsOpen(false);
-                  setRecoveryOpen((v) => !v);
-                }}
-              >
-                Recovery
-              </button>
-            )}
-            {store && (
-              <button
-                type="button"
-                className="tasks-btn"
-                onClick={() => {
-                  setTasksOpen(false);
                   setRecoveryOpen(false);
                   setOpsOpen(false);
-                  setRetentionOpen((v) => !v);
+                  setActionsOpen((v) => !v);
                 }}
               >
-                Retention
+                Actions
               </button>
             )}
             <button
@@ -382,6 +512,7 @@ export default function App() {
               className="tasks-btn"
               onClick={() => {
                 setRecoveryOpen(false);
+                setActionsOpen(false);
                 setRetentionOpen(false);
                 setOpsOpen(false);
                 setTasksOpen((v) => !v);
@@ -394,6 +525,7 @@ export default function App() {
               className="tasks-btn"
               onClick={() => {
                 setTasksOpen(false);
+                setActionsOpen(false);
                 setRecoveryOpen(false);
                 setRetentionOpen(false);
                 setOpsOpen(false);
@@ -416,31 +548,70 @@ export default function App() {
         )}
       </header>
 
-      <main className={`layout ${voiceView ? "solo" : ""}`}>
+      <main className={`layout ${voiceView ? "solo" : ""} ${managerView ? "manager-layout" : ""} ${managerView && !chatOpen ? "chat-closed" : ""}`}>
         {/* ── 3D avatar stage ───────────────────────────────────────────── */}
-        <section className="stage card">
-          <AvatarScene
+        <section className={`stage card ${managerView ? "manager-stage" : ""}`}>
+          {marketingView ? (
+            <MarketingManager
+              active={marketingView}
+              onAsk={handleMarketingAsk}
+              onOpenRecovery={() => {
+                setRetentionOpen(false);
+                setBroadcastOpen(false);
+                setRecoveryOpen(true);
+              }}
+              onOpenWinback={() => {
+                setRecoveryOpen(false);
+                setBroadcastOpen(false);
+                setRetentionOpen(true);
+              }}
+              onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryRole("marketing"); setDeliveryOpen(true); }}
+              onOpenBroadcast={() => { setRecoveryOpen(false); setRetentionOpen(false); setBroadcastOpen(true); }}
+            />
+          ) : customerSuccessView ? (
+            <CustomerSuccessManager
+              active={customerSuccessView}
+              onAsk={handleMarketingAsk}
+              onOpenSupport={() => setSupportOpen(true)}
+              onOpenReviews={() => setCustomerQueueOpen(true)}
+              onOpenRetention={() => setCustomerQueueOpen(true)}
+            />
+          ) : seoView ? (
+            <SeoManager active={seoView} onAsk={handleMarketingAsk} onProposal={(action) => {
+              setActionsOpen(true);
+              window.dispatchEvent(new CustomEvent("evolution:shopify-action-created", { detail: { id:action.id, kind:action.kind } }));
+              a.postAssistantMessage(`Your SEO update is ready for review: ${action.summary}. Open Actions to compare the current listing with the suggested version before approving it.`);
+            }}/>
+          ) : productView && store ? (
+             <ProductManager active={productView} storeUrl={store.url} onAsk={handleMarketingAsk} onProposal={(action) => {
+               setActionsOpen(true);
+               window.dispatchEvent(new CustomEvent("evolution:shopify-action-created", { detail: { id:action.id, kind:action.kind } }));
+               a.postAssistantMessage(`Your Product Manager proposal is ready: ${action.summary}. Review the exact Shopify change in Actions before approving it.`);
+             }} onNeedFacts={(message)=>{setChatOpen(true);a.postAssistantMessage(message);}}/>
+          ) : operationsView ? (
+            <OperationsManager active={operationsView} onAsk={handleMarketingAsk} onOpenLiveOps={()=>setOpsOpen(true)} onOpenIssues={(orderId)=>{setSupportRole("operations");setSupportFocusOrderId(orderId??null);setSupportOpen(true);}}/>
+          ) : <Suspense fallback={<div className="avatar-loading" aria-label="Loading avatar" />}><AvatarScene
             avatarUrl={a.settings.avatarUrl}
             thinking={thinking}
             speaking={a.status === "speaking"}
             framing={voiceView ? "stage" : "portrait"}
             onAvatarFallback={() => a.setAvatarFellBack(true)}
             onReady={() => setAvatarReady(true)}
-          />
+          /></Suspense>}
 
-          <div className={`status-pill ${statusState}`}>
+          {!managerView && <div className={`status-pill ${statusState}`}>
             <span className="pulse" />
             {statusLabel}
-          </div>
+          </div>}
 
-          {warming && (
+          {!managerView && warming && (
             <div className="warmup" role="status">
               Warming up the voice… {Math.round((a.ttsProgress?.progress ?? 0) * 100)}%
               <span className="warmup-note">First visit only — it's cached after this.</span>
             </div>
           )}
 
-          {a.avatarFellBack && (
+          {!managerView && a.avatarFellBack && (
             <div className="corner-note">
               Using the built-in avatar (couldn't load the Ready Player Me model).
             </div>
@@ -534,7 +705,13 @@ export default function App() {
 
         {/* ── Chat experience: an always-mounted panel that slides in over the
              right of the stage while the camera glides the model left. ───── */}
-        <section className={`chat card ${voiceView ? "hidden" : ""}`} aria-hidden={voiceView}>
+        <section className={`chat card ${voiceView || (managerView && !chatOpen) ? "hidden" : ""}`} aria-hidden={voiceView || (managerView && !chatOpen)}>
+            {managerView && (
+              <div className="chat-toolbar">
+                <div><strong>Chat with your manager</strong><span>Ask, edit, approve, or pause work</span></div>
+                <button type="button" className="chat-close" onClick={() => setChatOpen(false)} aria-label="Close chat">×</button>
+              </div>
+            )}
             <MessageList
               messages={a.messages}
               status={a.status}
@@ -545,7 +722,37 @@ export default function App() {
                  With a store connected, they become the agentic skill chips. */}
             {a.messages.length <= 1 && a.status === "idle" && (
               <div className="suggestions" aria-label="Suggested questions">
-                {skillsAvailable
+                {marketingView
+                  ? MARKETING_STARTERS.map((s) => (
+                      <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
+                        {s}
+                      </button>
+                    ))
+                  : customerSuccessView
+                  ? CUSTOMER_SUCCESS_STARTERS.map((s) => (
+                      <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
+                        {s}
+                      </button>
+                    ))
+                  : seoView
+                  ? SEO_STARTERS.map((s) => (
+                      <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
+                        {s}
+                      </button>
+                    ))
+                  : productView
+                  ? PRODUCT_STARTERS.map((s) => (
+                      <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
+                        {s}
+                      </button>
+                    ))
+                  : operationsView
+                  ? OPERATIONS_STARTERS.map((s) => (
+                      <button key={s} type="button" className="chip" onClick={() => handleSend(s)}>
+                        {s}
+                      </button>
+                    ))
+                  : skillsAvailable
                   ? SKILL_CHIPS.map((c) => (
                       <button key={c.id} type="button" className="chip" title={c.blurb} onClick={() => handleSkill(c)}>
                         {c.label}
@@ -560,7 +767,7 @@ export default function App() {
             )}
 
             {/* Skills stay one tap away after the conversation has started. */}
-            {skillsAvailable && a.messages.length > 1 && (
+            {skillsAvailable && !managerView && a.messages.length > 1 && (
               <div className="skills-row" aria-label="Skills">
                 {SKILL_CHIPS.map((c) => (
                   <button
@@ -628,15 +835,19 @@ export default function App() {
       )}
 
       {authEmail && store && (
-        <RetentionPanel
+        <WinbackPanel
           open={retentionOpen}
           onClose={() => setRetentionOpen(false)}
-          storeName={store.url.replace(/^https?:\/\//, "").replace(/\.myshopify\.com.*$/, "").replace(/\/.*$/, "")}
-          storeUrl={store.url}
+          onBuild={handleMarketingAsk}
         />
       )}
 
       {authEmail && store && <OpsPanel open={opsOpen} onClose={() => setOpsOpen(false)} />}
+      {authEmail && store && <SupportPanel role={supportRole} open={supportOpen} focusOrderId={supportFocusOrderId} onClose={() => {setSupportOpen(false);setSupportFocusOrderId(null);}} onOpenDelivery={() => { setSupportOpen(false); setDeliveryRole(supportRole); setDeliveryOpen(true); }} />}
+      {authEmail && store && <RetentionPanel open={customerQueueOpen} onClose={() => setCustomerQueueOpen(false)} storeName={store.url.replace(/^https?:\/\//, "").replace(/\.myshopify\.com.*$/, "").replace(/\/.*$/, "")} storeUrl={store.url} />}
+      {authEmail && store && <ActionCenter open={actionsOpen} onClose={() => setActionsOpen(false)} />}
+      {authEmail && store && <EmailDeliveryPanel role={deliveryRole} open={deliveryOpen} onClose={() => setDeliveryOpen(false)} />}
+      {authEmail && store && <BroadcastCampaignPanel open={broadcastOpen} onClose={() => setBroadcastOpen(false)} onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryRole("marketing"); setDeliveryOpen(true); }} />}
       {authEmail && store && <LiveToasts />}
 
       {/* Embedded installs are connected by construction (the session
@@ -651,6 +862,8 @@ export default function App() {
         onClose={() => setUpgradeOpen(false)}
         plan={plan ?? "free"}
         email={authEmail}
+        entitlements={entitlements??EMPTY_ENTITLEMENTS}
+        selectedRole={upgradeRole}
       />
 
       {!splashGone && <Splash leaving={reveal} ready={ready} />}

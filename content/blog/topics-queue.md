@@ -13,6 +13,8 @@ Format:
 
 ## Pending
 
+- Inventory planning for solo store owners: avoiding stockouts and dead stock
+- Email list building for ecommerce without annoying popups
 - Welcome email series: the highest ROI automation you're not using
 - Browse abandonment emails: worth it or noise?
 - How to price products: margin math most store owners skip
@@ -52,8 +54,6 @@ Format:
 
 ## Written
 
-- [2026-08-19] Email list building for ecommerce without annoying popups — /blog/email-list-building-without-annoying-popups
-- [2026-08-18] Inventory planning for solo store owners: avoiding stockouts and dead stock — /blog/inventory-planning-solo-store-owners
 - [2026-08-08] Sourcing products from suppliers: a checklist for small stores — /blog/sourcing-products-from-suppliers-checklist
 - [2026-07-17] How to reduce abandoned checkouts on Shopify without discounting — /blog/reduce-abandoned-checkouts-shopify
 - [2026-07-18] Abandoned cart email sequence that actually converts: timing, copy, examples — /blog/abandoned-cart-email-sequence-that-converts

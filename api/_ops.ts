@@ -8,7 +8,7 @@
  * the panel polls this while open, which is what makes it "live".
  */
 import { resolveUserFull } from "./_audit";
-import { isOperator, OPERATOR_REQUIRED } from "./_plan";
+import { hasRole, roleRequired } from "./_plan";
 import { getConnection, type ShopifyEnv } from "./_shopify";
 import {
   fetchAbandonedCheckoutsWindow,
@@ -28,7 +28,7 @@ export async function runOpsSnapshot(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResult(401, { error: "Sign in first." });
-  if (!(await isOperator(env, user.id))) return { ...OPERATOR_REQUIRED };
+  if (!(await hasRole(env, user.id, "operations", user.email))) return roleRequired("operations");
 
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResult(409, { error: "Connect your Shopify store first." });

@@ -2,7 +2,7 @@
  * /api/shopify-callback — step 2 of the Shopify connect flow.
  *
  * Shopify redirects the owner here with code+hmac+state after they approve
- * the read-only scopes. We verify Shopify's HMAC and our signed state, swap
+ * the requested scopes. We verify Shopify's HMAC and our signed state, swap
  * the code for an access token, store it server-side, and bounce the owner
  * back into /app. Logic lives in _shopify.ts (shared with dev-api.ts).
  */

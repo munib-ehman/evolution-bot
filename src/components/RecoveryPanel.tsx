@@ -22,6 +22,7 @@ import {
   type RecoveryData,
   type RecoveryTouch,
 } from "../lib/recovery";
+import { getRecoveryCampaignHistory, recoveryCampaignAction, type RecoveryCampaignRecord } from "../lib/recoveryCampaigns";
 
 const SAVE_DEBOUNCE_MS = 900;
 
@@ -51,6 +52,8 @@ export function RecoveryPanel({
   const [drafting, setDrafting] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [campaigns, setCampaigns] = useState<RecoveryCampaignRecord[]>([]);
+  const [campaignBusy, setCampaignBusy] = useState<string | null>(null);
   const loadedRef = useRef(false);
   const saveTimer = useRef<number | null>(null);
 
@@ -60,7 +63,7 @@ export function RecoveryPanel({
     loadedRef.current = true;
     setLoading(true);
     void (async () => {
-      const [cartsResult, saved] = await Promise.allSettled([getRecoveryCarts(), loadSequence()]);
+      const [cartsResult, saved, history] = await Promise.allSettled([getRecoveryCarts(), loadSequence(), getRecoveryCampaignHistory()]);
       if (cartsResult.status === "fulfilled") {
         setData(cartsResult.value);
         setLoadError(null);
@@ -75,9 +78,23 @@ export function RecoveryPanel({
         );
       }
       if (saved.status === "fulfilled" && saved.value) setTouches(saved.value);
+      if (history.status === "fulfilled") setCampaigns(history.value);
       setLoading(false);
     })();
   }, [open]);
+
+  const refreshCampaigns = useCallback(() => { void getRecoveryCampaignHistory().then(setCampaigns).catch(() => undefined); }, []);
+  useEffect(() => {
+    window.addEventListener("evolution:recovery-campaign-changed", refreshCampaigns);
+    return () => window.removeEventListener("evolution:recovery-campaign-changed", refreshCampaigns);
+  }, [refreshCampaigns]);
+
+  const controlCampaign = async (id: string, action: "pause" | "resume") => {
+    setCampaignBusy(id);
+    try { await recoveryCampaignAction(id, action); refreshCampaigns(); }
+    catch (e) { setLoadError(e instanceof Error ? e.message : "Campaign control failed."); }
+    finally { setCampaignBusy(null); }
+  };
 
   const persist = useCallback((next: RecoveryTouch[]) => {
     setTouches(next);
@@ -146,6 +163,8 @@ export function RecoveryPanel({
             )}
           </p>
 
+          <CampaignWorkspace campaigns={campaigns} busyId={campaignBusy} onControl={controlCampaign} />
+
           <section className="recovery-sequence">
             <div className="recovery-sequence-head">
               <h3>Your 3-touch sequence</h3>
@@ -206,6 +225,26 @@ export function RecoveryPanel({
       )}
     </aside>
   );
+}
+
+function CampaignWorkspace({ campaigns, busyId, onControl }: { campaigns: RecoveryCampaignRecord[]; busyId: string | null; onControl: (id: string, action: "pause" | "resume") => void }) {
+  const active = campaigns.find((campaign) => campaign.status === "scheduled" || campaign.status === "paused") ?? campaigns[0];
+  if (!active) return <section className="recovery-campaign-workspace empty"><div><span className="manager-kicker">Campaign activity</span><h3>No campaign yet</h3><p>Build one in chat; once approved, delivery progress will live here permanently.</p></div></section>;
+  const deliveries = active.recovery_deliveries ?? [];
+  const counts = deliveries.reduce((out, item) => ({ ...out, [item.status]: (out[item.status] ?? 0) + 1 }), {} as Record<string, number>);
+  const next = deliveries.find((item) => item.status === "queued");
+  const finished = (counts.sent ?? 0) + (counts.skipped ?? 0) + (counts.failed ?? 0) + (counts.cancelled ?? 0);
+  const pct = deliveries.length ? Math.round(finished / deliveries.length * 100) : 0;
+  const delivered = deliveries.filter((item) => item.delivery_status === "delivered" || item.opened_at || item.clicked_at).length;
+  return <section className="recovery-campaign-workspace">
+    <div className="recovery-campaign-head"><div><span className="manager-kicker">Active campaign</span><h3>Abandoned-cart recovery</h3><p>{active.cart_count} shopper{active.cart_count === 1 ? "" : "s"} · {formatMoney(active.total_value, active.currency)} opportunity</p></div><span className={`campaign-status ${active.status}`}>{active.status}</span></div>
+    <div className="campaign-progress"><div><span>Delivery progress</span><strong>{finished} of {deliveries.length} resolved</strong></div><i><b style={{ width: `${pct}%` }} /></i></div>
+    <div className="campaign-stats"><article><strong>{delivered}</strong><span>Delivered</span></article><article><strong>{counts.queued ?? 0}</strong><span>Scheduled</span></article><article><strong>{counts.skipped ?? 0}</strong><span>Recovered/skipped</span></article><article><strong>{(counts.failed ?? 0) + (counts.cancelled ?? 0)}</strong><span>Stopped/attention</span></article></div>
+    {next && <p className="campaign-next"><strong>Next send:</strong> {new Date(next.due_at).toLocaleString()} · Touch {next.touch_index + 1}</p>}
+    <div className="campaign-timeline">{deliveries.map((item) => <div key={item.id} className={`campaign-delivery ${item.delivery_status ?? item.status}`}><i /><span><strong>Touch {item.touch_index + 1}</strong><small>{new Date(item.due_at).toLocaleString()}</small>{item.error && <small>{item.error}</small>}</span><em>{item.delivery_status ?? item.status}</em></div>)}</div>
+    <div className="delivery-actions">{active.status === "scheduled" && <button type="button" className="link" disabled={busyId === active.id} onClick={() => onControl(active.id, "pause")}>Pause campaign</button>}{active.status === "paused" && <button type="button" className="primary" disabled={busyId === active.id} onClick={() => onControl(active.id, "resume")}>Resume campaign</button>}</div>
+    {campaigns.length > 1 && <details className="campaign-history"><summary>Previous campaigns ({campaigns.length - 1})</summary>{campaigns.slice(1).map((campaign) => <p key={campaign.id}><strong>{campaign.status}</strong> · {new Date(campaign.created_at).toLocaleDateString()} · {campaign.cart_count} carts</p>)}</details>}
+  </section>;
 }
 
 function RecoveryCartCard({

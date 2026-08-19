@@ -134,10 +134,10 @@ export function RetentionPanel({
     <aside
       className={`tools-panel recovery-panel retention-panel card ${open ? "open" : ""}`}
       aria-hidden={!open}
-      aria-label="Retention"
+      aria-label="Reviews and retention"
     >
       <header className="tools-header">
-        <h2>Retention</h2>
+        <h2>Reviews &amp; retention</h2>
         <button type="button" className="link" onClick={onClose}>
           close
         </button>
@@ -156,7 +156,7 @@ export function RetentionPanel({
           <p className="recovery-stats">
             <strong>{data.lapsed.length}</strong> lapsed customer{data.lapsed.length === 1 ? "" : "s"} worth{" "}
             <strong>{formatMoney(lapsedValue, data.currency)}</strong> lifetime ·{" "}
-            <strong>{data.buyers.length}</strong> recent buyer{data.buyers.length === 1 ? "" : "s"} to ask
+            <strong>{data.buyers.length}</strong> fulfilled buyer{data.buyers.length === 1 ? "" : "s"} to ask
             for reviews
             {data.noEmailCounts.lapsed + data.noEmailCounts.buyers > 0 && (
               <span className="recovery-muted">
@@ -270,8 +270,7 @@ export function RetentionPanel({
             <h3>Ask for reviews</h3>
             {data.buyers.length === 0 && (
               <p className="recovery-muted">
-                No orders {data.buyerWindow.minDays}–{data.buyerWindow.maxDays} days old with an email —
-                check back after your next sales.
+                No successfully fulfilled orders {data.buyerWindow.minDays}–{data.buyerWindow.maxDays} days past fulfillment with an email.
               </p>
             )}
             {data.buyers.map((buyer) => (
@@ -430,7 +429,7 @@ function BuyerCard({
           <span className="recovery-muted">{buyer.email}</span>
         </span>
         <span className="recovery-cart-meta">
-          {formatMoney(buyer.totalPrice, currency)} · ordered {ageLabel(buyer.orderedAt)}
+          {formatMoney(buyer.totalPrice, currency)} · fulfilled {ageLabel(buyer.fulfilledAt)}
         </span>
       </button>
       <p className="recovery-cart-items">{itemsLine || "(no items listed)"}</p>

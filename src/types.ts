@@ -21,6 +21,14 @@ export interface Message {
   progress?: string;
   /** Offer a "Queue this fix" action under a finished report. */
   escalate?: { taskTool: string; note: string };
+  /** Persisted Shopify proposal. The model can prepare it but cannot execute it. */
+  action?: import("./lib/actions").ShopifyActionProposal;
+  /** Customer-specific cart recovery work waiting for merchant approval. */
+  recoveryProposal?: import("./lib/recovery").RecoveryCampaignProposal;
+  /** Customer-specific win-back campaign waiting for merchant approval. */
+  winbackProposal?: import("./lib/winbackCampaigns").WinbackCampaignProposal;
+  /** One-time email campaign waiting for merchant approval. */
+  broadcastProposal?: import("./lib/broadcastCampaigns").BroadcastCampaign;
 }
 
 /** Speech-to-text engine choice, selectable in Settings. */

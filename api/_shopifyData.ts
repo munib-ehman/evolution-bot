@@ -312,6 +312,7 @@ export interface LapsedCustomer {
   ordersCount: number;
   totalSpent: number;
   lastItems: { title: string; qty: number }[];
+  marketingState?: string | null;
 }
 
 export interface RecentBuyer {
@@ -320,6 +321,8 @@ export interface RecentBuyer {
   firstName: string;
   email: string;
   orderedAt: string;
+  /** Successful fulfillment timestamp used for review-request eligibility. */
+  fulfilledAt: string;
   totalPrice: number;
   items: { title: string; qty: number }[];
 }
@@ -343,6 +346,7 @@ const LAPSED_QUERY = `query LapsedCustomers($first: Int!, $after: String) {
       defaultEmailAddress { emailAddress }
       numberOfOrders
       amountSpent { amount }
+      emailMarketingConsent { marketingState }
       lastOrder {
         createdAt
         lineItems(first: 5) { nodes { title quantity } }
@@ -360,6 +364,7 @@ interface GqlLapsedData {
       defaultEmailAddress?: { emailAddress?: string | null } | null;
       numberOfOrders?: string | number;
       amountSpent?: { amount?: string } | null;
+      emailMarketingConsent?: { marketingState?: string | null } | null;
       lastOrder?: {
         createdAt?: string;
         lineItems?: { nodes?: { title?: string; quantity?: number }[] };
@@ -374,6 +379,7 @@ async function fetchLapsedGraphql(
   conn: ShopifyConnection,
   minDays: number,
   maxDays: number,
+  includeNeverOrdered = false,
 ): Promise<PiiResult<LapsedCustomer>> {
   const out: LapsedCustomer[] = [];
   let scanned = 0;
@@ -390,20 +396,23 @@ async function fetchLapsedGraphql(
     for (const n of page.nodes) {
       scanned++;
       const lastAt = n.lastOrder?.createdAt;
-      if (!lastAt) continue; // never ordered
-      const age = daysAgo(lastAt);
-      if (!Number.isFinite(age) || age < minDays || age > maxDays) continue;
+      if (!lastAt && !includeNeverOrdered) continue;
+      if (lastAt) {
+        const age = daysAgo(lastAt);
+        if (!Number.isFinite(age) || age < minDays || age > maxDays) continue;
+      }
       out.push({
         id: n.id ?? "",
         firstName: (n.firstName ?? "").trim(),
         email: (n.defaultEmailAddress?.emailAddress ?? "").trim(),
-        lastOrderAt: lastAt,
+        lastOrderAt: lastAt ?? "",
         ordersCount: Number(n.numberOfOrders) || 0,
         totalSpent: money(n.amountSpent?.amount),
         lastItems: (n.lastOrder?.lineItems?.nodes ?? []).map((li) => ({
           title: (li.title ?? "").trim() || "(untitled)",
           qty: li.quantity ?? 0,
         })),
+        marketingState: n.emailMarketingConsent?.marketingState ?? null,
       });
       if (out.length >= LAPSED_COLLECT_CAP) break;
     }
@@ -411,6 +420,13 @@ async function fetchLapsedGraphql(
     after = page.pageInfo.endCursor;
   }
   return out;
+}
+
+/** Past customers available for marketing segmentation. Callers must enforce SUBSCRIBED. */
+export async function fetchMarketingCustomers(conn: ShopifyConnection): Promise<PiiResult<LapsedCustomer>> {
+  const rows = await fetchLapsedGraphql(conn, 0, 3650, true);
+  if (rows === "access-denied" || rows === null) return rows;
+  return rows.sort((a, b) => Date.parse(b.lastOrderAt) - Date.parse(a.lastOrderAt));
 }
 
 /** Customers whose last order fell out of the window (PII — owner's eyes only). */
@@ -435,9 +451,11 @@ const BUYERS_QUERY = `query RecentBuyers($first: Int!, $after: String, $q: Strin
       createdAt
       cancelledAt
       displayFinancialStatus
+      displayFulfillmentStatus
       email
       customer { id firstName }
       currentTotalPriceSet { shopMoney { amount } }
+      fulfillments(first: 10) { createdAt status }
       lineItems(first: 10) { nodes { title quantity } }
     }
   }
@@ -451,15 +469,35 @@ interface GqlBuyersData {
       createdAt?: string;
       cancelledAt?: string | null;
       displayFinancialStatus?: string | null;
+      displayFulfillmentStatus?: string | null;
       email?: string | null;
       customer?: { id?: string; firstName?: string | null } | null;
       currentTotalPriceSet?: { shopMoney?: { amount?: string } } | null;
+      fulfillments?: { createdAt?: string; status?: string | null }[];
       lineItems?: { nodes?: { title?: string; quantity?: number }[] };
     }[];
   };
 }
 
 const REFUNDED_STATUSES = new Set(["REFUNDED", "VOIDED", "refunded", "voided"]);
+
+export function reviewEligibleFulfillment(
+  order: { cancelledAt?: string | null; financialStatus?: string | null; fulfillmentStatus?: string | null; fulfillments?: { createdAt?: string; status?: string | null }[] },
+  minDays: number,
+  maxDays: number,
+  now = Date.now(),
+): string | null {
+  if (order.cancelledAt || REFUNDED_STATUSES.has(order.financialStatus ?? "")) return null;
+  if ((order.fulfillmentStatus ?? "").toUpperCase() !== "FULFILLED") return null;
+  const successful = (order.fulfillments ?? [])
+    .filter((fulfillment) => (fulfillment.status ?? "").toUpperCase() === "SUCCESS" && fulfillment.createdAt)
+    .map((fulfillment) => fulfillment.createdAt as string)
+    .sort((a, b) => Date.parse(b) - Date.parse(a));
+  const fulfilledAt = successful[0];
+  if (!fulfilledAt) return null;
+  const age = (now - Date.parse(fulfilledAt)) / 86_400_000;
+  return Number.isFinite(age) && age >= minDays && age <= maxDays ? fulfilledAt : null;
+}
 
 function dedupeBuyers(rows: RecentBuyer[]): RecentBuyer[] {
   // Newest-first input: the first row seen per customer is their latest order.
@@ -493,13 +531,20 @@ async function fetchBuyersGraphql(
     const page: GqlBuyersData["orders"] = data?.orders;
     if (!page?.nodes) return out.length === 0 ? null : dedupeBuyers(out);
     for (const n of page.nodes) {
-      if (n.cancelledAt || REFUNDED_STATUSES.has(n.displayFinancialStatus ?? "")) continue;
+      const fulfilledAt = reviewEligibleFulfillment({
+        cancelledAt: n.cancelledAt,
+        financialStatus: n.displayFinancialStatus,
+        fulfillmentStatus: n.displayFulfillmentStatus,
+        fulfillments: n.fulfillments,
+      }, minDays, maxDays);
+      if (!fulfilledAt) continue;
       out.push({
         orderId: n.id ?? "",
         customerId: n.customer?.id ?? null,
         firstName: (n.customer?.firstName ?? "").trim(),
         email: (n.email ?? "").trim(),
         orderedAt: n.createdAt ?? "",
+        fulfilledAt,
         totalPrice: money(n.currentTotalPriceSet?.shopMoney?.amount),
         items: (n.lineItems?.nodes ?? []).map((li) => ({
           title: (li.title ?? "").trim() || "(untitled)",
@@ -546,6 +591,12 @@ export interface ShipQueueOrder {
   financialStatus: string;
   totalPrice: number;
   items: { title: string; qty: number }[];
+}
+
+export interface SupportRiskOrder extends ShipQueueOrder {
+  id: string;
+  firstName: string;
+  email: string;
 }
 
 const INVENTORY_LOW_THRESHOLD = 5;
@@ -714,6 +765,61 @@ export async function fetchShipQueue(conn: ShopifyConnection): Promise<ShipQueue
   return fetchShipQueueGraphql(conn);
 }
 
+const SUPPORT_RISKS_QUERY = `query SupportRisks($first: Int!, $after: String) {
+  orders(first: $first, after: $after, query: "fulfillment_status:unshipped", sortKey: CREATED_AT) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id name createdAt cancelledAt displayFinancialStatus email
+      customer { firstName defaultEmailAddress { emailAddress } }
+      currentTotalPriceSet { shopMoney { amount } }
+      lineItems(first: 10) { nodes { title quantity } }
+    }
+  }
+}`;
+
+interface GqlSupportRisksData {
+  orders?: {
+    pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+    nodes?: {
+      id?: string; name?: string; createdAt?: string; cancelledAt?: string | null;
+      displayFinancialStatus?: string | null; email?: string | null;
+      customer?: { firstName?: string | null; defaultEmailAddress?: { emailAddress?: string | null } | null } | null;
+      currentTotalPriceSet?: { shopMoney?: { amount?: string } } | null;
+      lineItems?: { nodes?: { title?: string; quantity?: number }[] };
+    }[];
+  };
+}
+
+/** Owner-only support queue with contact details. Never expose this through LLM tools. */
+export async function fetchSupportRiskOrders(conn: ShopifyConnection): Promise<PiiResult<SupportRiskOrder>> {
+  const out: SupportRiskOrder[] = [];
+  let after: string | null = null;
+  while (out.length < SHIP_QUEUE_CAP) {
+    const { data, accessDenied }: { data: GqlSupportRisksData | null; accessDenied: boolean } = await shopifyGraphqlDetailed<GqlSupportRisksData>(conn.shop_domain, conn.access_token, SUPPORT_RISKS_QUERY, {
+      first: Math.min(25, SHIP_QUEUE_CAP - out.length), after,
+    });
+    if (accessDenied) return "access-denied";
+    const page: GqlSupportRisksData["orders"] = data?.orders;
+    if (!page?.nodes) return out.length ? out : null;
+    for (const order of page.nodes) {
+      if (order.cancelledAt) continue;
+      out.push({
+        id: order.id ?? "", name: order.name ?? "", createdAt: order.createdAt ?? "",
+        financialStatus: order.displayFinancialStatus ?? "", totalPrice: money(order.currentTotalPriceSet?.shopMoney?.amount),
+        firstName: (order.customer?.firstName ?? "").trim(),
+        // Shopify may keep the confirmed address on the customer while the
+        // legacy order-level email field is blank. Prefer the order address,
+        // then fall back to the linked customer's current default address.
+        email: (order.email ?? order.customer?.defaultEmailAddress?.emailAddress ?? "").trim(),
+        items: (order.lineItems?.nodes ?? []).map((item: { title?: string; quantity?: number }) => ({ title: (item.title ?? "").trim() || "(untitled)", qty: item.quantity ?? 0 })),
+      });
+    }
+    if (!page.pageInfo?.hasNextPage || !page.pageInfo.endCursor) break;
+    after = page.pageInfo.endCursor;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Shop info
 
@@ -726,4 +832,39 @@ export async function fetchShopCurrency(conn: ShopifyConnection): Promise<string
     {},
   );
   return data?.shop?.currencyCode ?? null;
+}
+
+const UNSUBSCRIBE_EMAIL_MARKETING_MUTATION = `mutation UnsubscribeEmailMarketing($input: CustomerEmailMarketingConsentUpdateInput!) {
+  customerEmailMarketingConsentUpdate(input: $input) {
+    customer { id }
+    userErrors { field message }
+  }
+}`;
+
+/** Mirror an Evolution email opt-out into the Shopify customer record. */
+export async function unsubscribeCustomerEmailMarketing(
+  conn: ShopifyConnection,
+  customerId: string,
+  consentUpdatedAt = new Date().toISOString(),
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!customerId.startsWith("gid://shopify/Customer/")) {
+    return { ok: false, error: "Invalid Shopify customer ID." };
+  }
+  const data = await shopifyGraphql<{
+    customerEmailMarketingConsentUpdate?: {
+      customer?: { id?: string } | null;
+      userErrors?: { message?: string }[];
+    };
+  }>(conn.shop_domain, conn.access_token, UNSUBSCRIBE_EMAIL_MARKETING_MUTATION, {
+    input: {
+      customerId,
+      emailMarketingConsent: { marketingState: "UNSUBSCRIBED", consentUpdatedAt },
+    },
+  });
+  const payload = data?.customerEmailMarketingConsentUpdate;
+  const message = payload?.userErrors?.map((item) => item.message).filter(Boolean).join("; ");
+  if (!payload?.customer?.id || message) {
+    return { ok: false, error: message || "Shopify did not update marketing consent." };
+  }
+  return { ok: true };
 }

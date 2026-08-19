@@ -6,7 +6,7 @@
  * returns no PII and no description bodies. dev-api.ts runs this same engine.
  */
 import { resolveUserFull } from "./_audit";
-import { isOperator, OPERATOR_REQUIRED } from "./_plan";
+import { hasRole, roleRequired } from "./_plan";
 import { getConnection, type ShopifyEnv } from "./_shopify";
 import { buildProductsDigest } from "./_skillTools";
 
@@ -23,7 +23,7 @@ export async function runStoreCatalog(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return { status: 401, body: { error: "Sign in first." } };
-  if (!(await isOperator(env, user.id))) return { ...OPERATOR_REQUIRED };
+  if (!(await hasRole(env, user.id, "product", user.email))) return roleRequired("product");
 
   const conn = await getConnection(env, user.id);
   if (!conn) return { status: 409, body: { error: "No Shopify store connected." } };
