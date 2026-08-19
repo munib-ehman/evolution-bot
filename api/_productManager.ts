@@ -1,6 +1,6 @@
 import { resolveUserFull } from "./_audit";
 import { runActionPropose, type ShopifyActionRow } from "./_actions";
-import { isOperator, OPERATOR_REQUIRED } from "./_plan";
+import { hasRole, roleRequired } from "./_plan";
 import { getConnection, shopifyGraphql, type ShopifyConnection, type ShopifyEnv } from "./_shopify";
 import { buildProductsDigest } from "./_skillTools";
 import { fetchAbandonedCheckoutsWindow, fetchOrdersWindow } from "./_shopifyData";
@@ -68,7 +68,7 @@ async function salesSignals(conn:ShopifyConnection) {
 export async function productManagerSnapshot(authHeader:string|null,env:ShopifyEnv):Promise<Response>{
   const user=await resolveUserFull(env,authHeader);
   if(!user) return Response.json({error:"Sign in first."},{status:401});
-  if(!(await isOperator(env,user.id,user.email))) return Response.json(OPERATOR_REQUIRED.body,{status:OPERATOR_REQUIRED.status});
+  if(!(await hasRole(env,user.id,"product",user.email))) { const denied=roleRequired("product"); return Response.json(denied.body,{status:denied.status}); }
   const conn=await getConnection(env,user.id);
   if(!conn) return Response.json({error:"Connect Shopify first."},{status:409});
   const [digest,signals]=await Promise.all([buildProductsDigest(conn,100),salesSignals(conn)]);
@@ -149,7 +149,7 @@ async function generateListing(env:ShopifyEnv,product:ProductDetail,market:strin
 export async function productManagerOptimize(body:{productId?:unknown;confirmedFacts?:unknown},authHeader:string|null,env:ShopifyEnv):Promise<Response>{
   const user=await resolveUserFull(env,authHeader);
   if(!user)return Response.json({error:"Sign in first."},{status:401});
-  if(!(await isOperator(env,user.id,user.email)))return Response.json(OPERATOR_REQUIRED.body,{status:OPERATOR_REQUIRED.status});
+  if(!(await hasRole(env,user.id,"product",user.email))){const denied=roleRequired("product");return Response.json(denied.body,{status:denied.status});}
   const conn=await getConnection(env,user.id), productId=validId(body.productId);
   if(!conn)return Response.json({error:"Connect Shopify first."},{status:409});
   if(!productId)return Response.json({error:"Choose a valid product."},{status:400});
@@ -172,7 +172,7 @@ export async function productManagerArchive(body:{productId?:unknown;title?:unkn
   if(!productId)return Response.json({error:"Choose a valid product."},{status:400});
   const user=await resolveUserFull(env,authHeader);
   if(!user)return Response.json({error:"Sign in first."},{status:401});
-  if(!(await isOperator(env,user.id,user.email)))return Response.json(OPERATOR_REQUIRED.body,{status:OPERATOR_REQUIRED.status});
+  if(!(await hasRole(env,user.id,"product",user.email))){const denied=roleRequired("product");return Response.json(denied.body,{status:denied.status});}
   const conn=await getConnection(env,user.id);
   if(!conn)return Response.json({error:"Connect Shopify first."},{status:409});
   const [digest,signals]=await Promise.all([buildProductsDigest(conn,100),salesSignals(conn)]);

@@ -28,7 +28,7 @@ import {
   RESEARCH_MODEL_DEFAULT,
 } from "./_shared";
 import { resolveUserFull } from "./_audit";
-import { isOperator, OPERATOR_REQUIRED } from "./_plan";
+import { hasRole, roleRequired } from "./_plan";
 import { getConnection } from "./_shopify";
 import { SKILL_TOOLS, buildProductsDigest, type SkillEnv, type ToolCtx, type ToolSchema } from "./_skillTools";
 import { log } from "./_log";
@@ -752,15 +752,14 @@ export async function runAgentChat(
 
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResponse(401, { error: "Sign in to chat with your store." });
-  if (!(await isOperator(env, user.id, user.email))) {
-    return jsonResponse(OPERATOR_REQUIRED.status, { ...OPERATOR_REQUIRED.body });
-  }
+  const manager: ManagerRole | undefined = body.manager === "marketing" || body.manager === "customer-success" || body.manager === "seo" || body.manager === "product" || body.manager === "operations" ? body.manager : undefined;
+  if (!manager) return jsonResponse(400, { error: "Choose a manager before starting chat." });
+  if (!(await hasRole(env, user.id, manager, user.email))) { const denied=roleRequired(manager); return jsonResponse(denied.status, { ...denied.body }); }
 
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResponse(409, { error: "Connect your Shopify store first." });
 
   const ctx: ToolCtx = { env, userId: user.id, userEmail: user.email, conn, origin, authHeader };
-  const manager: ManagerRole | undefined = body.manager === "marketing" || body.manager === "customer-success" || body.manager === "seo" || body.manager === "product" || body.manager === "operations" ? body.manager : undefined;
   const shop = conn.shop_domain.replace(".myshopify.com", "");
   const model = env.groqModel || CHAT_MODEL_DEFAULT;
   const clarifyCampaign = manager === "marketing" && needsCampaignClarification(turns);
@@ -1159,7 +1158,7 @@ export async function runAgentChat(
                     : name === "prepare_collection"
                       ? { kind: "collection_upsert", ...args }
                       : { kind: args.automatic ? "discount_automatic_create" : "discount_code_create", ...args };
-                const response = await runActionPropose(proposalBody, authHeader, env);
+                const response = await runActionPropose({ ...proposalBody, role:manager }, authHeader, env);
                 result = await response.json();
                 const action = (result as { action?: unknown }).action;
                 if (action) {

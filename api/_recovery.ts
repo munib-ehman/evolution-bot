@@ -14,7 +14,7 @@
  */
 import { GROQ_BASE, CHAT_MODEL_DEFAULT } from "./_shared";
 import { resolveUserFull } from "./_audit";
-import { isOperator, OPERATOR_REQUIRED } from "./_plan";
+import { hasRole, roleRequired } from "./_plan";
 import { getConnection, type ShopifyEnv } from "./_shopify";
 import {
   fetchAbandonedCheckoutsWindow,
@@ -102,7 +102,7 @@ export async function runRecoveryCarts(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResult(401, { error: "Sign in first." });
-  if (!(await isOperator(env, user.id, user.email))) return { ...OPERATOR_REQUIRED };
+  if (!(await hasRole(env, user.id, "marketing", user.email))) return roleRequired("marketing");
 
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResult(409, { error: "Connect your Shopify store first." });
@@ -160,7 +160,7 @@ export async function runRecoveryDraft(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResult(401, { error: "Sign in first." });
-  if (!(await isOperator(env, user.id, user.email))) return { ...OPERATOR_REQUIRED };
+  if (!(await hasRole(env, user.id, "marketing", user.email))) return roleRequired("marketing");
 
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResult(409, { error: "Connect your Shopify store first." });

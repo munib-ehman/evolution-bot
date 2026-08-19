@@ -21,7 +21,7 @@
  */
 import { GROQ_BASE, CHAT_MODEL_DEFAULT, RESEARCH_MODEL_DEFAULT } from "./_shared";
 import { resolveUserFull } from "./_audit";
-import { isOperator, OPERATOR_REQUIRED } from "./_plan";
+import { hasRole, roleRequired, type Role } from "./_plan";
 import { getConnection, shopifyEnvFromProcess } from "./_shopify";
 import { SKILL_TOOLS, type SkillEnv, type ToolCtx } from "./_skillTools";
 import { sendTaskEmail } from "./_email";
@@ -29,6 +29,7 @@ import { log } from "./_log";
 
 /** Keep ids in lockstep with the client mirror in src/lib/skills.ts. */
 export interface SkillDef {
+  role: Role;
   id: string;
   label: string;
   kind: "agentic" | "concierge";
@@ -54,6 +55,7 @@ const ESCALATION_LINE =
 
 export const SKILLS: Record<string, SkillDef> = {
   product_audit: {
+    role: "product",
     id: "product_audit",
     label: "Product listing audit",
     kind: "agentic",
@@ -63,6 +65,7 @@ export const SKILLS: Record<string, SkillDef> = {
     maxTokens: 1300,
   },
   product_research: {
+    role: "product",
     id: "product_research",
     label: "Find winning products",
     kind: "agentic",
@@ -95,6 +98,7 @@ export const SKILLS: Record<string, SkillDef> = {
     maxTokens: 1400,
   },
   cart_recovery: {
+    role: "marketing",
     id: "cart_recovery",
     label: "Cart recovery report",
     kind: "agentic",
@@ -107,6 +111,7 @@ export const SKILLS: Record<string, SkillDef> = {
     maxTokens: 1100,
   },
   retention: {
+    role: "customer-success",
     id: "retention",
     label: "Retention & reviews snapshot",
     kind: "agentic",
@@ -119,6 +124,7 @@ export const SKILLS: Record<string, SkillDef> = {
     maxTokens: 1000,
   },
   back_in_stock: {
+    role: "operations",
     id: "back_in_stock",
     label: "Back-in-stock check",
     kind: "agentic",
@@ -135,6 +141,7 @@ export const SKILLS: Record<string, SkillDef> = {
     maxTokens: 900,
   },
   file_fixes: {
+    role: "product",
     id: "file_fixes",
     label: "Queue this fix",
     kind: "concierge",
@@ -188,9 +195,7 @@ export async function runSkill(
 
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResponse(401, { error: "Sign in to run skills." });
-  if (!(await isOperator(env, user.id))) {
-    return jsonResponse(OPERATOR_REQUIRED.status, { ...OPERATOR_REQUIRED.body });
-  }
+  if (!(await hasRole(env, user.id, skill.role, user.email))) { const denied=roleRequired(skill.role); return jsonResponse(denied.status, { ...denied.body }); }
 
   const conn = await getConnection(env, user.id);
   if (skill.kind === "agentic" && !conn) {

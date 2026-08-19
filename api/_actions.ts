@@ -5,7 +5,7 @@
  * mutate Shopify, and it loads the immutable proposal from server storage.
  */
 import { resolveUserFull } from "./_audit";
-import { isOperator, OPERATOR_REQUIRED } from "./_plan";
+import { getEntitlements, hasRole, roleRequired, type Role } from "./_plan";
 import {
   getConnection,
   SHOPIFY_API_VERSION,
@@ -58,6 +58,7 @@ export interface ShopifyActionRow {
   user_id: string;
   shop_domain: string;
   kind: ShopifyActionKind;
+  role: Role;
   status: ShopifyActionStatus;
   summary: string;
   payload: Record<string, unknown>;
@@ -99,6 +100,7 @@ interface DiscountSpec {
 }
 
 export interface ActionProposeBody {
+  role?: unknown;
   kind?: unknown;
   summary?: unknown;
   items?: unknown;
@@ -116,7 +118,7 @@ export interface ActionProposeBody {
 }
 
 const ACTION_SELECT =
-  "id,user_id,shop_domain,kind,status,summary,payload,before_state,after_state,result,error,expires_at,approved_at,executed_at,undone_at,created_at";
+  "id,user_id,shop_domain,kind,role,status,summary,payload,before_state,after_state,result,error,expires_at,approved_at,executed_at,undone_at,created_at";
 const MAX_BATCH = 10;
 const MAX_TEXT = 20_000;
 const gid = (type: string, raw: unknown): string | null => {
@@ -391,9 +393,6 @@ type AuthContext =
 async function authContext(authHeader: string | null, env: ShopifyEnv): Promise<AuthContext> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return { error: json(401, { error: "Sign in first." }) };
-  if (!(await isOperator(env, user.id))) {
-    return { error: json(OPERATOR_REQUIRED.status, { ...OPERATOR_REQUIRED.body }) };
-  }
   const conn = await getConnection(env, user.id);
   if (!conn) return { error: json(409, { error: "Connect your Shopify store first." }) };
   return { user, conn };
@@ -450,6 +449,17 @@ export async function runActionPropose(body: ActionProposeBody, authHeader: stri
   if (!["product_update", "product_status_update", "product_draft_create", "collection_upsert", "order_email_update", "discount_code_create", "discount_automatic_create"].includes(kind)) {
     return json(400, { error: "Unsupported action kind." });
   }
+  const requestedRole=body.role as Role;
+  const role:Role = ["marketing","customer-success","seo","product","operations"].includes(requestedRole) ? requestedRole
+    : kind === "order_email_update" ? "operations"
+    : kind === "discount_code_create" || kind === "discount_automatic_create" ? "marketing"
+    : String(body.optimizerVersion??"").startsWith("seo-") ? "seo" : "product";
+  const allowed = role === "marketing" ? ["discount_code_create","discount_automatic_create"]
+    : role === "operations" ? ["order_email_update"]
+    : role === "seo" ? ["product_update"]
+    : role === "product" ? ["product_update","product_status_update","product_draft_create","collection_upsert"] : [];
+  if (!allowed.includes(kind)) return json(403,{error:"This action does not belong to the selected manager."});
+  if (!(await hasRole(env,ctx.user.id,role,ctx.user.email))) { const denied=roleRequired(role); return json(denied.status,{...denied.body}); }
 
   let payload: Record<string, unknown>;
   let before: Record<string, unknown> = {};
@@ -553,7 +563,7 @@ export async function runActionPropose(body: ActionProposeBody, authHeader: stri
   const res = await fetch(`${env.supabaseUrl}/rest/v1/shopify_actions?select=${ACTION_SELECT}`, {
     method: "POST",
     headers: dbHeaders(env, true),
-    body: JSON.stringify({ user_id: ctx.user.id, shop_domain: ctx.conn.shop_domain, kind, summary, payload, before_state: before }),
+    body: JSON.stringify({ user_id: ctx.user.id, shop_domain: ctx.conn.shop_domain, kind, role, summary, payload, before_state: before }),
   });
   if (!res.ok) return json(502, { error: "Couldn't save the action proposal." });
   const row = ((await res.json()) as ShopifyActionRow[])[0];
@@ -637,6 +647,10 @@ async function executeDraft(row: ShopifyActionRow, conn: ShopifyConnection) {
   const results = [{ ok: Boolean(created?.id) && createErrors.length === 0, product: created, errors: createErrors }];
   if (typeof price === "number") results.push({ ok: Boolean(created?.id) && priceErrors.length === 0, product: created, errors: priceErrors });
   return { results, after: { product: created ?? null } };
+}
+async function actionRoleError(env:ShopifyEnv,user:{id:string;email:string|null},row:ShopifyActionRow):Promise<Response|null>{
+  if(await hasRole(env,user.id,row.role,user.email))return null;
+  const denied=roleRequired(row.role);return json(denied.status,{...denied.body});
 }
 
 async function executeCollection(row: ShopifyActionRow, conn: ShopifyConnection) {
@@ -727,6 +741,7 @@ export async function runActionExecute(actionIdRaw: unknown, authHeader: string 
   const actionId = cleanText(actionIdRaw, 80);
   let row = await loadAction(env, actionId, ctx.user.id);
   if (!row) return json(404, { error: "Action not found." });
+  {const denied=await actionRoleError(env,ctx.user,row);if(denied)return denied;}
   if (row.status === "succeeded" || row.status === "partial") return json(200, { action: row });
   if (row.status !== "proposed") return json(409, { error: `Action is ${row.status}.`, action: row });
   if (Date.parse(row.expires_at) <= Date.now()) {
@@ -779,6 +794,7 @@ export async function runActionUpdate(actionIdRaw: unknown, itemsRaw: unknown, a
   const actionId = cleanText(actionIdRaw, 80);
   const row = await loadAction(env, actionId, ctx.user.id);
   if (!row) return json(404, { error: "That prepared update could not be found." });
+  {const denied=await actionRoleError(env,ctx.user,row);if(denied)return denied;}
   if (row.status !== "proposed") return json(409, { error: "Only updates waiting for approval can be edited." });
   if (row.kind !== "product_update") return json(400, { error: "This type of action cannot be edited here." });
   const items = validateProductItems(itemsRaw);
@@ -806,6 +822,7 @@ export async function runActionReject(actionIdRaw: unknown, authHeader: string |
   const actionId = cleanText(actionIdRaw, 80);
   const row = await loadAction(env, actionId, ctx.user.id);
   if (!row) return json(404, { error: "That prepared update could not be found." });
+  {const denied=await actionRoleError(env,ctx.user,row);if(denied)return denied;}
   if (row.status !== "proposed") return json(409, { error: "Only updates waiting for approval can be rejected." });
   const updated = await updateAction(env, row.id, ctx.user.id, { status:"rejected" }, "proposed");
   if (!updated) return json(409, { error: "This update changed before it could be rejected. Refresh and try again." });
@@ -884,6 +901,7 @@ export async function runActionUndo(actionIdRaw: unknown, authHeader: string | n
   if ("error" in ctx) return ctx.error;
   const row = await loadAction(env, cleanText(actionIdRaw, 80), ctx.user.id);
   if (!row) return json(404, { error: "Action not found." });
+  {const denied=await actionRoleError(env,ctx.user,row);if(denied)return denied;}
   if (row.status !== "succeeded" && row.status !== "partial") return json(409, { error: "Only applied actions can be undone." });
   if (!row.executed_at || Date.now() - Date.parse(row.executed_at) > 86_400_000) return json(409, { error: "The 24-hour undo window has closed." });
   if (row.shop_domain !== ctx.conn.shop_domain) return json(409, { error: "This action belongs to another store." });
@@ -901,8 +919,10 @@ export async function runActionHistory(authHeader: string | null, env: ShopifyEn
   if (!env.supabaseUrl || !env.serviceRoleKey) return json(503, { error: "Action storage isn't configured." });
   const ctx = await authContext(authHeader, env);
   if ("error" in ctx) return ctx.error;
+  const owned=Object.entries(await getEntitlements(env,ctx.user.id,ctx.user.email)).filter(([,active])=>active).map(([role])=>role);
+  if(!owned.length)return json(200,{actions:[]});
   const res = await fetch(
-    `${env.supabaseUrl}/rest/v1/shopify_actions?user_id=eq.${ctx.user.id}&order=created_at.desc&limit=50&select=${ACTION_SELECT},shopify_action_metrics(window_days,metrics,measured_at)`,
+    `${env.supabaseUrl}/rest/v1/shopify_actions?user_id=eq.${ctx.user.id}&role=in.(${owned.join(",")})&order=created_at.desc&limit=50&select=${ACTION_SELECT},shopify_action_metrics(window_days,metrics,measured_at)`,
     { headers: dbHeaders(env) },
   );
   if (!res.ok) return json(502, { error: "Couldn't load action history." });

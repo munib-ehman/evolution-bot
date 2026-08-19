@@ -14,27 +14,39 @@
  *   Until it's configured, a contact CTA (the team flips the plan by hand).
  */
 import { useEffect, useState } from "react";
-import type { Plan } from "../lib/store";
+import type { Entitlements, ManagerRole, Plan } from "../lib/store";
 import { getShopifyStatus } from "../lib/shopify";
 import { isEmbedded } from "../lib/embedded";
 import { supabase } from "../lib/auth";
 
 /** The app's handle on the Shopify App Store (Partner Dashboard → app URL slug). */
 const SHOPIFY_APP_HANDLE = (import.meta.env.VITE_SHOPIFY_APP_HANDLE ?? "").trim();
+const ROLE_OPTIONS: Record<ManagerRole, { name: string; short: string; description: string }> = {
+  marketing: { name: "Marketing Manager", short: "MK", description: "Recovers abandoned carts, builds win-back campaigns, and prepares targeted broadcasts for your approval." },
+  "customer-success": { name: "Customer Success Manager", short: "CS", description: "Finds customers needing attention, prepares support responses, and runs retention and review workflows." },
+  seo: { name: "SEO Manager", short: "SEO", description: "Audits product visibility, researches search opportunities, and prepares safe SEO and GEO improvements." },
+  product: { name: "Product Manager", short: "PM", description: "Researches product opportunities, improves listings, and proposes collections and merchandising changes." },
+  operations: { name: "Operations Manager", short: "OPS", description: "Monitors fulfillment, inventory, returns, and order risks, then prepares the safest next action." },
+};
 
 export function UpgradePanel({
   open,
   onClose,
   plan,
   email,
+  entitlements,
+  selectedRole,
 }: {
   open: boolean;
   onClose: () => void;
   plan: Plan;
   email: string | null;
+  entitlements: Entitlements;
+  selectedRole: ManagerRole;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [chosenRoles,setChosenRoles]=useState<ManagerRole[]>([selectedRole]);
   // undefined = still looking the connection up; null = not connected.
   const [shopDomain, setShopDomain] = useState<string | null | undefined>(undefined);
   // undefined = probing /api/polar-checkout; false = not deployed/configured.
@@ -42,6 +54,8 @@ export function UpgradePanel({
 
   useEffect(() => {
     if (!open) return;
+    try { localStorage.removeItem("evolution-manager-checkout-queue"); } catch { /* storage unavailable */ }
+    setChosenRoles(entitlements[selectedRole] ? [] : [selectedRole]);
     void getShopifyStatus().then((status) => setShopDomain(status?.shop_domain ?? null));
     void fetch("/api/polar-checkout", { method: "GET" })
       .then((res) => setPolarReady(res.status === 204))
@@ -58,7 +72,7 @@ export function UpgradePanel({
 
   // Checkout and the customer portal are the same dance: authed POST → Polar
   // hands back a hosted URL → we send the browser there.
-  const openPolar = async (endpoint: string, failMsg: string) => {
+  const openPolar = async (endpoint: string, failMsg: string, roles?:ManagerRole[]) => {
     setBusy(true);
     setError(null);
     try {
@@ -68,6 +82,7 @@ export function UpgradePanel({
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
+        body: roles?JSON.stringify({roles}):undefined,
       });
       const body = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
       if (!res.ok || !body.url) throw new Error(body.error ?? failMsg);
@@ -77,14 +92,14 @@ export function UpgradePanel({
       setBusy(false);
     }
   };
-  const checkout = () => openPolar("/api/polar-checkout", "Couldn't open checkout.");
+  const checkout = (roles:ManagerRole[]) => openPolar("/api/polar-checkout", "Couldn't open checkout.",roles);
   const portal = () => openPolar("/api/polar-portal", "Couldn't open the billing portal.");
 
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Upgrade">
-      <div className="overlay-card card">
+      <div className="overlay-card card upgrade-dialog">
         <header className="tools-header">
-          <h2>{plan === "operator" ? "You're on Operator" : "Upgrade to Operator"}</h2>
+          <h2>{Object.values(entitlements).some(Boolean) ? "Your managers" : "Choose your manager"}</h2>
           <button type="button" className="link" onClick={onClose}>
             close
           </button>
@@ -118,16 +133,28 @@ export function UpgradePanel({
           </>
         ) : (
           <>
-            <p className="plan-price">
-              <strong>$100</strong>/month · cancel anytime
-            </p>
-            <ul className="plan-list">
-              <li>Automated cart recovery</li>
-              <li>Automated customer retention (win-backs + review requests)</li>
-              <li>Fulfillment operations dashboard</li>
-              <li>One dashboard, with your approval on every action</li>
-              <li>Instant access the moment you subscribe. 14-day money-back guarantee.</li>
-            </ul>
+            <p className="upgrade-lede">Select one or more specialists at $50 each per month. They are billed together as one monthly subscription.</p>
+            <div className="manager-plan-grid" role="group" aria-label="Available managers">
+              {(Object.keys(ROLE_OPTIONS) as ManagerRole[]).map((role) => {
+                const option = ROLE_OPTIONS[role];
+                const active = entitlements[role];
+                const selected = chosenRoles.includes(role);
+                return (
+                  <button type="button" className={`manager-plan-card ${selected ? "selected" : ""} ${active ? "active" : ""}`} key={role} role="checkbox" aria-checked={selected} disabled={active} onClick={() => setChosenRoles(current => current.includes(role) ? current.filter(item => item !== role) : [...current, role])}>
+                    <span className="manager-plan-icon">{option.short}</span>
+                    <span className="manager-plan-copy">
+                      <span className="manager-plan-title"><strong>{option.name}</strong><b>{active ? "Active" : "$50/mo"}</b></span>
+                      <span>{option.description}</span>
+                    </span>
+                    <span className="manager-plan-check" aria-hidden="true">{selected ? "✓" : ""}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="upgrade-selection">
+              <span><small>{chosenRoles.length} manager{chosenRoles.length===1?"":"s"} selected</small><strong>{chosenRoles.length ? chosenRoles.map(role=>ROLE_OPTIONS[role].name).join(", ") : "Select at least one manager"}</strong></span>
+              <b>${chosenRoles.length*50} <small>USD / month</small></b>
+            </div>
             {shopDomain === undefined ? null : shopDomain ? (
               // Shopify-connected → Shopify App Pricing is the ONLY checkout
               // (App Store policy). _top escapes the admin iframe to the plan
@@ -139,7 +166,7 @@ export function UpgradePanel({
                   target={isEmbedded() ? "_top" : "_blank"}
                   rel="noreferrer"
                 >
-                  Choose your plan in Shopify
+                  Continue in Shopify
                 </a>
               ) : (
                 <a
@@ -150,8 +177,8 @@ export function UpgradePanel({
                 </a>
               )
             ) : polarReady ? (
-              <button type="button" className="primary" disabled={busy} onClick={() => void checkout()}>
-                {busy ? "Opening checkout…" : "Start with the Operator"}
+              <button type="button" className="primary" disabled={busy||chosenRoles.length===0} onClick={() => void checkout(chosenRoles)}>
+                {busy ? "Opening checkout…" : `Continue — $${chosenRoles.length*50}/month`}
               </button>
             ) : polarReady === undefined ? null : (
               <a

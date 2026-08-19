@@ -1,5 +1,5 @@
 import { resolveUserFull, type AuditEnv } from "./_audit";
-import { isOperator, OPERATOR_REQUIRED } from "./_plan";
+import { hasRole, roleRequired, type Role } from "./_plan";
 
 export interface EmailDeliveryEnv extends AuditEnv {
   resendKey?: string;
@@ -22,6 +22,7 @@ export interface EmailDeliverySettings {
 }
 
 export type EmailDeliveryRow = {
+  role: EmailRole;
   mode: EmailDeliverySettings["mode"];
   status: EmailDeliverySettings["status"];
   sending_domain?: string | null;
@@ -35,6 +36,8 @@ export type EmailDeliveryRow = {
   test_sent_at?: string | null;
 };
 type Row = EmailDeliveryRow;
+export type EmailRole = Extract<Role, "marketing" | "customer-success" | "operations">;
+const emailRole = (value: unknown): EmailRole | null => value === "marketing" || value === "customer-success" || value === "operations" ? value : null;
 
 const headers = (env: EmailDeliveryEnv): Record<string, string> => {
   const key = env.serviceRoleKey ?? "";
@@ -74,28 +77,30 @@ async function decrypt(value: string, rawKey: string): Promise<string | null> {
   } catch { return null; }
 }
 
-export async function loadEmailDeliveryRow(env: EmailDeliveryEnv, userId: string): Promise<Row | null> {
-  const res = await fetch(`${env.supabaseUrl}/rest/v1/email_delivery_settings?user_id=eq.${userId}&select=*&limit=1`, { headers: headers(env) });
+export async function loadEmailDeliveryRow(env: EmailDeliveryEnv, userId: string, role: EmailRole = "marketing"): Promise<Row | null> {
+  const res = await fetch(`${env.supabaseUrl}/rest/v1/email_delivery_settings?user_id=eq.${userId}&role=eq.${role}&select=*&limit=1`, { headers: headers(env) });
   if (!res.ok) return null;
   return ((await res.json()) as Row[])[0] ?? null;
 }
 const load = loadEmailDeliveryRow;
 
-async function auth(env: EmailDeliveryEnv, authHeader: string | null) {
+async function auth(env: EmailDeliveryEnv, authHeader: string | null, role: EmailRole) {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return { error: new Response(JSON.stringify({ error: "Sign in first." }), { status: 401, headers: { "Content-Type": "application/json" } }) };
-  if (!(await isOperator(env, user.id, user.email))) return { error: new Response(JSON.stringify(OPERATOR_REQUIRED.body), { status: 402, headers: { "Content-Type": "application/json" } }) };
+  if (!(await hasRole(env, user.id, role, user.email))) { const denied=roleRequired(role); return { error: new Response(JSON.stringify(denied.body), { status: denied.status, headers: { "Content-Type": "application/json" } }) }; }
   return { user };
 }
 
-export async function runEmailDeliveryGet(authHeader: string | null, env: EmailDeliveryEnv): Promise<Response> {
-  const checked = await auth(env, authHeader); if ("error" in checked) return checked.error!;
-  const row = await load(env, checked.user.id);
+export async function runEmailDeliveryGet(authHeader: string | null, env: EmailDeliveryEnv, roleValue: unknown): Promise<Response> {
+  const role=emailRole(roleValue); if(!role)return Response.json({error:"Choose the manager that will send email."},{status:400});
+  const checked = await auth(env, authHeader, role); if ("error" in checked) return checked.error!;
+  const row = await load(env, checked.user.id, role);
   return Response.json({ settings: row ? publicSettings(row) : null });
 }
 
 export async function runEmailDeliverySave(body: Record<string, unknown>, authHeader: string | null, env: EmailDeliveryEnv): Promise<Response> {
-  const checked = await auth(env, authHeader); if ("error" in checked) return checked.error!;
+  const role=emailRole(body.role); if(!role)return Response.json({error:"Choose the manager that will send email."},{status:400});
+  const checked = await auth(env, authHeader, role); if ("error" in checked) return checked.error!;
   const mode = clean(body.mode) as EmailDeliverySettings["mode"];
   if (!(["merchant_domain", "merchant_resend", "evolution_shared"] as string[]).includes(mode)) return Response.json({ error: "Choose a delivery method." }, { status: 400 });
   const senderName = clean(body.senderName, 80);
@@ -138,8 +143,8 @@ export async function runEmailDeliverySave(body: Record<string, unknown>, authHe
     }
   }
 
-  const payload = { user_id: checked.user.id, mode, status, sending_domain: domain, sender_name: senderName, sender_email: senderEmail, reply_to: replyTo, provider: "resend", provider_domain_id: providerDomainId, provider_secret_ciphertext: cipher, dns_records: dnsRecords, fallback_warning_acknowledged: fallbackAck, updated_at: new Date().toISOString() };
-  const saved = await fetch(`${env.supabaseUrl}/rest/v1/email_delivery_settings?on_conflict=user_id`, { method: "POST", headers: { ...headers(env), Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(payload) });
+  const payload = { user_id: checked.user.id, role, mode, status, sending_domain: domain, sender_name: senderName, sender_email: senderEmail, reply_to: replyTo, provider: "resend", provider_domain_id: providerDomainId, provider_secret_ciphertext: cipher, dns_records: dnsRecords, fallback_warning_acknowledged: fallbackAck, updated_at: new Date().toISOString() };
+  const saved = await fetch(`${env.supabaseUrl}/rest/v1/email_delivery_settings?on_conflict=user_id,role`, { method: "POST", headers: { ...headers(env), Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(payload) });
   if (!saved.ok) return Response.json({ error: "Could not save email delivery settings. Run the email delivery database migration first." }, { status: 502 });
   return Response.json({ settings: publicSettings(((await saved.json()) as Row[])[0]) });
 }
@@ -151,9 +156,10 @@ export async function emailDeliveryProviderKey(env: EmailDeliveryEnv, row: Row):
 }
 const providerKey = emailDeliveryProviderKey;
 
-export async function runEmailDeliveryCheck(authHeader: string | null, env: EmailDeliveryEnv): Promise<Response> {
-  const checked = await auth(env, authHeader); if ("error" in checked) return checked.error!;
-  const row = await load(env, checked.user.id); if (!row) return Response.json({ error: "Save delivery settings first." }, { status: 409 });
+export async function runEmailDeliveryCheck(authHeader: string | null, env: EmailDeliveryEnv, roleValue: unknown): Promise<Response> {
+  const role=emailRole(roleValue); if(!role)return Response.json({error:"Choose the manager that will send email."},{status:400});
+  const checked = await auth(env, authHeader, role); if ("error" in checked) return checked.error!;
+  const row = await load(env, checked.user.id, role); if (!row) return Response.json({ error: "Save delivery settings first." }, { status: 409 });
   if (row.mode === "evolution_shared") return Response.json({ settings: publicSettings(row) });
   const key = await providerKey(env, row);
   if (!key || !row.provider_domain_id) return Response.json({ error: "Provider connection is incomplete. Save the setup again." }, { status: 409 });
@@ -161,19 +167,20 @@ export async function runEmailDeliveryCheck(authHeader: string | null, env: Emai
   const result = await res.json().catch(() => ({})) as { status?: string; records?: EmailDeliverySettings["dnsRecords"]; message?: string };
   if (!res.ok) return Response.json({ error: result.message ?? "Could not check domain verification." }, { status: 502 });
   const status: EmailDeliverySettings["status"] = result.status === "verified" ? "test_required" : "pending";
-  const update = await fetch(`${env.supabaseUrl}/rest/v1/email_delivery_settings?user_id=eq.${checked.user.id}`, { method: "PATCH", headers: { ...headers(env), Prefer: "return=representation" }, body: JSON.stringify({ status, dns_records: result.records ?? row.dns_records ?? [], verified_at: status === "test_required" ? new Date().toISOString() : null, updated_at: new Date().toISOString() }) });
+  const update = await fetch(`${env.supabaseUrl}/rest/v1/email_delivery_settings?user_id=eq.${checked.user.id}&role=eq.${role}`, { method: "PATCH", headers: { ...headers(env), Prefer: "return=representation" }, body: JSON.stringify({ status, dns_records: result.records ?? row.dns_records ?? [], verified_at: status === "test_required" ? new Date().toISOString() : null, updated_at: new Date().toISOString() }) });
   return Response.json({ settings: publicSettings(((await update.json()) as Row[])[0]) });
 }
 
-export async function runEmailDeliveryTest(authHeader: string | null, env: EmailDeliveryEnv): Promise<Response> {
-  const checked = await auth(env, authHeader); if ("error" in checked) return checked.error!;
-  const row = await load(env, checked.user.id); if (!row || row.status !== "test_required") return Response.json({ error: "Verify the sending identity before testing." }, { status: 409 });
+export async function runEmailDeliveryTest(authHeader: string | null, env: EmailDeliveryEnv, roleValue: unknown): Promise<Response> {
+  const role=emailRole(roleValue); if(!role)return Response.json({error:"Choose the manager that will send email."},{status:400});
+  const checked = await auth(env, authHeader, role); if ("error" in checked) return checked.error!;
+  const row = await load(env, checked.user.id, role); if (!row || row.status !== "test_required") return Response.json({ error: "Verify the sending identity before testing." }, { status: 409 });
   const key = await providerKey(env, row); if (!key) return Response.json({ error: "Email provider is not configured." }, { status: 409 });
   const test = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "Idempotency-Key": `delivery-test/${checked.user.id}/${Date.now()}` }, body: JSON.stringify({ from: `${row.sender_name} <${row.sender_email}>`, to: [row.reply_to], reply_to: row.reply_to, subject: `Your ${row.sender_name} sending identity is ready`, text: `This is a private delivery test from Evolution. Customers will see emails from ${row.sender_name} <${row.sender_email}> and replies will go to ${row.reply_to}. No customer campaign was sent.` }) });
   const result = await test.json().catch(() => ({})) as { message?: string };
   if (!test.ok) return Response.json({ error: result.message ?? "The provider rejected the test email." }, { status: 502 });
   const now = new Date().toISOString();
-  const update = await fetch(`${env.supabaseUrl}/rest/v1/email_delivery_settings?user_id=eq.${checked.user.id}`, { method: "PATCH", headers: { ...headers(env), Prefer: "return=representation" }, body: JSON.stringify({ status: "ready", test_sent_at: now, updated_at: now }) });
+  const update = await fetch(`${env.supabaseUrl}/rest/v1/email_delivery_settings?user_id=eq.${checked.user.id}&role=eq.${role}`, { method: "PATCH", headers: { ...headers(env), Prefer: "return=representation" }, body: JSON.stringify({ status: "ready", test_sent_at: now, updated_at: now }) });
   return Response.json({ settings: publicSettings(((await update.json()) as Row[])[0]) });
 }
 

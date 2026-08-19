@@ -1,5 +1,5 @@
 import { resolveUserFull } from "./_audit";
-import { isOperator, OPERATOR_REQUIRED } from "./_plan";
+import { hasRole, roleRequired } from "./_plan";
 import { getConnection, SHOPIFY_API_VERSION, type ShopifyEnv } from "./_shopify";
 
 const json=(status:number,body:Record<string,unknown>)=>({status,body});
@@ -7,7 +7,7 @@ const emailSafe=(value:unknown,max:number)=>(typeof value==="string"?value.trim(
 
 export async function runCreateFulfillment(body:Record<string,unknown>,authHeader:string|null,env:ShopifyEnv){
   const user=await resolveUserFull(env,authHeader); if(!user)return json(401,{error:"Sign in first."});
-  if(!(await isOperator(env,user.id,user.email)))return OPERATOR_REQUIRED;
+  if(!(await hasRole(env,user.id,"operations",user.email)))return roleRequired("operations");
   const conn=await getConnection(env,user.id); if(!conn)return json(409,{error:"Connect Shopify first."});
   const granted=new Set((conn.scopes??"").split(",").map(scope=>scope.trim()));
   const required=["read_merchant_managed_fulfillment_orders","write_merchant_managed_fulfillment_orders"];

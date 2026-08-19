@@ -1,6 +1,6 @@
 import { resolveUserFull } from "./_audit";
 import { emailDeliveryProviderKey, loadEmailDeliveryRow } from "./_emailDelivery";
-import { isOperator, OPERATOR_REQUIRED } from "./_plan";
+import { hasRole, roleRequired } from "./_plan";
 import { getConnection } from "./_shopify";
 import { fetchMarketingCustomers, unsubscribeCustomerEmailMarketing, type LapsedCustomer } from "./_shopifyData";
 import { log } from "./_log";
@@ -24,7 +24,7 @@ function select(customers:LapsedCustomer[],segment:Segment){
 async function eligible(env:RecoveryCampaignEnv,userId:string,customers:LapsedCustomer[],segment:Segment){const rows=select(customers,segment);const res=await fetch(`${env.supabaseUrl}/rest/v1/marketing_suppressions?user_id=eq.${userId}&select=customer_id`,{headers:h(env)});const blocked=new Set(res.ok?(await res.json()as{customer_id:string}[]).map(r=>r.customer_id):[]);return rows.filter(c=>!blocked.has(c.id));}
 async function campaign(env:RecoveryCampaignEnv,id:string,userId:string){const res=await fetch(`${env.supabaseUrl}/rest/v1/broadcast_campaigns?id=eq.${encodeURIComponent(id)}&user_id=eq.${userId}&select=*&limit=1`,{headers:h(env)});return res.ok?((await res.json())as Campaign[])[0]??null:null;}
 async function mark(env:RecoveryCampaignEnv,id:string,patch:Record<string,unknown>){await fetch(`${env.supabaseUrl}/rest/v1/broadcast_deliveries?id=eq.${id}`,{method:"PATCH",headers:h(env),body:JSON.stringify({...patch,updated_at:new Date().toISOString()})});}
-async function auth(env:RecoveryCampaignEnv,header:string|null){const user=await resolveUserFull(env,header);if(!user)return {response:json({error:"Sign in first."},401)};if(!(await isOperator(env,user.id,user.email)))return {response:json(OPERATOR_REQUIRED.body,402)};return {user};}
+async function auth(env:RecoveryCampaignEnv,header:string|null){const user=await resolveUserFull(env,header);if(!user)return {response:json({error:"Sign in first."},401)};if(!(await hasRole(env,user.id,"marketing",user.email))){const denied=roleRequired("marketing");return {response:json(denied.body,denied.status)}}return {user};}
 
 export async function runBroadcastAudience(header:string|null,env:RecoveryCampaignEnv):Promise<Response>{const checked=await auth(env,header);if("response"in checked)return checked.response!;const user=checked.user!;const conn=await getConnection(env,user.id);if(!conn)return json({error:"Connect Shopify first."},409);const live=await fetchMarketingCustomers(conn);if(!Array.isArray(live))return json({error:"Could not load marketing subscribers."},502);const segments=await Promise.all((['subscribers','recent','repeat','vip','lapsed']as Segment[]).map(async key=>{const rows=await eligible(env,user.id,live,key);return{key,count:rows.length,lifetimeValue:rows.reduce((n,c)=>n+c.totalSpent,0)}}));return json({segments,currency:null});}
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getEmailDeliverySettings, type EmailDeliverySettings } from "../lib/emailDelivery";
 import { formatMoney } from "../lib/recovery";
-import { draftSupportEmail, getSupportCases, resolveSupportCase, sendSupportEmail, type SupportCase, type SupportResolution } from "../lib/supportCases";
+import { draftSupportEmail, getSupportCases, resolveSupportCase, sendSupportEmail, type SupportCase, type SupportResolution, type SupportOwner } from "../lib/supportCases";
 
 const RESOLUTIONS: { value: SupportResolution; label: string }[] = [
   { value: "investigating", label: "Still investigating" },
@@ -11,7 +11,7 @@ const RESOLUTIONS: { value: SupportResolution; label: string }[] = [
 ];
 const age = (iso: string) => `${Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 3_600_000))} hours`;
 
-export function SupportPanel({ open, onClose, onOpenDelivery, focusOrderId }: { open: boolean; onClose: () => void; onOpenDelivery: () => void; focusOrderId?: string | null }) {
+export function SupportPanel({ open, onClose, onOpenDelivery, focusOrderId, role }: { open: boolean; onClose: () => void; onOpenDelivery: () => void; focusOrderId?: string | null; role: SupportOwner }) {
   const [cases, setCases] = useState<SupportCase[]>([]);
   const [delivery, setDelivery] = useState<EmailDeliverySettings | null>(null);
   const [loading, setLoading] = useState(false);
@@ -27,12 +27,12 @@ export function SupportPanel({ open, onClose, onOpenDelivery, focusOrderId }: { 
   const refresh = async () => {
     setLoading(true); setError(null);
     try {
-      const [rows, settings] = await Promise.all([getSupportCases(), getEmailDeliverySettings()]);
+      const [rows, settings] = await Promise.all([getSupportCases(role), getEmailDeliverySettings(role)]);
       setCases(rows); setDelivery(settings);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load support risks."); }
     finally { setLoading(false); }
   };
-  useEffect(() => { if (open) void refresh(); }, [open]);
+  useEffect(() => { if (open) void refresh(); }, [open, role]);
   useEffect(()=>{if(!open||!focusOrderId||!cases.length)return;const supportCase=cases.find(item=>item.id===focusOrderId);if(!supportCase)return;setActive(supportCase.id);setResolution(supportCase.notification?.resolution??"investigating");setDetail("");setSubject(supportCase.notification?.subject??"");setMessage(supportCase.notification?.body??"");setApproved(false);},[open,focusOrderId,cases]);
 
   const select = (supportCase: SupportCase) => {
@@ -42,20 +42,20 @@ export function SupportPanel({ open, onClose, onOpenDelivery, focusOrderId }: { 
   const updateNotification = (orderId: string, notification: SupportCase["notification"]) => setCases((rows) => rows.map((row) => row.id === orderId ? { ...row, notification } : row));
   const generate = async (supportCase: SupportCase) => {
     setBusy(true); setError(null);
-    try { const notification = await draftSupportEmail(supportCase.id, resolution, detail); updateNotification(supportCase.id, notification); setSubject(notification.subject); setMessage(notification.body); setApproved(false); }
+    try { const notification = await draftSupportEmail(role, supportCase.id, resolution, detail); updateNotification(supportCase.id, notification); setSubject(notification.subject); setMessage(notification.body); setApproved(false); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not generate the support email."); }
     finally { setBusy(false); }
   };
   const send = async (supportCase: SupportCase) => {
     if (!approved) return;
     setBusy(true); setError(null);
-    try { const result = await sendSupportEmail(supportCase.id, subject, message); updateNotification(supportCase.id, result.notification ?? null); setApproved(false); }
+    try { const result = await sendSupportEmail(role, supportCase.id, subject, message); updateNotification(supportCase.id, result.notification ?? null); setApproved(false); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not send the support email."); }
     finally { setBusy(false); }
   };
   const resolve = async (supportCase: SupportCase) => {
     setBusy(true); setError(null);
-    try { updateNotification(supportCase.id, await resolveSupportCase(supportCase.id)); }
+    try { updateNotification(supportCase.id, await resolveSupportCase(role, supportCase.id)); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not resolve this support case."); }
     finally { setBusy(false); }
   };

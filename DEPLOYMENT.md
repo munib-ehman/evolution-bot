@@ -124,17 +124,16 @@ Vercel Hobby permits cron schedules only once per day, so the five-minute email 
 
 ## 5. Configure web billing with Polar
 
-Polar is the billing rail for accounts that do not subscribe through Shopify. Create an organization access token, then use the included idempotent setup utility:
+Polar is the billing rail for accounts that do not subscribe through Shopify. Apply `supabase/2026-08-19_role_entitlements.sql`, create an organization access token, then run the included idempotent setup utility:
 
 ```bash
 POLAR_ACCESS_TOKEN=<token> node tools/polar-setup.mjs
 ```
 
-Add its returned values to Vercel:
+Enable Polar's seat-based pricing beta under **Settings → General → Features** first. The utility creates one `Evolution Managers` product billed at $50 per selected manager and stores its Polar ID in `public.manager_plans`. Keep these secrets in Vercel:
 
 ```dotenv
 POLAR_ACCESS_TOKEN=
-POLAR_PRODUCT_ID=
 POLAR_WEBHOOK_SECRET=
 # POLAR_API_BASE=https://sandbox-api.polar.sh
 ```

@@ -1,5 +1,5 @@
 import { resolveUserFull } from "./_audit";
-import { isOperator, OPERATOR_REQUIRED } from "./_plan";
+import { hasRole, roleRequired } from "./_plan";
 import { getConnection, type ShopifyEnv } from "./_shopify";
 import { buildProductsDigest } from "./_skillTools";
 
@@ -131,7 +131,7 @@ export function analyzeSeoProduct(product: ProductDigest): SeoProduct {
 export async function runSeoSnapshot(authHeader: string | null, env: ShopifyEnv): Promise<Response> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
-  if (!(await isOperator(env, user.id, user.email))) return Response.json(OPERATOR_REQUIRED.body, { status: OPERATOR_REQUIRED.status });
+  if (!(await hasRole(env, user.id, "seo", user.email))) { const denied=roleRequired("seo"); return Response.json(denied.body, { status: denied.status }); }
   const conn = await getConnection(env, user.id);
   if (!conn) return Response.json({ error: "Connect Shopify first." }, { status: 409 });
   const digest = await buildProductsDigest(conn, 100);

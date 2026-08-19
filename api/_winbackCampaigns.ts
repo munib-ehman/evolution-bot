@@ -1,6 +1,6 @@
 import { resolveUserFull } from "./_audit";
 import { emailDeliveryProviderKey, loadEmailDeliveryRow } from "./_emailDelivery";
-import { isOperator, OPERATOR_REQUIRED } from "./_plan";
+import { hasRole, roleRequired } from "./_plan";
 import { getConnection } from "./_shopify";
 import { fetchLapsedCustomers } from "./_shopifyData";
 import type { RecoveryCampaignEnv } from "./_recoveryCampaigns";
@@ -51,7 +51,7 @@ function render(touch: Touch, customer: { firstName: string; lastItems: { title:
 export async function runWinbackCampaignAction(body: Record<string, unknown>, authHeader: string | null, env: RecoveryCampaignEnv): Promise<Response> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return json({ error: "Sign in first." }, 401);
-  if (!(await isOperator(env, user.id, user.email))) return json(OPERATOR_REQUIRED.body, 402);
+  if (!(await hasRole(env, user.id, "marketing", user.email))) { const denied=roleRequired("marketing"); return json(denied.body, denied.status); }
   const action = typeof body.action === "string" ? body.action : "";
   if (action === "history") {
     const res = await fetch(`${env.supabaseUrl}/rest/v1/winback_campaigns?user_id=eq.${user.id}&select=*,winback_deliveries(id,touch_index,due_at,status,delivery_status,error,sent_at,delivered_at,opened_at,clicked_at,bounced_at,complained_at,unsubscribed_at,resend_email_id)&order=created_at.desc&winback_deliveries.order=due_at.asc&limit=20`, { headers: headers(env) });

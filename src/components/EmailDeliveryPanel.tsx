@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { checkEmailDeliveryDomain, getEmailDeliverySettings, saveEmailDeliverySettings, sendEmailDeliveryTest, type DeliveryMode, type EmailDeliverySettings } from "../lib/emailDelivery";
+import { checkEmailDeliveryDomain, getEmailDeliverySettings, saveEmailDeliverySettings, sendEmailDeliveryTest, type DeliveryMode, type EmailDeliverySettings, type EmailRole } from "../lib/emailDelivery";
 
 const choices: { mode: DeliveryMode; title: string; badge: string; copy: string }[] = [
   { mode: "merchant_domain", title: "Send from my brand", badge: "Recommended", copy: "Evolution manages delivery, while customers see your store name and your own verified sending subdomain." },
@@ -7,7 +7,7 @@ const choices: { mode: DeliveryMode; title: string; badge: string; copy: string 
   { mode: "evolution_shared", title: "Use Evolution’s domain", badge: "Fallback only", copy: "Fastest for testing, but customers may not recognize the sender. This can reduce trust and conversion." },
 ];
 
-export function EmailDeliveryPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function EmailDeliveryPanel({ open, onClose, role }: { open: boolean; onClose: () => void; role: EmailRole }) {
   const [settings, setSettings] = useState<EmailDeliverySettings | null>(null);
   const [mode, setMode] = useState<DeliveryMode>("merchant_domain");
   const [senderName, setSenderName] = useState("");
@@ -21,24 +21,24 @@ export function EmailDeliveryPanel({ open, onClose }: { open: boolean; onClose: 
 
   useEffect(() => {
     if (!open) return;
-    void getEmailDeliverySettings().then((value) => {
+    void getEmailDeliverySettings(role).then((value) => {
       if (!value) return;
       setSettings(value); setMode(value.mode); setSenderName(value.senderName); setDomain(value.sendingDomain ?? "");
       setSenderEmail(value.senderEmail); setReplyTo(value.replyTo); setAck(value.fallbackWarningAcknowledged);
     }).catch((e) => setError(e instanceof Error ? e.message : "Could not load delivery settings."));
-  }, [open]);
+  }, [open, role]);
 
   const save = async () => {
     setBusy(true); setError(null);
     try {
-      const next = await saveEmailDeliverySettings({ mode, senderName, sendingDomain: domain, senderEmail, replyTo, providerApiKey: apiKey, fallbackWarningAcknowledged: ack });
+      const next = await saveEmailDeliverySettings(role, { mode, senderName, sendingDomain: domain, senderEmail, replyTo, providerApiKey: apiKey, fallbackWarningAcknowledged: ack });
       setSettings(next); setApiKey(""); window.dispatchEvent(new CustomEvent("evolution:delivery-settings", { detail: next }));
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save delivery settings."); }
     finally { setBusy(false); }
   };
   const transition = async (action: "check" | "test") => {
     setBusy(true); setError(null);
-    try { const next = action === "check" ? await checkEmailDeliveryDomain() : await sendEmailDeliveryTest(); setSettings(next); window.dispatchEvent(new CustomEvent("evolution:delivery-settings", { detail: next })); }
+    try { const next = action === "check" ? await checkEmailDeliveryDomain(role) : await sendEmailDeliveryTest(role); setSettings(next); window.dispatchEvent(new CustomEvent("evolution:delivery-settings", { detail: next })); }
     catch (e) { setError(e instanceof Error ? e.message : "Delivery check failed."); }
     finally { setBusy(false); }
   };

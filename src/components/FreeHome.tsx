@@ -14,7 +14,7 @@ import { ProductHunt } from "./ProductHunt";
 import { ToolsPanel } from "./ToolsPanel";
 import { UpgradePanel } from "./UpgradePanel";
 import { signOut } from "../lib/auth";
-import { runAuditAsUserVerbose, type AuditReport, type ConnectedStore } from "../lib/store";
+import { EMPTY_ENTITLEMENTS, runAuditAsUserVerbose, type AuditReport, type ConnectedStore } from "../lib/store";
 
 // Same severity ladder as the public audit page (impact is a 1–5 scale).
 const severityLabel = (impact: number) =>
@@ -53,7 +53,12 @@ export function FreeHome({
   onDisconnected: () => void;
   onAudit: (audit: AuditReport) => void;
 }) {
-  const [upgradeOpen, setUpgradeOpen] = useState(initialUpgradeOpen);
+  const chooserKey = email ? `evolution-plan-chooser-seen:${email.toLowerCase()}` : "";
+  const [upgradeOpen, setUpgradeOpen] = useState(() => {
+    if (initialUpgradeOpen) return true;
+    try { return Boolean(chooserKey && localStorage.getItem(chooserKey) !== "1"); }
+    catch { return false; }
+  });
   const [storeOpen, setStoreOpen] = useState(false);
   const [auditBusy, setAuditBusy] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
@@ -275,18 +280,18 @@ export function FreeHome({
           </div>
 
           <aside className="card operator-card">
-            <span className="operator-badge">The Operator</span>
-            <p className="plan-price"><strong>$100</strong>/month</p>
-            <p className="operator-tag">Your AI COO, on the job every day.</p>
+            <span className="operator-badge">Choose your manager</span>
+            <p className="plan-price"><strong>$50</strong>/manager/month</p>
+            <p className="operator-tag">Start with the role your store needs now.</p>
             <ul className="operator-list">
-              <li>Automated cart recovery</li>
-              <li>Automated customer retention</li>
-              <li>Fulfillment operations dashboard</li>
-              <li>AI operator chat + skills, grounded in your data</li>
-              <li>Your approval on every action</li>
+              <li>Marketing Manager</li>
+              <li>Customer Success Manager</li>
+              <li>SEO Manager</li>
+              <li>Product Manager</li>
+              <li>Operations Manager</li>
             </ul>
             <button type="button" className="primary big" onClick={() => setUpgradeOpen(true)}>
-              Start your operator
+              Choose a manager
             </button>
             <p className="operator-fineprint">
               Instant access · cancel anytime · 14-day money-back guarantee
@@ -311,9 +316,14 @@ export function FreeHome({
 
       <UpgradePanel
         open={upgradeOpen}
-        onClose={() => setUpgradeOpen(false)}
+        onClose={() => {
+          setUpgradeOpen(false);
+          try { if (chooserKey) localStorage.setItem(chooserKey, "1"); } catch { /* storage unavailable */ }
+        }}
         plan="free"
         email={email}
+        entitlements={EMPTY_ENTITLEMENTS}
+        selectedRole="marketing"
       />
     </div>
   );

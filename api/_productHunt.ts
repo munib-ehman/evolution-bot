@@ -18,7 +18,7 @@ import { normalizeStoreUrl, fetchText, stripHtml, resolveUserFull, type AuditEnv
 import { getConnection, type ShopifyEnv } from "./_shopify";
 import { buildProductsDigest } from "./_skillTools";
 import { collectEvidence, sourceUrl } from "./_seoOptimizer";
-import { isOperator } from "./_plan";
+import { hasRole } from "./_plan";
 import { checkRateLimit } from "./_ratelimit";
 import { log } from "./_log";
 
@@ -543,7 +543,7 @@ export async function runProductHunt(
   // Product Manager is a paid Operator surface: its research is unlimited.
   // The shared endpoint also powers the separate free Product Hunt, where the
   // small daily allowance still protects the expensive research pipeline.
-  const paidOperator=await isOperator(env,userId,user.email);
+  const paidOperator=await hasRole(env,userId,"product",user.email);
   const allowed=paidOperator||(await checkRateLimit(env,`hunt:u:${userId}`,86_400,HUNT_LIMIT_USER_PER_DAY));
   if (!allowed) {
     log("warn", "hunt", "rate_limited", {});

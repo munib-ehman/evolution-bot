@@ -141,7 +141,6 @@ export function devApi(): Plugin {
       polarEnv = {
         ...auditEnv,
         polarToken: (env.POLAR_ACCESS_TOKEN ?? "").trim(),
-        polarProductId: (env.POLAR_PRODUCT_ID ?? "").trim(),
         polarWebhookSecret: (env.POLAR_WEBHOOK_SECRET ?? "").trim(),
         polarApiBase: (env.POLAR_API_BASE ?? "").trim() || "https://api.polar.sh",
       };
@@ -517,11 +516,11 @@ export function devApi(): Plugin {
       server.middlewares.use("/api/email-delivery-settings", (req, res) => {
         void (async () => {
           const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
-          if (req.method === "GET") return pipeResponse(res, await runEmailDeliveryGet(auth, emailDeliveryEnv));
+          if (req.method === "GET") return pipeResponse(res, await runEmailDeliveryGet(auth, emailDeliveryEnv, new URL(req.url ?? "", `http://${req.headers.host}`).searchParams.get("role")));
           if (req.method === "POST") {
             const body = JSON.parse(await readBody(req) || "{}") as Record<string, unknown>;
-            if (body.action === "check") return pipeResponse(res, await runEmailDeliveryCheck(auth, emailDeliveryEnv));
-            if (body.action === "test") return pipeResponse(res, await runEmailDeliveryTest(auth, emailDeliveryEnv));
+            if (body.action === "check") return pipeResponse(res, await runEmailDeliveryCheck(auth, emailDeliveryEnv, body.role));
+            if (body.action === "test") return pipeResponse(res, await runEmailDeliveryTest(auth, emailDeliveryEnv, body.role));
             return pipeResponse(res, await runEmailDeliverySave(body, auth, emailDeliveryEnv));
           }
           return send(res, 405, "Method not allowed");
@@ -791,7 +790,8 @@ export function devApi(): Plugin {
           if (req.method !== "POST") return send(res, 405, "Method not allowed");
           const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
           const origin = `http://${req.headers.host ?? "localhost:5173"}`;
-          const { status, body } = await runPolarCheckout(auth, origin, polarEnv);
+          const payload=JSON.parse(await readBody(req)||"{}") as {roles?:unknown;role?:unknown};
+          const { status, body } = await runPolarCheckout(auth, origin, polarEnv, payload.roles ?? payload.role);
           res.statusCode = status;
           res.setHeader("Content-Type", "application/json");
           res.setHeader("Cache-Control", "no-store");

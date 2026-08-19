@@ -319,9 +319,10 @@ async function handleAppUninstalled(env: ShopifyEnv, shop: string, userId: strin
       signal: AbortSignal.timeout(6_000),
     },
   );
-  const steps = ["tombstone_connection", "drop_store", "downgrade_plan"];
+  const deactivateRoles=fetch(`${env.supabaseUrl}/rest/v1/role_entitlements?user_id=eq.${userId}&billing_provider=eq.shopify`,{method:"PATCH",headers,body:JSON.stringify({status:"inactive",updated_at:new Date().toISOString()}),signal:AbortSignal.timeout(6_000)});
+  const steps = ["tombstone_connection", "drop_store", "downgrade_plan", "deactivate_roles"];
   await Promise.all(
-    [patchConn, dropStore, downgrade].map((p, i) =>
+    [patchConn, dropStore, downgrade, deactivateRoles].map((p, i) =>
       p.catch(() => log("warn", "webhook", "uninstall_step_failed", { shop, step: steps[i] })),
     ),
   );
@@ -337,15 +338,22 @@ async function handleAppUninstalled(env: ShopifyEnv, shop: string, userId: strin
 async function handleSubscriptionUpdate(env: ShopifyEnv, rawBody: string, userId: string): Promise<void> {
   if (!env.supabaseUrl || !env.serviceRoleKey) return;
   let status = "";
+  let planName = "";
   try {
-    const payload = JSON.parse(rawBody) as { app_subscription?: { status?: string } };
+    const payload = JSON.parse(rawBody) as { app_subscription?: { status?: string; name?:string } };
     status = (payload.app_subscription?.status ?? "").toUpperCase();
+    planName = (payload.app_subscription?.name ?? "").toLowerCase();
   } catch {
     return;
   }
   if (!status) return;
 
   const active = status === "ACTIVE";
+  const role = planName.includes("customer") ? "customer-success" : planName.includes("operation") ? "operations" : planName.includes("seo") ? "seo" : planName.includes("product") ? "product" : planName.includes("marketing") ? "marketing" : null;
+  if(role){
+    try{await fetch(`${env.supabaseUrl}/rest/v1/role_entitlements?on_conflict=user_id,role`,{method:"POST",headers:{apikey:env.serviceRoleKey,Authorization:`Bearer ${env.serviceRoleKey}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"},body:JSON.stringify({user_id:userId,role,status:active?"active":"inactive",billing_provider:"shopify",updated_at:new Date().toISOString()}),signal:AbortSignal.timeout(6_000)});}catch{log("warn","webhook","role_sync_failed",{userId,status,role});}
+    return;
+  }
   const filter = active
     ? `user_id=eq.${userId}`
     : `user_id=eq.${userId}&plan_source=eq.shopify`;

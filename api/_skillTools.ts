@@ -488,7 +488,7 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
       let notification:OperationsNotification|null=null;
       if(ctx.env.supabaseUrl&&ctx.env.serviceRoleKey){
         const key=ctx.env.serviceRoleKey;
-        const response=await fetch(`${ctx.env.supabaseUrl}/rest/v1/support_notifications?user_id=eq.${ctx.userId}&order_id=eq.${encodeURIComponent(order.id)}&select=status,resolution,sent_at&order=created_at.desc&limit=1`,{headers:{apikey:key,...(key.startsWith("sb_secret_")?{}:{Authorization:`Bearer ${key}`})}}).catch(()=>null);
+        const response=await fetch(`${ctx.env.supabaseUrl}/rest/v1/support_notifications?user_id=eq.${ctx.userId}&role=eq.operations&order_id=eq.${encodeURIComponent(order.id)}&select=status,resolution,sent_at&order=created_at.desc&limit=1`,{headers:{apikey:key,...(key.startsWith("sb_secret_")?{}:{Authorization:`Bearer ${key}`})}}).catch(()=>null);
         if(response?.ok)notification=((await response.json())as OperationsNotification[])[0]??null;
       }
       const waitingHours=Math.max(0,Math.floor((Date.now()-Date.parse(order.createdAt))/3_600_000));
@@ -514,7 +514,7 @@ export const SKILL_TOOLS: Record<string, ToolDef> = {
       if(!order)return {error:"That order is no longer an overdue unfulfilled case."};
       if(!order.email.includes("@"))return {error:`Order ${order.name} has no customer email address, so no delay draft can be created. Add or confirm the email in Shopify first.`};
       if(!ctx.env.supabaseUrl||!ctx.env.serviceRoleKey)return {error:"Support notification storage is not configured."};
-      const response=await runSupportCasesAction({action:"draft",orderId:order.id,resolution:"investigating"},ctx.authHeader??null,ctx.env);
+      const response=await runSupportCasesAction({action:"draft",orderId:order.id,resolution:"investigating"},ctx.authHeader??null,ctx.env,"operations");
       const result=await response.json() as {notification?:{order_id?:string;order_name?:string;status?:string;subject?:string;body?:string};error?:string};
       if(!response.ok||!result.notification)return {error:result.error??"Could not create the customer delay draft."};
       return {created:true,approved:false,sent:false,orderId:result.notification.order_id,order:result.notification.order_name,status:result.notification.status,subject:result.notification.subject,body:result.notification.body,nextStep:"Open the support case, review the exact email, check approval, then send."};

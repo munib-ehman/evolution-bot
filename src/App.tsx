@@ -20,7 +20,7 @@ import { UpgradePanel } from "./components/UpgradePanel";
 import { FreeHome } from "./components/FreeHome";
 import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
-import { ensureProfile, getLatestAudit, getPlan, getStore, getStoreCatalog, runAuditAsUser, type AuditReport, type ConnectedStore, type Plan, type StoreCatalog } from "./lib/store";
+import { EMPTY_ENTITLEMENTS, ensureProfile, getEntitlements, getLatestAudit, getPlan, getStore, getStoreCatalog, runAuditAsUser, type AuditReport, type ConnectedStore, type Plan, type StoreCatalog, type Entitlements, type ManagerRole } from "./lib/store";
 import { isEmbedded } from "./lib/embedded";
 import { consumeUpgradeIntent } from "./lib/upgradeIntent";
 import { SKILL_CHIPS, type SkillChip } from "./lib/skills";
@@ -88,6 +88,8 @@ export default function App() {
   const [store, setStore] = useState<ConnectedStore | null | undefined>(undefined);
   // null = still loading — the paywall must not flash the wrong side.
   const [plan, setPlan] = useState<Plan | null>(null);
+  const [entitlements,setEntitlements]=useState<Entitlements|null>(null);
+  const [upgradeRole,setUpgradeRole]=useState<ManagerRole>("marketing");
   // Pricing-page CTA (?upgrade=1) auto-opens the upgrade panel on arrival.
   const [wantUpgrade, setWantUpgrade] = useState(false);
   const [audit, setAudit] = useState<AuditReport | null>(null);
@@ -98,9 +100,11 @@ export default function App() {
   const [retentionOpen, setRetentionOpen] = useState(false);
   const [opsOpen, setOpsOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
+  const [supportRole,setSupportRole]=useState<"customer-success"|"operations">("customer-success");
   const [supportFocusOrderId,setSupportFocusOrderId]=useState<string|null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [deliveryRole,setDeliveryRole]=useState<"marketing"|"customer-success"|"operations">("marketing");
   const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [customerQueueOpen, setCustomerQueueOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -119,7 +123,7 @@ export default function App() {
     setBroadcastOpen(false);
     setActionsOpen(true);
   }, [a.actionRevision]);
-  useEffect(()=>{const open=(event:Event)=>{const orderId=(event as CustomEvent<{orderId?:string}>).detail?.orderId;if(!orderId)return;setSupportFocusOrderId(orderId);setSupportOpen(true);};window.addEventListener("evolution:support-case-prepared",open);return()=>window.removeEventListener("evolution:support-case-prepared",open);},[]);
+  useEffect(()=>{const open=(event:Event)=>{const orderId=(event as CustomEvent<{orderId?:string}>).detail?.orderId;if(!orderId)return;setSupportRole("operations");setSupportFocusOrderId(orderId);setSupportOpen(true);};window.addEventListener("evolution:support-case-prepared",open);return()=>window.removeEventListener("evolution:support-case-prepared",open);},[]);
 
   // The pricing CTA must open billing for non-gated accounts too (operators
   // revisiting, admins whose profile row is still free) — FreeHome handles
@@ -132,14 +136,16 @@ export default function App() {
     if (!authEnabled || !authEmail) return;
     ensureProfile();
     void (async () => {
-      const [s, p, latest, cat] = await Promise.all([
+      const [s, p, roles, latest, cat] = await Promise.all([
         getStore(),
         getPlan(),
+        getEntitlements(),
         getLatestAudit(),
         getStoreCatalog(),
       ]);
       setStore(s);
       setPlan(p);
+      setEntitlements(roles);
       setAudit(latest);
       setCatalog(cat);
 
@@ -157,14 +163,19 @@ export default function App() {
       // Back from Polar checkout: the subscription.active webhook flips the
       // plan asynchronously — poll briefly so the app unlocks on its own.
       if (upgradeResult === "success" && p !== "operator") {
+        const initialRoleCount=Object.values(roles).filter(Boolean).length;
         for (let i = 0; i < 8; i++) {
           await new Promise((r) => setTimeout(r, 2000));
+          const freshRoles=await getEntitlements();
+          if(Object.values(freshRoles).filter(Boolean).length>initialRoleCount){setEntitlements(freshRoles);break;}
           const fresh = await getPlan();
           if (fresh === "operator") {
             setPlan(fresh);
+            setEntitlements(await getEntitlements());
             break;
           }
         }
+        setEntitlements(await getEntitlements());
       }
       if (shopifyResult === "connected") {
         const target = s?.url ?? params.get("shop");
@@ -244,6 +255,14 @@ export default function App() {
     setViewState(v);
     saveJSON(VIEW_KEY, { view: v });
   };
+  const openManager=(role:ManagerRole)=>{if(!entitlements?.[role]){setUpgradeRole(role);setUpgradeOpen(true);return;}setView(role);};
+  useEffect(()=>{
+    if(!entitlements||!Object.values(entitlements).some(Boolean))return;
+    if((view==="marketing"||view==="customer-success"||view==="seo"||view==="product"||view==="operations")&&!entitlements[view]){
+      const first=(Object.keys(entitlements) as ManagerRole[]).find(role=>entitlements[role]);
+      if(first)setView(first);
+    }
+  },[entitlements,view]);
 
   // ── Boot splash → reveal choreography ──────────────────────────────────────
   const [avatarReady, setAvatarReady] = useState(false);
@@ -292,7 +311,7 @@ export default function App() {
   // The paywall: signed-in accounts without the Operator plan only get the
   // free view (audit + product hunt) — the server enforces the same boundary
   // on every paid API (api/_plan.ts). Admins bypass for internal ops.
-  const gatedFree = authEnabled && !!authEmail && !isAdmin(authEmail) && plan !== "operator";
+  const gatedFree = authEnabled && !!authEmail && entitlements !== null && !Object.values(entitlements).some(Boolean);
 
   // Pre-warm the (heavy) Kokoro voice as soon as the app reveals. Behind the
   // login gate every visitor is a committed lead, so the model download starts
@@ -429,27 +448,27 @@ export default function App() {
         {authEmail && (
           <div className="header-right">
             {store && (
-              <button type="button" className={`tasks-btn ${marketingView ? "active" : ""}`} onClick={() => setView("marketing")}>
+              <button type="button" className={`tasks-btn ${marketingView ? "active" : ""} ${!entitlements?.marketing?"locked":""}`} onClick={() => openManager("marketing")}>
                 Marketing Manager
               </button>
             )}
             {store && (
-              <button type="button" className={`tasks-btn ${customerSuccessView ? "active" : ""}`} onClick={() => setView("customer-success")}>
+              <button type="button" className={`tasks-btn ${customerSuccessView ? "active" : ""} ${!entitlements?.["customer-success"]?"locked":""}`} onClick={() => openManager("customer-success")}>
                 Customer Success Manager
               </button>
             )}
             {store && (
-              <button type="button" className={`tasks-btn ${seoView ? "active" : ""}`} onClick={() => setView("seo")}>
+              <button type="button" className={`tasks-btn ${seoView ? "active" : ""} ${!entitlements?.seo?"locked":""}`} onClick={() => openManager("seo")}>
                 SEO Manager
               </button>
             )}
             {store && (
-              <button type="button" className={`tasks-btn ${productView ? "active" : ""}`} onClick={() => setView("product")}>
+              <button type="button" className={`tasks-btn ${productView ? "active" : ""} ${!entitlements?.product?"locked":""}`} onClick={() => openManager("product")}>
                 Product Manager
               </button>
             )}
             {store && (
-              <button type="button" className={`tasks-btn ${operationsView ? "active" : ""}`} onClick={() => { setOpsOpen(false); setView("operations"); }}>
+              <button type="button" className={`tasks-btn ${operationsView ? "active" : ""} ${!entitlements?.operations?"locked":""}`} onClick={() => { setOpsOpen(false); openManager("operations"); }}>
                 Operations Manager
               </button>
             )}
@@ -468,8 +487,8 @@ export default function App() {
               {a.settings.ttsEngine === "off" || a.settings.textOnly ? <VolumeOffIcon size={17} /> : <VolumeIcon size={17} />}
               <span>{a.settings.ttsEngine === "off" || a.settings.textOnly ? "Sound off" : "Sound on"}</span>
             </button>
-            {store && (
-              <button type="button" className="tasks-btn" onClick={() => { setTasksOpen(false); setActionsOpen(false); setOpsOpen(false); setRecoveryOpen(false); setRetentionOpen(false); setDeliveryOpen((v) => !v); }}>
+            {store && (marketingView || customerSuccessView || operationsView) && (
+              <button type="button" className="tasks-btn" onClick={() => { setTasksOpen(false); setActionsOpen(false); setOpsOpen(false); setRecoveryOpen(false); setRetentionOpen(false); setDeliveryRole(marketingView?"marketing":operationsView?"operations":"customer-success");setDeliveryOpen((v) => !v); }}>
                 Email setup
               </button>
             )}
@@ -546,7 +565,7 @@ export default function App() {
                 setBroadcastOpen(false);
                 setRetentionOpen(true);
               }}
-              onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryOpen(true); }}
+              onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryRole("marketing"); setDeliveryOpen(true); }}
               onOpenBroadcast={() => { setRecoveryOpen(false); setRetentionOpen(false); setBroadcastOpen(true); }}
             />
           ) : customerSuccessView ? (
@@ -570,7 +589,7 @@ export default function App() {
                a.postAssistantMessage(`Your Product Manager proposal is ready: ${action.summary}. Review the exact Shopify change in Actions before approving it.`);
              }} onNeedFacts={(message)=>{setChatOpen(true);a.postAssistantMessage(message);}}/>
           ) : operationsView ? (
-            <OperationsManager active={operationsView} onAsk={handleMarketingAsk} onOpenLiveOps={()=>setOpsOpen(true)} onOpenIssues={(orderId)=>{setSupportFocusOrderId(orderId??null);setSupportOpen(true);}}/>
+            <OperationsManager active={operationsView} onAsk={handleMarketingAsk} onOpenLiveOps={()=>setOpsOpen(true)} onOpenIssues={(orderId)=>{setSupportRole("operations");setSupportFocusOrderId(orderId??null);setSupportOpen(true);}}/>
           ) : <Suspense fallback={<div className="avatar-loading" aria-label="Loading avatar" />}><AvatarScene
             avatarUrl={a.settings.avatarUrl}
             thinking={thinking}
@@ -824,11 +843,11 @@ export default function App() {
       )}
 
       {authEmail && store && <OpsPanel open={opsOpen} onClose={() => setOpsOpen(false)} />}
-      {authEmail && store && <SupportPanel open={supportOpen} focusOrderId={supportFocusOrderId} onClose={() => {setSupportOpen(false);setSupportFocusOrderId(null);}} onOpenDelivery={() => { setSupportOpen(false); setDeliveryOpen(true); }} />}
+      {authEmail && store && <SupportPanel role={supportRole} open={supportOpen} focusOrderId={supportFocusOrderId} onClose={() => {setSupportOpen(false);setSupportFocusOrderId(null);}} onOpenDelivery={() => { setSupportOpen(false); setDeliveryRole(supportRole); setDeliveryOpen(true); }} />}
       {authEmail && store && <RetentionPanel open={customerQueueOpen} onClose={() => setCustomerQueueOpen(false)} storeName={store.url.replace(/^https?:\/\//, "").replace(/\.myshopify\.com.*$/, "").replace(/\/.*$/, "")} storeUrl={store.url} />}
       {authEmail && store && <ActionCenter open={actionsOpen} onClose={() => setActionsOpen(false)} />}
-      {authEmail && store && <EmailDeliveryPanel open={deliveryOpen} onClose={() => setDeliveryOpen(false)} />}
-      {authEmail && store && <BroadcastCampaignPanel open={broadcastOpen} onClose={() => setBroadcastOpen(false)} onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryOpen(true); }} />}
+      {authEmail && store && <EmailDeliveryPanel role={deliveryRole} open={deliveryOpen} onClose={() => setDeliveryOpen(false)} />}
+      {authEmail && store && <BroadcastCampaignPanel open={broadcastOpen} onClose={() => setBroadcastOpen(false)} onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryRole("marketing"); setDeliveryOpen(true); }} />}
       {authEmail && store && <LiveToasts />}
 
       {/* Embedded installs are connected by construction (the session
@@ -843,6 +862,8 @@ export default function App() {
         onClose={() => setUpgradeOpen(false)}
         plan={plan ?? "free"}
         email={authEmail}
+        entitlements={entitlements??EMPTY_ENTITLEMENTS}
+        selectedRole={upgradeRole}
       />
 
       {!splashGone && <Splash leaving={reveal} ready={ready} />}

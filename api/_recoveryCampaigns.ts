@@ -2,7 +2,7 @@ import { resolveUserFull } from "./_audit";
 import { getConnection, type ShopifyEnv } from "./_shopify";
 import { fetchRecoverableCheckouts, type RecoverableCart } from "./_shopifyData";
 import { emailDeliveryProviderKey, loadEmailDeliveryRow, type EmailDeliveryEnv } from "./_emailDelivery";
-import { isOperator, OPERATOR_REQUIRED } from "./_plan";
+import { hasRole, roleRequired } from "./_plan";
 import { log } from "./_log";
 
 export interface RecoveryCampaignEnv extends EmailDeliveryEnv, ShopifyEnv {
@@ -44,7 +44,7 @@ function constantEqual(a: string, b: string) {
 async function merchant(env: RecoveryCampaignEnv, authHeader: string | null) {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return { response: json({ error: "Sign in first." }, 401) };
-  if (!(await isOperator(env, user.id, user.email))) return { response: json(OPERATOR_REQUIRED.body, 402) };
+  if (!(await hasRole(env, user.id, "marketing", user.email))) { const denied=roleRequired("marketing"); return { response: json(denied.body, denied.status) }; }
   return { user };
 }
 
