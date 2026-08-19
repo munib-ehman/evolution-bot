@@ -105,7 +105,7 @@ export function UpgradePanel({
           </button>
         </header>
 
-        {plan === "operator" ? (
+        {Object.values(entitlements).every(Boolean) ? (
           <>
             <p className="overlay-lede">
               Your operator is running — the software executes the busywork and you approve every action.{" "}

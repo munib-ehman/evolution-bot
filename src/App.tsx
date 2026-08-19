@@ -447,27 +447,27 @@ export default function App() {
 
         {authEmail && (
           <div className="header-right">
-            {store && (
+            {store && entitlements?.marketing && (
               <button type="button" className={`tasks-btn ${marketingView ? "active" : ""} ${!entitlements?.marketing?"locked":""}`} onClick={() => openManager("marketing")}>
                 Marketing Manager
               </button>
             )}
-            {store && (
+            {store && entitlements?.["customer-success"] && (
               <button type="button" className={`tasks-btn ${customerSuccessView ? "active" : ""} ${!entitlements?.["customer-success"]?"locked":""}`} onClick={() => openManager("customer-success")}>
                 Customer Success Manager
               </button>
             )}
-            {store && (
+            {store && entitlements?.seo && (
               <button type="button" className={`tasks-btn ${seoView ? "active" : ""} ${!entitlements?.seo?"locked":""}`} onClick={() => openManager("seo")}>
                 SEO Manager
               </button>
             )}
-            {store && (
+            {store && entitlements?.product && (
               <button type="button" className={`tasks-btn ${productView ? "active" : ""} ${!entitlements?.product?"locked":""}`} onClick={() => openManager("product")}>
                 Product Manager
               </button>
             )}
-            {store && (
+            {store && entitlements?.operations && (
               <button type="button" className={`tasks-btn ${operationsView ? "active" : ""} ${!entitlements?.operations?"locked":""}`} onClick={() => { setOpsOpen(false); openManager("operations"); }}>
                 Operations Manager
               </button>
