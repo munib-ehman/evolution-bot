@@ -36,6 +36,8 @@ export function UpgradePanel({
   email,
   entitlements,
   selectedRole,
+  closable = true,
+  onSignOut,
 }: {
   open: boolean;
   onClose: () => void;
@@ -43,6 +45,8 @@ export function UpgradePanel({
   email: string | null;
   entitlements: Entitlements;
   selectedRole: ManagerRole;
+  closable?: boolean;
+  onSignOut?: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -100,9 +104,7 @@ export function UpgradePanel({
       <div className="overlay-card card upgrade-dialog">
         <header className="tools-header">
           <h2>{Object.values(entitlements).some(Boolean) ? "Your managers" : "Choose your manager"}</h2>
-          <button type="button" className="link" onClick={onClose}>
-            close
-          </button>
+          {closable ? <button type="button" className="link" onClick={onClose}>close</button> : onSignOut ? <button type="button" className="link" onClick={onSignOut}>Sign out</button> : null}
         </header>
 
         {Object.values(entitlements).every(Boolean) ? (

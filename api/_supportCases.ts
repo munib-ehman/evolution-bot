@@ -63,11 +63,49 @@ async function notificationRows(env: RecoveryCampaignEnv, userId: string, role: 
 export async function runSupportCasesGet(authHeader: string | null, env: RecoveryCampaignEnv, role: SupportOwner = "customer-success"): Promise<Response> {
   const checked = await authenticate(authHeader, env, role); if ("response" in checked) return checked.response!;
   const live = await liveRisks(env, checked.conn); if ("response" in live) return live.response!;
-  const rows = await notificationRows(env, checked.user.id, role);
+  let rows = await notificationRows(env, checked.user.id, role);
   if (!rows) return json({ error: "Support notification storage is not ready. Run the support notifications migration." }, 503);
+  // Customer Success is an autonomous observer: when a verified fulfillment
+  // risk appears, prepare the safest factual response immediately. Sending is
+  // still impossible until the merchant explicitly approves the exact copy.
+  if (role === "customer-success") {
+    const known = new Set(rows.map((row) => row.order_id));
+    const now = new Date().toISOString();
+    const proposals = live.risks.filter((order) => !known.has(order.id) && order.email.includes("@")).map((order) => {
+      const draft = buildSupportDraft(order, "investigating");
+      return { user_id: checked.user.id, role, order_id: order.id, order_name: order.name, status: "proposed", resolution: "investigating", subject: draft.subject, body: draft.body, resend_email_id: null, delivery_status: null, approved_at: null, sent_at: null, resolved_at: null, error: null, updated_at: now };
+    });
+    if (proposals.length) {
+      const prepared = await fetch(`${env.supabaseUrl}/rest/v1/support_notifications?on_conflict=user_id,order_id,role`, { method: "POST", headers: { ...svcHeaders(env), Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(proposals) });
+      if (!prepared.ok) return json({ error: "Evolution found customer risks but could not prepare their approval drafts." }, 503);
+      rows = [...(await prepared.json() as NotificationRow[]), ...rows];
+    }
+  }
   const latest = new Map<string, NotificationRow>();
   for (const row of rows) if (!latest.has(row.order_id)) latest.set(row.order_id, row);
   return json({ cases: live.risks.map((order) => ({ ...order, notification: latest.get(order.id) ?? null })) });
+}
+
+export async function detectCustomerSuccessRisks(env: RecoveryCampaignEnv, shops: { user_id: string }[]) {
+  let proposed = 0, skipped = 0, errors = 0;
+  for (const shop of shops) try {
+    const conn = await getConnection(env, shop.user_id);
+    if (!conn) { skipped++; continue; }
+    const live = await liveRisks(env, conn);
+    if ("response" in live) { errors++; continue; }
+    const rows = await notificationRows(env, shop.user_id, "customer-success");
+    if (!rows) { errors++; continue; }
+    const known = new Set(rows.map(row => row.order_id));
+    const now = new Date().toISOString();
+    const proposals = live.risks.filter(order => !known.has(order.id) && order.email.includes("@")).map(order => {
+      const draft = buildSupportDraft(order, "investigating");
+      return { user_id: shop.user_id, role: "customer-success", order_id: order.id, order_name: order.name, status: "proposed", resolution: "investigating", subject: draft.subject, body: draft.body, resend_email_id: null, delivery_status: null, approved_at: null, sent_at: null, resolved_at: null, error: null, updated_at: now };
+    });
+    if (!proposals.length) { skipped++; continue; }
+    const saved = await fetch(`${env.supabaseUrl}/rest/v1/support_notifications?on_conflict=user_id,order_id,role`, { method: "POST", headers: { ...svcHeaders(env), Prefer: "resolution=ignore-duplicates,return=minimal" }, body: JSON.stringify(proposals) });
+    if (saved.ok) proposed += proposals.length; else errors++;
+  } catch { errors++; }
+  return { proposed, skipped, errors };
 }
 
 export async function runSupportCasesAction(body: Record<string, unknown>, authHeader: string | null, env: RecoveryCampaignEnv, role: SupportOwner = "customer-success"): Promise<Response> {

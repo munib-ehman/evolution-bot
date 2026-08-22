@@ -17,7 +17,6 @@ import { OpsPanel } from "./components/OpsPanel";
 import { ActionCenter } from "./components/ActionCenter";
 import { LiveToasts } from "./components/LiveToasts";
 import { UpgradePanel } from "./components/UpgradePanel";
-import { FreeHome } from "./components/FreeHome";
 import { AdminQueue, isAdmin } from "./components/AdminQueue";
 import { buildStoreContext } from "./llm/systemPrompt";
 import { EMPTY_ENTITLEMENTS, ensureProfile, getEntitlements, getLatestAudit, getPlan, getStore, getStoreCatalog, runAuditAsUser, type AuditReport, type ConnectedStore, type Plan, type StoreCatalog, type Entitlements, type ManagerRole } from "./lib/store";
@@ -26,10 +25,12 @@ import { consumeUpgradeIntent } from "./lib/upgradeIntent";
 import { SKILL_CHIPS, type SkillChip } from "./lib/skills";
 import { MarketingManager } from "./components/MarketingManager";
 import { EmailDeliveryPanel } from "./components/EmailDeliveryPanel";
+import { MarketingOperatorSetup } from "./components/MarketingOperatorSetup";
+import { MarketingDecisionsInbox } from "./components/MarketingDecisionsInbox";
 import { BroadcastCampaignPanel } from "./components/BroadcastCampaignPanel";
 import { SeoManager } from "./components/SeoManager";
 import { CustomerSuccessManager } from "./components/CustomerSuccessManager";
-import { ProductManager } from "./components/ProductManager";
+import { ProductAgentManager } from "./components/ProductAgentManager";
 import { OperationsManager } from "./components/OperationsManager";
 import { RetentionPanel } from "./components/RetentionPanel";
 import { SupportPanel } from "./components/SupportPanel";
@@ -97,18 +98,26 @@ export default function App() {
   const [catalog, setCatalog] = useState<StoreCatalog | null>(null);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoverySection, setRecoverySection] = useState<"monitoring" | "emails" | "revenue">("monitoring");
   const [retentionOpen, setRetentionOpen] = useState(false);
+  const [retentionSection, setRetentionSection] = useState<"winback" | "reviews" | "lapse" | "review-eligibility" | "review-results" | "winback-results">("winback");
   const [opsOpen, setOpsOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportRole,setSupportRole]=useState<"customer-success"|"operations">("customer-success");
+  const [supportSection,setSupportSection]=useState<"risks"|"responses"|"resolution">("risks");
   const [supportFocusOrderId,setSupportFocusOrderId]=useState<string|null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [deliveryRole,setDeliveryRole]=useState<"marketing"|"customer-success"|"operations">("marketing");
   const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [marketingSetupOpen,setMarketingSetupOpen]=useState(false);
+  const [marketingDecisionsOpen,setMarketingDecisionsOpen]=useState(false);
+  const [customerSuccessSetupOpen,setCustomerSuccessSetupOpen]=useState(false);
+  const [customerSuccessDecisionsOpen,setCustomerSuccessDecisionsOpen]=useState(false);
+  const [campaignSection, setCampaignSection] = useState<"workflow">("workflow");
   const [customerQueueOpen, setCustomerQueueOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(true);
+  const [, setChatOpen] = useState(false);
 
   // A freshly persisted Shopify proposal belongs in the approval inbox. Open
   // it immediately so the merchant never has to hunt for an invisible card.
@@ -123,11 +132,10 @@ export default function App() {
     setBroadcastOpen(false);
     setActionsOpen(true);
   }, [a.actionRevision]);
-  useEffect(()=>{const open=(event:Event)=>{const orderId=(event as CustomEvent<{orderId?:string}>).detail?.orderId;if(!orderId)return;setSupportRole("operations");setSupportFocusOrderId(orderId);setSupportOpen(true);};window.addEventListener("evolution:support-case-prepared",open);return()=>window.removeEventListener("evolution:support-case-prepared",open);},[]);
+  useEffect(()=>{const open=(event:Event)=>{const orderId=(event as CustomEvent<{orderId?:string}>).detail?.orderId;if(!orderId)return;setSupportRole("operations");setSupportSection("responses");setSupportFocusOrderId(orderId);setSupportOpen(true);};window.addEventListener("evolution:support-case-prepared",open);return()=>window.removeEventListener("evolution:support-case-prepared",open);},[]);
 
-  // The pricing CTA must open billing for non-gated accounts too (operators
-  // revisiting, admins whose profile row is still free) — FreeHome handles
-  // the gated case via initialUpgradeOpen.
+  // Pricing-page intents open billing for subscribed accounts; accounts with
+  // no entitlement are already held inside the mandatory purchase gate.
   useEffect(() => {
     if (wantUpgrade) setUpgradeOpen(true);
   }, [wantUpgrade]);
@@ -232,18 +240,6 @@ export default function App() {
       "Your store is disconnected — I no longer have any access to it. Connect this or a different store whenever you're ready and I'll take a fresh look.",
     );
   };
-
-  const handleConnected = (s: ConnectedStore, fresh: AuditReport | null) => {
-    setStore(s);
-    if (fresh) setAudit(fresh);
-    void getStoreCatalog().then(setCatalog);
-    a.postAssistantMessage(
-      fresh
-        ? `Your store is connected! I ran your audit: ${fresh.score} out of 100. ${fresh.summary} Ask me anything, or ask me to prepare a concrete store change for your approval.`
-        : "Your store is connected! Ask me anything, or ask me to prepare a concrete store change for your approval.",
-    );
-  };
-
 
   // Role workspace is the default; voice and full chat remain available.
   // The choice is remembered across visits.
@@ -409,22 +405,13 @@ export default function App() {
     return <AdminQueue />;
   }
 
-  if (gatedFree) {
-    // Plan still loading — hold the splash rather than flash the wrong view.
-    if (plan === null) return <Splash leaving={false} ready={false} />;
-    return (
-      <FreeHome
-        email={authEmail}
-        embedded={embedded}
-        store={store}
-        audit={audit}
-        initialUpgradeOpen={wantUpgrade}
-        onConnected={handleConnected}
-        onDisconnected={handleDisconnected}
-        onAudit={setAudit}
-      />
-    );
-  }
+  if (gatedFree) return (
+    <div className="app subscription-gate revealed">
+      <div className="aurora" aria-hidden="true"><span className="aura aura-a"/><span className="aura aura-b"/></div>
+      <header className="app-header"><div className="brand"><span className="brand-mark"><ButterflyIcon size={22}/></span><div><h1 className="wordmark">Evolution</h1><p className="tagline">The AI COO for your ecommerce store</p></div></div></header>
+      <UpgradePanel open onClose={()=>{}} plan="free" email={authEmail} entitlements={EMPTY_ENTITLEMENTS} selectedRole="marketing" closable={false} onSignOut={()=>void signOut()}/>
+    </div>
+  );
 
   return (
     <div className={`app ${reveal ? "revealed" : "booting"}`}>
@@ -472,11 +459,6 @@ export default function App() {
                 Operations Manager
               </button>
             )}
-            {store && managerView && !chatOpen && (
-              <button type="button" className="tasks-btn" onClick={() => setChatOpen(true)}>
-                Open chat
-              </button>
-            )}
             <button
               type="button"
               className={`tasks-btn sound-toggle ${a.settings.ttsEngine === "off" || a.settings.textOnly ? "muted" : ""}`}
@@ -511,19 +493,6 @@ export default function App() {
               type="button"
               className="tasks-btn"
               onClick={() => {
-                setRecoveryOpen(false);
-                setActionsOpen(false);
-                setRetentionOpen(false);
-                setOpsOpen(false);
-                setTasksOpen((v) => !v);
-              }}
-            >
-              My store
-            </button>
-            <button
-              type="button"
-              className="tasks-btn"
-              onClick={() => {
                 setTasksOpen(false);
                 setActionsOpen(false);
                 setRecoveryOpen(false);
@@ -532,7 +501,7 @@ export default function App() {
                 setUpgradeOpen(true);
               }}
             >
-              {plan === "operator" ? "Plan" : "Upgrade"}
+              Plan
             </button>
             {/* Inside the Shopify admin the install IS the login — no email
                 identity to show, and signing out would just strand the iframe. */}
@@ -548,33 +517,54 @@ export default function App() {
         )}
       </header>
 
-      <main className={`layout ${voiceView ? "solo" : ""} ${managerView ? "manager-layout" : ""} ${managerView && !chatOpen ? "chat-closed" : ""}`}>
+      <main className={`layout ${voiceView ? "solo" : ""} ${managerView ? "manager-layout" : ""}`}>
         {/* ── 3D avatar stage ───────────────────────────────────────────── */}
         <section className={`stage card ${managerView ? "manager-stage" : ""}`}>
           {marketingView ? (
             <MarketingManager
               active={marketingView}
+              storeUrl={store?.url ?? null}
+              agentReply={lastAssistant?.content}
+              agentVisual={<Suspense fallback={<div className="avatar-loading"/>}><AvatarScene avatarUrl={a.settings.avatarUrl} thinking={thinking} speaking={a.status === "speaking"} framing="stage" onAvatarFallback={() => a.setAvatarFellBack(true)} onReady={() => setAvatarReady(true)}/></Suspense>}
               onAsk={handleMarketingAsk}
-              onOpenRecovery={() => {
+              onOpenStore={() => {
+                setRecoveryOpen(false);
+                setActionsOpen(false);
+                setRetentionOpen(false);
+                setOpsOpen(false);
+                setTasksOpen(true);
+              }}
+              onOpenRecovery={(section) => {
                 setRetentionOpen(false);
                 setBroadcastOpen(false);
+                setRecoverySection(section);
                 setRecoveryOpen(true);
               }}
-              onOpenWinback={() => {
+              onOpenWinback={(section) => {
                 setRecoveryOpen(false);
                 setBroadcastOpen(false);
+                setRetentionSection(section);
                 setRetentionOpen(true);
               }}
               onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryRole("marketing"); setDeliveryOpen(true); }}
-              onOpenBroadcast={() => { setRecoveryOpen(false); setRetentionOpen(false); setBroadcastOpen(true); }}
+              onOpenBroadcast={(section) => { setRecoveryOpen(false); setRetentionOpen(false); setCampaignSection(section); setBroadcastOpen(true); }}
+              onOpenStrategy={()=>setMarketingSetupOpen(true)}
+              onOpenDecisions={()=>setMarketingDecisionsOpen(true)}
             />
           ) : customerSuccessView ? (
             <CustomerSuccessManager
               active={customerSuccessView}
+              storeUrl={store?.url ?? null}
+              agentReply={lastAssistant?.content}
+              agentVisual={<Suspense fallback={<div className="avatar-loading"/>}><AvatarScene avatarUrl={a.settings.avatarUrl} thinking={thinking} speaking={a.status === "speaking"} framing="stage" onAvatarFallback={() => a.setAvatarFellBack(true)} onReady={() => setAvatarReady(true)}/></Suspense>}
               onAsk={handleMarketingAsk}
-              onOpenSupport={() => setSupportOpen(true)}
-              onOpenReviews={() => setCustomerQueueOpen(true)}
-              onOpenRetention={() => setCustomerQueueOpen(true)}
+              onOpenStore={() => {setSupportOpen(false);setCustomerQueueOpen(false);setTasksOpen(true);}}
+              onOpenSupport={(section) => {setSupportRole("customer-success");setSupportSection(section);setCustomerQueueOpen(false);setSupportOpen(true);}}
+              onOpenReviews={(section) => {setSupportOpen(false);setCustomerQueueOpen(false);setRetentionSection(section==="eligibility"?"review-eligibility":section==="results"?"review-results":"reviews");setRetentionOpen(true);}}
+              onOpenRetention={(section) => {setSupportOpen(false);setCustomerQueueOpen(false);setRetentionSection(section==="detection"?"lapse":section==="outcomes"?"winback-results":"winback");setRetentionOpen(true);}}
+              onOpenDelivery={() => {setDeliveryRole("customer-success");setDeliveryOpen(true);}}
+              onOpenRules={() => setCustomerSuccessSetupOpen(true)}
+              onOpenDecisions={() => setCustomerSuccessDecisionsOpen(true)}
             />
           ) : seoView ? (
             <SeoManager active={seoView} onAsk={handleMarketingAsk} onProposal={(action) => {
@@ -583,13 +573,13 @@ export default function App() {
               a.postAssistantMessage(`Your SEO update is ready for review: ${action.summary}. Open Actions to compare the current listing with the suggested version before approving it.`);
             }}/>
           ) : productView && store ? (
-             <ProductManager active={productView} storeUrl={store.url} onAsk={handleMarketingAsk} onProposal={(action) => {
+             <ProductAgentManager active={productView} storeUrl={store.url} agentReply={lastAssistant?.content} agentVisual={<Suspense fallback={<div className="avatar-loading"/>}><AvatarScene avatarUrl={a.settings.avatarUrl} thinking={thinking} speaking={a.status === "speaking"} framing="stage" onAvatarFallback={() => a.setAvatarFellBack(true)} onReady={() => setAvatarReady(true)}/></Suspense>} onOpenStore={()=>setTasksOpen(true)} onAsk={handleMarketingAsk} onProposal={(action) => {
                setActionsOpen(true);
                window.dispatchEvent(new CustomEvent("evolution:shopify-action-created", { detail: { id:action.id, kind:action.kind } }));
                a.postAssistantMessage(`Your Product Manager proposal is ready: ${action.summary}. Review the exact Shopify change in Actions before approving it.`);
-             }} onNeedFacts={(message)=>{setChatOpen(true);a.postAssistantMessage(message);}}/>
+             }}/>
           ) : operationsView ? (
-            <OperationsManager active={operationsView} onAsk={handleMarketingAsk} onOpenLiveOps={()=>setOpsOpen(true)} onOpenIssues={(orderId)=>{setSupportRole("operations");setSupportFocusOrderId(orderId??null);setSupportOpen(true);}}/>
+            <OperationsManager active={operationsView} onAsk={handleMarketingAsk} onOpenLiveOps={()=>setOpsOpen(true)} onOpenIssues={(orderId)=>{setSupportRole("operations");setSupportSection(orderId?"responses":"risks");setSupportFocusOrderId(orderId??null);setSupportOpen(true);}}/>
           ) : <Suspense fallback={<div className="avatar-loading" aria-label="Loading avatar" />}><AvatarScene
             avatarUrl={a.settings.avatarUrl}
             thinking={thinking}
@@ -705,16 +695,17 @@ export default function App() {
 
         {/* ── Chat experience: an always-mounted panel that slides in over the
              right of the stage while the camera glides the model left. ───── */}
-        <section className={`chat card ${voiceView || (managerView && !chatOpen) ? "hidden" : ""}`} aria-hidden={voiceView || (managerView && !chatOpen)}>
+        <section className={`chat card ${voiceView ? "hidden" : ""}`} aria-hidden={voiceView}>
             {managerView && (
               <div className="chat-toolbar">
-                <div><strong>Chat with your manager</strong><span>Ask, edit, approve, or pause work</span></div>
+                <div><strong>Talk to Evolution</strong><span><i className="chat-online" /> Your manager is here</span></div>
                 <button type="button" className="chat-close" onClick={() => setChatOpen(false)} aria-label="Close chat">×</button>
               </div>
             )}
             <MessageList
               messages={a.messages}
               status={a.status}
+              compact={managerView}
               onEscalate={(taskTool, note) => void a.escalateToTeam(taskTool, note)}
             />
 
@@ -808,7 +799,7 @@ export default function App() {
               canTalk={canTalk}
               active={!voiceView}
               onVoice={() => {
-                setView("voice");
+                if (!managerView) setView("voice");
                 handleMic();
               }}
             />
@@ -822,7 +813,6 @@ export default function App() {
           onClose={() => setTasksOpen(false)}
           storeUrl={store?.url ?? null}
           onDisconnected={handleDisconnected}
-          onStoreUpdated={handleConnected}
         />
       )}
 
@@ -830,6 +820,7 @@ export default function App() {
         <RecoveryPanel
           open={recoveryOpen}
           onClose={() => setRecoveryOpen(false)}
+          section={recoverySection}
           storeName={store.url.replace(/^https?:\/\//, "").replace(/\.myshopify\.com.*$/, "").replace(/\/.*$/, "")}
         />
       )}
@@ -837,24 +828,28 @@ export default function App() {
       {authEmail && store && (
         <WinbackPanel
           open={retentionOpen}
+          section={retentionSection}
           onClose={() => setRetentionOpen(false)}
           onBuild={handleMarketingAsk}
         />
       )}
 
       {authEmail && store && <OpsPanel open={opsOpen} onClose={() => setOpsOpen(false)} />}
-      {authEmail && store && <SupportPanel role={supportRole} open={supportOpen} focusOrderId={supportFocusOrderId} onClose={() => {setSupportOpen(false);setSupportFocusOrderId(null);}} onOpenDelivery={() => { setSupportOpen(false); setDeliveryRole(supportRole); setDeliveryOpen(true); }} />}
+      {authEmail && store && <SupportPanel role={supportRole} section={supportSection} open={supportOpen} focusOrderId={supportFocusOrderId} onClose={() => {setSupportOpen(false);setSupportFocusOrderId(null);}} onOpenDelivery={() => { setSupportOpen(false); setDeliveryRole(supportRole); setDeliveryOpen(true); }} />}
       {authEmail && store && <RetentionPanel open={customerQueueOpen} onClose={() => setCustomerQueueOpen(false)} storeName={store.url.replace(/^https?:\/\//, "").replace(/\.myshopify\.com.*$/, "").replace(/\/.*$/, "")} storeUrl={store.url} />}
       {authEmail && store && <ActionCenter open={actionsOpen} onClose={() => setActionsOpen(false)} />}
       {authEmail && store && <EmailDeliveryPanel role={deliveryRole} open={deliveryOpen} onClose={() => setDeliveryOpen(false)} />}
-      {authEmail && store && <BroadcastCampaignPanel open={broadcastOpen} onClose={() => setBroadcastOpen(false)} onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryRole("marketing"); setDeliveryOpen(true); }} />}
+      {authEmail && store && <BroadcastCampaignPanel section={campaignSection} open={broadcastOpen} onClose={() => setBroadcastOpen(false)} onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryRole("marketing"); setDeliveryOpen(true); }} />}
+      {authEmail&&store&&<MarketingOperatorSetup open={marketingSetupOpen} onClose={()=>setMarketingSetupOpen(false)}/>}
+      {authEmail&&store&&<MarketingDecisionsInbox open={marketingDecisionsOpen} onClose={()=>setMarketingDecisionsOpen(false)} onOpenRules={()=>{setMarketingDecisionsOpen(false);setMarketingSetupOpen(true);}}/>}
+      {authEmail&&store&&<MarketingOperatorSetup scope="customer-success" open={customerSuccessSetupOpen} onClose={()=>setCustomerSuccessSetupOpen(false)}/>}
+      {authEmail&&store&&<MarketingDecisionsInbox scope="customer-success" open={customerSuccessDecisionsOpen} onClose={()=>setCustomerSuccessDecisionsOpen(false)} onOpenRules={()=>{setCustomerSuccessDecisionsOpen(false);setCustomerSuccessSetupOpen(true);}} onOpenSupport={(orderId)=>{setCustomerSuccessDecisionsOpen(false);setSupportRole("customer-success");setSupportSection("responses");setSupportFocusOrderId(orderId);setSupportOpen(true);}}/>}
       {authEmail && store && <LiveToasts />}
 
-      {/* Embedded installs are connected by construction (the session
-          endpoint created the store row) — never show the connect card there.
-          Nor over the billing panel: whoever came to buy sees packages first. */}
+      {/* Paid standalone accounts must authorize their Shopify admin before
+          entering the workspace. Embedded installs are connected already. */}
       {authEnabled && authEmail && store === null && splashGone && !embedded && !upgradeOpen && (
-        <ConnectStore onConnected={handleConnected} />
+        <ConnectStore />
       )}
 
       <UpgradePanel

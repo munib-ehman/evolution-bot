@@ -21,6 +21,8 @@ import { resolveUserFull } from "./_audit";
 import { getConnection, type ShopifyEnv } from "./_shopify";
 import { fetchInventoryWatch } from "./_shopifyData";
 import { log } from "./_log";
+import { attributeShopifyOrder } from "./_marketingAttribution";
+import type { RecoveryCampaignEnv } from "./_recoveryCampaigns";
 
 function jsonResult(status: number, body: Record<string, unknown>) {
   return { status, body };
@@ -156,6 +158,11 @@ async function recentStockEventExists(
 // POST /api/shopify-webhook
 
 interface OrderWebhookPayload {
+  id?: number|string;
+  checkout_id?: number|string|null;
+  email?: string|null;
+  customer?: { id?: number|string; email?: string|null }|null;
+  discount_codes?: { code?: string }[];
   name?: string;
   order_number?: number;
   total_price?: string;
@@ -239,6 +246,7 @@ export async function handleShopifyWebhook(
         detail: { order: orderName, total, currency: payload.currency ?? null, items: itemsLine },
       },
     ]);
+    await attributeShopifyOrder(env as RecoveryCampaignEnv,{userId,orderId:String(payload.id??orderName),checkoutId:payload.checkout_id==null?null:String(payload.checkout_id),customerId:payload.customer?.id==null?null:String(payload.customer.id),email:payload.email??payload.customer?.email??null,revenue:total,currency:payload.currency??null,discountCodes:(payload.discount_codes??[]).map(item=>item.code??"").filter(Boolean)});
 
     // The order may have just emptied a shelf — check the ordered products.
     const conn = await getConnection(env, userId);

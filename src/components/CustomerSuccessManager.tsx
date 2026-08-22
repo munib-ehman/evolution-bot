@@ -1,76 +1,61 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getOpsSnapshot, type OpsSnapshot } from "../lib/ops";
 import { formatMoney, getRetentionCustomers, type RetentionData } from "../lib/retention";
+import { getEmailDeliverySettings, type EmailDeliverySettings } from "../lib/emailDelivery";
+import { getSupportCases, type SupportCase } from "../lib/supportCases";
+import { getReviewCampaignHistory, type ReviewCampaignRecord } from "../lib/reviewCampaigns";
+import { getWinbackCampaignHistory, type WinbackCampaignRecord } from "../lib/winbackCampaigns";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
+type Focus = "support" | "reviews" | "retention" | "delivery";
+type NodeState = "checking" | "clear" | "attention" | "blocked" | "available";
 
-export function CustomerSuccessManager({ active, onAsk, onOpenSupport, onOpenReviews, onOpenRetention }: {
-  active: boolean;
-  onAsk: (prompt: string) => void;
-  onOpenSupport: () => void;
-  onOpenReviews: () => void;
-  onOpenRetention: () => void;
+function NodeIcon({kind}:{kind:Focus}) {
+  if(kind==="support") return <svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4V5Zm4 4h8M8 12h5"/></svg>;
+  if(kind==="reviews") return <svg viewBox="0 0 24 24"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/></svg>;
+  if(kind==="retention") return <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M17 8h5M19.5 5.5v5"/></svg>;
+  return <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 7l8 6 8-6"/></svg>;
+}
+
+export function CustomerSuccessManager({active,agentVisual,agentReply,storeUrl,onAsk,onOpenStore,onOpenSupport,onOpenReviews,onOpenRetention,onOpenDelivery,onOpenRules,onOpenDecisions}:{
+  active:boolean;agentVisual:ReactNode;agentReply?:string;storeUrl:string|null;onAsk:(prompt:string)=>void;onOpenStore:()=>void;
+  onOpenSupport:(section:"risks"|"responses"|"resolution")=>void;onOpenReviews:(section:"eligibility"|"requests"|"results")=>void;
+  onOpenRetention:(section:"detection"|"care"|"outcomes")=>void;onOpenDelivery:()=>void;onOpenRules:()=>void;onOpenDecisions:()=>void;
 }) {
-  const [state, setState] = useState<LoadState>("idle");
-  const [retention, setRetention] = useState<RetentionData | null>(null);
-  const [ops, setOps] = useState<OpsSnapshot | null>(null);
+  const [state,setState]=useState<LoadState>("idle"),[retention,setRetention]=useState<RetentionData|null>(null),[ops,setOps]=useState<OpsSnapshot|null>(null),[delivery,setDelivery]=useState<EmailDeliverySettings|null>(null),[supportCases,setSupportCases]=useState<SupportCase[]>([]),[reviews,setReviews]=useState<ReviewCampaignRecord[]>([]),[winbacks,setWinbacks]=useState<WinbackCampaignRecord[]>([]);
+  const [focus,setFocus]=useState<Focus>("support"),[drillFocus,setDrillFocus]=useState<Focus|null>(null);
 
-  useEffect(() => {
-    if (!active || state !== "idle") return;
-    setState("loading");
-    void Promise.allSettled([getRetentionCustomers(), getOpsSnapshot()]).then(([customers, operations]) => {
-      if (customers.status === "fulfilled") setRetention(customers.value);
-      if (operations.status === "fulfilled") setOps(operations.value);
-      setState(customers.status === "rejected" && operations.status === "rejected" ? "error" : "ready");
-    });
-  }, [active, state]);
+  useEffect(()=>{if(!active||state!=="idle")return;setState("loading");void Promise.allSettled([getRetentionCustomers(),getOpsSnapshot(),getEmailDeliverySettings("customer-success"),getSupportCases("customer-success"),getReviewCampaignHistory(),getWinbackCampaignHistory()]).then(([customers,operations,email,support,reviewRows,winbackRows])=>{if(customers.status==="fulfilled")setRetention(customers.value);if(operations.status==="fulfilled")setOps(operations.value);if(email.status==="fulfilled")setDelivery(email.value);if(support.status==="fulfilled")setSupportCases(support.value);if(reviewRows.status==="fulfilled")setReviews(reviewRows.value);if(winbackRows.status==="fulfilled")setWinbacks(winbackRows.value);setState(customers.status==="rejected"&&operations.status==="rejected"?"error":"ready");});},[active,state]);
 
-  const now = Date.now();
-  const overdue = ops?.shipQueue.filter(order => now - Date.parse(order.createdAt) >= 48 * 60 * 60 * 1000) ?? [];
-  const reviewAudience = retention?.buyers.length ?? 0;
-  const atRisk = retention?.lapsed.length ?? 0;
-  const atRiskValue = retention?.lapsed.reduce((sum, customer) => sum + customer.totalSpent, 0) ?? 0;
-  const currency = retention?.currency ?? ops?.currency ?? "USD";
-  const priority = overdue.length > 0
-    ? `${overdue.length} order${overdue.length === 1 ? " has" : "s have"} waited more than 48 hours and may need proactive support.`
-    : reviewAudience > 0
-      ? `${reviewAudience} recent buyer${reviewAudience === 1 ? " is" : "s are"} ready for a thoughtful review request.`
-      : atRisk > 0
-        ? `${atRisk} customer${atRisk === 1 ? " is" : "s are"} at risk of not returning.`
-        : state === "error"
-          ? "Customer and order signals are unavailable right now."
-          : "No urgent customer-success opportunity is visible in the current Shopify data.";
+  const now=Date.now(),overdue=ops?.shipQueue.filter(order=>now-Date.parse(order.createdAt)>=48*60*60*1000)??[],preparedSupport=supportCases.filter(item=>item.notification?.status==="proposed").length,reviewAudience=retention?.buyers.length??0,atRisk=retention?.lapsed.length??0,atRiskValue=retention?.lapsed.reduce((sum,customer)=>sum+customer.totalSpent,0)??0,currency=retention?.currency??ops?.currency??"USD",loading=state==="idle"||state==="loading";
+  const stateMark:Record<NodeState,string>={checking:"·",clear:"✓",attention:"!",blocked:"!",available:"+"},stateText:Record<NodeState,string>={checking:"Checking",clear:"Okay",attention:"Review needed",blocked:"Action required",available:"Available"};
+  const reviewStatus=reviews.find(item=>["proposed","blocked","scheduled","executing","failed"].includes(item.status))?.status,winbackStatus=winbacks.find(item=>["proposed","blocked","scheduled","executing","failed"].includes(item.status))?.status;
+  const activityState=(status:string|undefined,fallback:NodeState):NodeState=>status==="blocked"||status==="failed"?"blocked":status==="proposed"?"attention":status==="scheduled"||status==="executing"?"checking":fallback;
+  const supportState:NodeState=loading?"checking":state==="error"?"blocked":overdue.length?"attention":"clear",reviewState:NodeState=loading?"checking":activityState(reviewStatus,reviewAudience?"available":"clear"),retentionState:NodeState=loading?"checking":activityState(winbackStatus,atRisk?"available":"clear"),deliveryState:NodeState=loading?"checking":delivery?.status==="ready"?"clear":"blocked";
+  const items:Record<Focus,{label:string;eyebrow:string;value:string;detail:string;state:NodeState;stateLabel:string;features:{label:string;state:NodeState}[];open:()=>void}>={
+    support:{label:"Support care",eyebrow:"Protect trust",value:overdue.length?`${overdue.length} customer risk${overdue.length===1?"":"s"}`:"All clear",detail:overdue.length?"Evolution found orders that may need proactive care":"No overdue fulfillment risk right now",state:supportState,stateLabel:supportState==="blocked"?"Data needs attention":preparedSupport?`${preparedSupport} approval${preparedSupport===1?"":"s"} ready`:supportState==="attention"?"Preparing response":supportState==="checking"?"Checking orders":"Agent monitoring",features:[{label:"Risk detection",state:supportState==="attention"?"clear":supportState},{label:"Response preparation",state:preparedSupport?"attention":supportState},{label:"Resolution tracking",state:supportState==="blocked"?"blocked":"clear"}],open:()=>onOpenSupport("risks")},
+    reviews:{label:"Review care",eyebrow:"Learn from buyers",value:reviewAudience?`${reviewAudience} eligible buyer${reviewAudience===1?"":"s"}`:"All clear",detail:reviewAudience?"Verified fulfilled purchases can receive a respectful request":"No eligible fulfilled purchases right now",state:reviewState,stateLabel:reviewState==="blocked"?"Action required":reviewState==="attention"?"Approval requested":reviewState==="available"?"Opportunity found":reviewState==="checking"?reviewStatus?"Agent executing":"Checking eligibility":"Agent monitoring",features:[{label:"Buyer eligibility",state:reviewState==="blocked"?"blocked":"clear"},{label:"Review requests",state:reviewState},{label:"Review outcomes",state:reviewStatus==="scheduled"||reviewStatus==="executing"?"checking":"clear"}],open:()=>onOpenReviews("eligibility")},
+    retention:{label:"Retention health",eyebrow:"Keep relationships",value:atRisk?`${atRisk} customer${atRisk===1?"":"s"} at risk`:"All clear",detail:atRisk?`${formatMoney(atRiskValue,currency)} in historical customer value`:"No customer currently meets the lapse threshold",state:retentionState,stateLabel:retentionState==="blocked"?"Action required":retentionState==="attention"?"Approval requested":retentionState==="available"?"Opportunity found":retentionState==="checking"?winbackStatus?"Agent executing":"Checking customers":"Agent monitoring",features:[{label:"Lapse detection",state:retentionState==="blocked"?"blocked":"clear"},{label:"Care planning",state:retentionState},{label:"Retention outcomes",state:winbackStatus==="scheduled"||winbackStatus==="executing"?"checking":"clear"}],open:()=>onOpenRetention("detection")},
+    delivery:{label:"Customer email",eyebrow:"Communicate safely",value:delivery?.status==="ready"?"Ready":"Setup required",detail:delivery?.status==="ready"?"Verified Evolution sender is ready":"Customer messages cannot send until email is enabled",state:deliveryState,stateLabel:deliveryState==="blocked"?"Email not connected":deliveryState==="checking"?"Checking sender":"Email active",features:[],open:onOpenDelivery}
+  };
+  const selected=items[focus];
+  const drillCamera=drillFocus==="support"?"recovery":drillFocus==="reviews"?"customers":drillFocus==="retention"?"delivery":drillFocus;
+  const openFeature=(kind:Focus,label:string)=>{if(kind==="support")onOpenSupport(label==="Response preparation"?"responses":label==="Resolution tracking"?"resolution":"risks");else if(kind==="reviews")onOpenReviews(label==="Review requests"?"requests":label==="Review outcomes"?"results":"eligibility");else if(kind==="retention")onOpenRetention(label==="Care planning"?"care":label==="Retention outcomes"?"outcomes":"detection");else onOpenDelivery();};
 
-  return <div className="marketing-manager customer-success-manager">
-    <header className="manager-hero">
-      <div><span className="manager-kicker">AI role · active</span><h2>Customer Success Manager</h2><p>Protects customer relationships—resolving risks, generating reviews, and encouraging repeat purchases.</p></div>
-      <span className="manager-status"><i /> Monitoring customers</span>
-    </header>
-    <section className="manager-priority">
-      <div><span>Today’s priority</span><strong>{state === "loading" ? "Reading customer and order signals…" : priority}</strong></div>
-      <button type="button" className="primary" disabled={state !== "ready"} onClick={() => onAsk("Find my highest-priority customer success opportunity right now using live order and customer data.")}>{state === "error" ? "Data unavailable" : "Ask manager"}</button>
-    </section>
-    {state === "error" && <p className="manager-notice">I couldn’t load the customer-success snapshot. Check the Shopify connection or ask me in chat to retry.</p>}
-    <div className="manager-metrics" aria-label="Customer success opportunities">
-      <article><span>Support risks</span><strong>{ops ? overdue.length : "—"}</strong><small>{ops ? "Orders unfulfilled for 48+ hours" : "Order data unavailable"}</small></article>
-      <article><span>Review audience</span><strong>{retention ? reviewAudience : "—"}</strong><small>{retention ? "Successfully fulfilled 7–30 days ago" : "Fulfillment data unavailable"}</small></article>
-      <article><span>At-risk customers</span><strong>{retention ? atRisk : "—"}</strong><small>{retention ? `${formatMoney(atRiskValue, currency)} past spend` : "Loading retention signals"}</small></article>
+  return <div className={`marketing-manager evolution-live customer-success-manager focus-${focus}`}>
+    <header className="live-head"><div><span>Customer success manager</span><h2>Agent workspace</h2></div><div><button type="button" className="link" onClick={onOpenDecisions}>Decisions</button><button type="button" className="link" onClick={onOpenRules}>Operator rules</button></div></header>
+    <div className="agent-canvas">
+      <div className={`capability-tree ${drillFocus?`drilled drill-${drillCamera}`:"overview"}`}>
+        {drillFocus&&<button type="button" className="tree-back" onClick={()=>setDrillFocus(null)}><span>×</span><small>All capabilities</small></button>}
+        <div className="tree-world">
+          <button type="button" className={`store-source ${storeUrl?"connected":"disconnected"}`} onClick={onOpenStore}><span className="shopify-mark">S</span><span><small>{storeUrl?"Live customer source":"Data source required"}</small><strong>{storeUrl?"Shopify connected":"Connect Shopify"}</strong></span><i>{storeUrl?"✓":"+"}</i></button>
+          <button type="button" className={`tree-root ${state==="error"?"state-blocked":""}`} onClick={()=>onAsk("Explain the highest-priority customer-success signal, the evidence behind it, and what you have prepared for approval.")}><span className="root-spark">✦</span><span><small>{state==="error"?"Customer signals need attention":"Monitoring automatically"}</small><strong>Customer success manager</strong></span></button>
+          <svg className="tree-lines" viewBox="0 0 760 430" preserveAspectRatio="none" aria-hidden="true"><path className="source-line" d="M380 58V86"/><path className="root-branch line-recovery" d="M380 150C380 192 95 184 95 230"/><path className="root-branch line-customers" d="M380 150C380 192 285 184 285 230"/><path className="root-branch line-delivery" d="M380 150C380 192 475 184 475 230"/><path className="root-branch line-campaign" d="M380 150C380 192 665 184 665 230"/><circle className="data-pulse source-pulse" r="3"><animateMotion path="M380 58V86" dur="2.2s" begin="-.8s" repeatCount="indefinite"/></circle>{[{name:"recovery",path:"M380 150C380 192 95 184 95 230"},{name:"customers",path:"M380 150C380 192 285 184 285 230"},{name:"delivery",path:"M380 150C380 192 475 184 475 230"},{name:"campaign",path:"M380 150C380 192 665 184 665 230"}].map((branch,index)=><circle key={branch.name} className={`data-pulse branch-pulse pulse-${branch.name}`} r="3"><animateMotion path={branch.path} dur={`${4+index*.4}s`} begin={`${-.7-index*.8}s`} repeatCount="indefinite"/></circle>)}</svg>
+          <div className="capability-grid">{(Object.keys(items) as Focus[]).map((kind)=><section key={kind} className={`capability-branch branch-${kind==="support"?"recovery":kind==="reviews"?"customers":kind} state-${items[kind].state} ${drillFocus===kind?"active":""} ${!drillFocus?"scanning":""}`}><button type="button" className="capability-node" onClick={()=>{setFocus(kind);if(kind==="delivery"){setDrillFocus(null);items[kind].open();}else setDrillFocus(kind);}} aria-pressed={drillFocus===kind}><span className="node-icon"><NodeIcon kind={kind}/></span><span className="node-copy"><small>{items[kind].eyebrow}</small><b>{items[kind].label}</b></span><span className={`node-check ${items[kind].state}`}>{stateMark[items[kind].state]}</span></button><span className="branch-status"><i/>{items[kind].stateLabel}</span>{kind!=="delivery"&&<div className="feature-branch"><svg className="child-lines" viewBox="0 0 480 82" preserveAspectRatio="none" aria-hidden="true"><path d="M240 0C240 34 80 25 80 82"/><path d="M240 0V82"/><path d="M240 0C240 34 400 25 400 82"/></svg>{items[kind].features.map(feature=><button type="button" className={`leaf-${feature.state}`} key={feature.label} aria-label={`${feature.label}: ${stateText[feature.state]}`} onClick={()=>{setFocus(kind);openFeature(kind,feature.label);}}><span>{feature.label}</span><i>{stateMark[feature.state]}</i></button>)}</div>}</section>)}</div>
+        </div>
+      </div>
+      <div className="live-avatar">{agentVisual}</div>
+      <div className="live-speech"><span className="speech-mark">✦</span><p>{agentReply||(loading?"I’m reading customer, order, and fulfillment signals now.":selected.state==="clear"?`${selected.label} is clear. I’ll keep monitoring.`:selected.state==="blocked"?`${selected.label} needs setup before I can continue.`:selected.state==="attention"?`I found a customer risk in ${selected.label.toLowerCase()} and prepared the next step for review.`:`I found an opportunity in ${selected.label.toLowerCase()}.`)}</p></div>
     </div>
-    <section className="manager-workflows">
-      <div className="manager-section-head"><div><span>Responsibilities</span><h3>Customer programs</h3></div><small>Shopify-derived signals</small></div>
-      <article className="workflow-card">
-        <div className="workflow-icon">01</div><div><h4>Customer support</h4><p>Investigate fulfillment risks, confirm the next action, then prepare a fact-based reply.</p></div><span className={`workflow-state ${overdue.length ? "setup" : "ready"}`}>{!ops ? "Unavailable" : overdue.length ? `${overdue.length} need attention` : "No urgent risks"}</span>
-        <div className="workflow-actions"><button type="button" className="link" onClick={onOpenSupport}>Open support queue</button><button type="button" onClick={onOpenSupport}>Investigate &amp; notify</button></div>
-      </article>
-      <article className="workflow-card">
-        <div className="workflow-icon">02</div><div><h4>Review generation</h4><p>Select successfully fulfilled orders and prepare personalized, honest review requests.</p></div><span className="workflow-state ready">{retention ? `${reviewAudience} eligible` : "Unavailable"}</span>
-        <div className="workflow-actions"><button type="button" className="link" onClick={onOpenReviews}>Open reviews & retention</button><button type="button" disabled={!retention} onClick={() => onAsk("Analyze my eligible fulfilled-order review audience using only the verified products in the retention snapshot. Recommend a respectful review-request approach. Nothing should be sent.")}>Ask manager</button></div>
-      </article>
-      <article className="workflow-card">
-        <div className="workflow-icon">03</div><div><h4>Customer retention</h4><p>Identify valuable customers going quiet and recommend the right next action.</p></div><span className="workflow-state ready">{retention ? `${atRisk} at risk` : "Unavailable"}</span>
-        <div className="workflow-actions"><button type="button" className="link" onClick={onOpenRetention}>Open retention queue</button><button type="button" onClick={() => onAsk("Analyze my at-risk customers and recommend a retention action. Keep it customer-success focused and do not send anything.")}>Ask manager</button></div>
-      </article>
-    </section>
-    <p className="manager-safety">Customer support emails use your verified sender and require approval of the exact message. Evolution rechecks Shopify before sending and blocks duplicate notifications.</p>
   </div>;
 }

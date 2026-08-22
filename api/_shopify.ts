@@ -12,7 +12,6 @@
  * asks for read scopes — Evolution can look, not touch.
  */
 import { resolveUser, type AuditEnv } from "./_audit";
-import { migratePolarToShopify, type PolarMigrateEnv } from "./_polarMigrate";
 import { log } from "./_log";
 
 export const SHOPIFY_API_VERSION = "2026-04";
@@ -162,7 +161,6 @@ export async function runShopifyAuthStart(
 export async function runShopifyCallback(
   requestUrl: URL,
   env: ShopifyEnv,
-  polarEnv?: PolarMigrateEnv,
 ): Promise<{ redirect: string }> {
   const fail = (reason: string) => {
     log("warn", "shopify-callback", "oauth_callback_failed", {
@@ -235,10 +233,6 @@ export async function runShopifyCallback(
     refresh_token_expires_at: refreshExpiresAt,
   });
   if (!saved) return fail("save");
-
-  // Connected accounts bill through Shopify App Pricing from here on — wind
-  // down any Polar subscription at period end (they keep what they paid for).
-  if (polarEnv) await migratePolarToShopify(polarEnv, userId);
 
   return { redirect: "/app?shopify=connected" };
 }

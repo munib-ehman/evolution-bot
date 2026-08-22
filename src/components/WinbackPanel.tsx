@@ -1,110 +1,33 @@
-import { useEffect, useMemo, useState } from "react";
-import { formatMoney, generateTemplates, getRetentionCustomers, loadTemplates, saveTemplates, type LapsedCustomer, type RetentionData, type RetentionTemplates, type RetentionTouch } from "../lib/retention";
+import { useEffect, useState } from "react";
+import { formatMoney, getRetentionCustomers, type LapsedCustomer, type RetentionData } from "../lib/retention";
+import { getWinbackCampaignHistory, winbackCampaignAction, type WinbackCampaignRecord } from "../lib/winbackCampaigns";
+import { getReviewCampaignHistory, reviewCampaignAction, type ReviewCampaignRecord } from "../lib/reviewCampaigns";
 
-type Segment = "best" | "vip" | "repeat" | "recent" | "all";
-type Offer = "none" | "10% off" | "15% off" | "free shipping";
-const SEGMENTS: Record<Segment, [string, string]> = {
-  best: ["Recommended", "Higher-value repeat customers most worth winning back."],
-  vip: ["VIP customers", "Top 25% by lifetime spend."],
-  repeat: ["Repeat buyers", "Customers with two or more previous orders."],
-  recent: ["Recently lapsed", "Last purchase was 60–120 days ago."],
-  all: ["All eligible", "Every contactable customer inactive for 60–365 days."],
-};
-const daysSince = (value: string) => Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 86_400_000));
-function selectAudience(customers: LapsedCustomer[], segment: Segment) {
-  if (segment === "all") return customers;
-  if (segment === "repeat") return customers.filter((c) => c.ordersCount >= 2);
-  if (segment === "recent") return customers.filter((c) => daysSince(c.lastOrderAt) <= 120);
-  const ranked = [...customers].sort((a, b) => b.totalSpent - a.totalSpent);
-  if (segment === "vip") return ranked.slice(0, Math.max(1, Math.ceil(ranked.length * .25)));
-  const repeat = ranked.filter((c) => c.ordersCount >= 2);
-  return (repeat.length ? repeat : ranked).slice(0, Math.max(1, Math.ceil(customers.length * .4)));
-}
+const daysSince=(value:string)=>Math.max(0,Math.floor((Date.now()-Date.parse(value))/86_400_000));
+export type RetentionSection="winback"|"reviews"|"lapse"|"review-eligibility"|"review-results"|"winback-results";
 
-export function WinbackPanel({ open, onClose, onBuild }: { open: boolean; onClose: () => void; onBuild: (prompt: string) => void }) {
-  const [data, setData] = useState<RetentionData | null>(null);
-  const [templates, setTemplates] = useState<RetentionTemplates | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [drafting, setDrafting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [segment, setSegment] = useState<Segment>("best");
-  const [offer, setOffer] = useState<Offer>("none");
-  const [expanded, setExpanded] = useState<string | null>(null);
-
-  const loadAudience = () => {
-    setLoading(true); setError(null);
-    void Promise.allSettled([getRetentionCustomers(), loadTemplates()]).then(([audience, saved]) => {
-      if (audience.status === "fulfilled") setData(audience.value);
-      else setError("I couldn’t load the win-back audience. Check the Shopify connection and retry.");
-      if (saved.status === "fulfilled" && saved.value) setTemplates(saved.value);
-      setLoading(false);
-    });
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    loadAudience();
-    // Opening the drawer is the refresh boundary; manual retries use the button below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  const audience = useMemo(() => selectAudience(data?.lapsed ?? [], segment), [data, segment]);
-  const spend = audience.reduce((sum, customer) => sum + customer.totalSpent, 0);
-  const average = audience.length ? spend / audience.length : 0;
-  const generate = async () => {
-    setDrafting(true); setError(null);
-    try {
-      const generated = await generateTemplates(`${SEGMENTS[segment][0]} audience. ${offer === "none" ? "No discount; lead with relevance and loyalty." : `Use a ${offer} incentive.`}`);
-      const next = { ...generated, reviewLink: templates?.reviewLink ?? "" };
-      setTemplates(next); await saveTemplates(next);
-    } catch { setError("I couldn’t generate the campaign copy. Try again."); }
-    finally { setDrafting(false); }
-  };
-  const editTouch = (index: number, patch: Partial<RetentionTouch>) => {
-    if (!templates) return;
-    const next = { ...templates, winback: templates.winback.map((touch, i) => i === index ? { ...touch, ...patch } : touch) };
-    setTemplates(next); void saveTemplates(next);
-  };
-  const build = () => {
-    onBuild(`Create a win-back campaign for the ${SEGMENTS[segment][0].toLowerCase()} segment ${offer === "none" ? "without a discount" : `with ${offer}`}. The selected audience is ${audience.length} customers with ${formatMoney(spend, data?.currency ?? null)} in lifetime spend. Use the saved two-email copy and show the approval card. Nothing should send without approval.`);
-    onClose();
-  };
-
-  return <aside className={`tools-panel recovery-panel winback-panel card ${open ? "open" : ""}`} aria-hidden={!open} aria-label="Win-back campaign">
-    <header className="tools-header"><div><span className="manager-kicker">Marketing Manager</span><h2>Win-back campaign</h2></div><button type="button" className="link" onClick={onClose}>close</button></header>
-    <p className="winback-intro">Bring valuable past customers back with a focused audience, a sensible offer, and two approval-gated emails.</p>
-    {loading && <div className="winback-loading">Analyzing customer purchase history…</div>}
-    {error && <div className="winback-error"><p className="overlay-error">{error}</p><button type="button" onClick={loadAudience}>Retry Shopify data</button></div>}
-    {data && !loading && <>
-      <section className="winback-summary">
-        <div><span>Selected audience</span><strong>{audience.length}</strong><small>of {data.lapsed.length} eligible</small></div>
-        <div><span>Lifetime spend</span><strong>{formatMoney(spend, data.currency)}</strong><small>{formatMoney(average, data.currency)} average</small></div>
-        <div><span>Potential return</span><strong>{formatMoney(average * audience.length * .05, data.currency)}–{formatMoney(average * audience.length * .12, data.currency)}</strong><small>5–12% planning range</small></div>
-      </section>
-      <section className="winback-section">
-        <SectionHead step="Step 1" title="Choose the audience" note="Evolution recommends a focused segment" />
-        <div className="winback-segments">{(Object.keys(SEGMENTS) as Segment[]).map((key) => <button type="button" className={segment === key ? "selected" : ""} onClick={() => setSegment(key)} key={key}><strong>{SEGMENTS[key][0]}</strong><span>{SEGMENTS[key][1]}</span></button>)}</div>
-      </section>
-      <section className="winback-section">
-        <SectionHead step="Step 2" title="Choose the reason to return" note="Start without a discount when loyalty is enough" />
-        <div className="winback-offers">{(["none", "10% off", "15% off", "free shipping"] as Offer[]).map((value) => <label key={value}><input type="radio" name="offer" checked={offer === value} onChange={() => setOffer(value)} /><span><strong>{value === "none" ? "No discount" : value}</strong><small>{value === "none" ? "Recommended first" : value === "10% off" ? "Light incentive" : value === "15% off" ? "VIP recovery" : "Protects product value"}</small></span></label>)}</div>
-      </section>
-      <section className="winback-section">
-        <div className="winback-section-head"><div><span>Step 3</span><h3>Review the two-email sequence</h3></div><button type="button" className="link" disabled={drafting} onClick={() => void generate()}>{drafting ? "Writing…" : templates?.winback.length === 2 ? "Rewrite for this plan" : "Generate emails"}</button></div>
-        {!templates?.winback.length && <p className="recovery-muted">Generate copy tailored to the audience and offer above.</p>}
-        {templates?.winback.map((touch, index) => <div className="recovery-touch" key={index}><span className="recovery-touch-when">Email {index + 1} · {index === 0 ? "after approval" : "10 days later if still eligible"}</span><input value={touch.subject} aria-label={`Win-back email ${index + 1} subject`} onChange={(e) => editTouch(index, { subject: e.target.value })} /><textarea rows={4} value={touch.body} aria-label={`Win-back email ${index + 1} body`} onChange={(e) => editTouch(index, { body: e.target.value })} /></div>)}
-      </section>
-      <section className="winback-section">
-        <SectionHead step="Audience preview" title="Who will receive it" note="Rechecked before every send" />
-        <div className="winback-audience-list">{audience.slice(0, 12).map((customer) => <CustomerRow customer={customer} currency={data.currency} open={expanded === customer.id} onToggle={() => setExpanded(expanded === customer.id ? null : customer.id)} key={customer.id} />)}</div>
-        {audience.length > 12 && <p className="recovery-muted">And {audience.length - 12} more customers in this segment.</p>}
-      </section>
-      <footer className="winback-footer"><div><strong>{audience.length} customers · two emails</strong><span>Nothing sends until you approve the campaign card.</span></div><button type="button" className="primary" disabled={!audience.length || templates?.winback.length !== 2} onClick={build}>Create approval draft</button></footer>
-    </>}
+export function WinbackPanel({open,section,onClose}: {open:boolean;section:RetentionSection;onClose:()=>void;onBuild:(prompt:string)=>void}){
+  const [data,setData]=useState<RetentionData|null>(null),[winbacks,setWinbacks]=useState<WinbackCampaignRecord[]>([]),[reviews,setReviews]=useState<ReviewCampaignRecord[]>([]);
+  const [loading,setLoading]=useState(false),[busy,setBusy]=useState<string|null>(null),[error,setError]=useState<string|null>(null),[expanded,setExpanded]=useState<string|null>(null);
+  const load=()=>{setLoading(true);setError(null);void Promise.allSettled([getRetentionCustomers(),getWinbackCampaignHistory(),getReviewCampaignHistory()]).then(([audience,w,r])=>{if(audience.status==="fulfilled")setData(audience.value);else setError("Evolution could not refresh Shopify customer signals.");if(w.status==="fulfilled")setWinbacks(w.value);if(r.status==="fulfilled")setReviews(r.value);}).finally(()=>setLoading(false));};
+  useEffect(()=>{if(open)load();},[open]);
+  const decide=async(kind:"winback"|"review",id:string,action:"approve"|"reject")=>{setBusy(id);setError(null);try{if(kind==="winback")await winbackCampaignAction(id,action);else await reviewCampaignAction(id,action);load();}catch(reason){setError(reason instanceof Error?reason.message:"Activity decision failed.");}finally{setBusy(null);}};
+  const titles:Record<RetentionSection,string>={winback:"Care planning",reviews:"Review requests",lapse:"Lapse detection","review-eligibility":"Buyer eligibility","review-results":"Review outcomes","winback-results":"Retention outcomes"};
+  const winback=winbacks.find(item=>item.status==="proposed"||item.status==="scheduled")??winbacks[0],review=reviews.find(item=>item.status==="proposed"||item.status==="scheduled")??reviews[0];
+  return <aside className={`tools-panel recovery-panel winback-panel card ${open?"open":""}`} aria-hidden={!open} aria-label="Customer retention">
+    <header className="tools-header"><div><span className="manager-kicker">Customer retention</span><h2>{titles[section]}</h2></div><button type="button" className="link" onClick={onClose}>close</button></header>
+    <p className="winback-intro">Evolution continuously checks Shopify, chooses the safest worthwhile audience, prepares the activity, and brings you only the approval decision.</p>
+    {loading&&<div className="winback-loading">Refreshing live customer signals…</div>}{error&&<div className="winback-error"><p className="overlay-error">{error}</p><button onClick={load}>Retry</button></div>}
+    {!loading&&section==="winback"&&<AgentActivity title="Win-back campaign" empty="No win-back opportunity needs approval right now." status={winback?.status} count={winback?.customer_count} detail={winback?`${formatMoney(winback.lifetime_value,winback.currency)} historical value · ${winback.segment} audience`:undefined} touches={winback?.touches} busy={busy===winback?.id} onApprove={winback?.status==="proposed"?()=>void decide("winback",winback.id,"approve"):undefined} onReject={winback?.status==="proposed"?()=>void decide("winback",winback.id,"reject"):undefined}/>}
+    {!loading&&section==="reviews"&&<AgentActivity title="Review request activity" empty="No recent consented buyers need a review request right now." status={review?.status} count={review?.buyer_count} detail={review?`Review destination: ${review.review_link}`:undefined} touches={review?[review.touch]:undefined} busy={busy===review?.id} onApprove={review?.status==="proposed"?()=>void decide("review",review.id,"approve"):undefined} onReject={review?.status==="proposed"?()=>void decide("review",review.id,"reject"):undefined}/>}
+    {!loading&&section==="review-eligibility"&&data&&<EvidenceView count={data.buyers.length} rows={data.buyers.slice(0,20).map(buyer=>({id:buyer.orderId,title:buyer.firstName||"Buyer",detail:`${buyer.items.map(item=>item.title).join(", ")||"Verified order"} · fulfilled ${daysSince(buyer.fulfilledAt)} days ago`,value:formatMoney(buyer.totalPrice,data.currency)}))}/>}
+    {!loading&&section==="review-results"&&<OutcomeView title="Review request outcomes" status={review?.status} deliveries={review?.review_deliveries??[]} empty="No review activity has run yet. Evolution will report verified delivery and engagement here after approval."/>}
+    {!loading&&section==="winback-results"&&<OutcomeView title="Retention activity outcomes" status={winback?.status} deliveries={winback?.winback_deliveries??[]} empty="No retention activity has run yet. Evolution will measure sends, stops, failures, and engagement here."/>}
+    {!loading&&section==="lapse"&&data&&<><section className="winback-summary"><div><span>Detected automatically</span><strong>{data.lapsed.length}</strong><small>{data.lapsedWindow.minDays}–{data.lapsedWindow.maxDays} days inactive</small></div><div><span>Historical value</span><strong>{formatMoney(data.lapsed.reduce((sum,c)=>sum+c.totalSpent,0),data.currency)}</strong><small>across eligible customers</small></div></section><section className="winback-section"><div className="winback-section-head"><div><span>Live evidence</span><h3>Customers crossing the threshold</h3></div><small>Used by Evolution to decide whether a campaign is worthwhile</small></div><div className="winback-audience-list">{data.lapsed.slice(0,20).map(customer=><CustomerRow customer={customer} currency={data.currency} open={expanded===customer.id} onToggle={()=>setExpanded(expanded===customer.id?null:customer.id)} key={customer.id}/>)}</div>{!data.lapsed.length&&<p className="recovery-muted">No customer currently qualifies.</p>}</section></>}
   </aside>;
 }
 
-function SectionHead({ step, title, note }: { step: string; title: string; note: string }) { return <div className="winback-section-head"><div><span>{step}</span><h3>{title}</h3></div><small>{note}</small></div>; }
-function CustomerRow({ customer, currency, open, onToggle }: { customer: LapsedCustomer; currency: string | null; open: boolean; onToggle: () => void }) {
-  return <div className="winback-customer"><button type="button" onClick={onToggle}><span><strong>{customer.firstName || "Customer"}</strong><small>{customer.ordersCount} order{customer.ordersCount === 1 ? "" : "s"} · last purchase {daysSince(customer.lastOrderAt)} days ago</small></span><span><strong>{formatMoney(customer.totalSpent, currency)}</strong><small>lifetime</small></span></button>{open && <div><span>Previously bought</span><p>{customer.lastItems.map((item) => item.title).join(", ") || "Order details unavailable"}</p></div>}</div>;
-}
+function EvidenceView({count,rows}:{count:number;rows:{id:string;title:string;detail:string;value:string}[]}){return <section className="winback-section"><div className="winback-section-head"><div><span>Live Shopify evidence</span><h3>Verified fulfilled buyers</h3></div><strong>{count} eligible</strong></div><p className="winback-intro">Evolution uses only verified fulfilled purchases in the configured window and rechecks consent before delivery.</p>{!rows.length&&<p className="recovery-muted">No fulfilled buyer currently qualifies for a review request.</p>}<div className="winback-audience-list">{rows.map(row=><div className="winback-customer" key={row.id}><div className="support-case-head"><span><strong>{row.title}</strong><small>{row.detail}</small></span><span><strong>{row.value}</strong><small>verified order</small></span></div></div>)}</div></section>}
+function OutcomeView({title,status,deliveries,empty}:{title:string;status?:string;deliveries:{status:string;delivery_status?:string|null;error?:string|null}[];empty:string}){if(!status)return <section className="recovery-campaign-workspace empty"><span className="manager-kicker">Agent measuring</span><h3>{title}</h3><p>{empty}</p></section>;const count=(value:string)=>deliveries.filter(item=>item.status===value||item.delivery_status===value).length;return <section className="recovery-campaign-workspace"><div className="recovery-campaign-head"><div><span className="manager-kicker">Measured activity</span><h3>{title}</h3><p>Backend delivery truth, not estimated performance.</p></div><span className={`campaign-status ${status}`}>{status}</span></div><div className="campaign-stats"><article><strong>{count("sent")}</strong><span>Sent</span></article><article><strong>{count("delivered")}</strong><span>Delivered</span></article><article><strong>{count("opened")+count("clicked")}</strong><span>Engaged</span></article><article><strong>{count("failed")+count("cancelled")}</strong><span>Attention</span></article></div>{deliveries.some(item=>item.error)&&<details className="decision-details"><summary>Delivery notes</summary>{deliveries.filter(item=>item.error).slice(0,8).map((item,index)=><p key={index}>{item.error}</p>)}</details>}</section>}
+function AgentActivity({title,empty,status,count,detail,touches,busy,onApprove,onReject}:{title:string;empty:string;status?:string;count?:number;detail?:string;touches?:{delayLabel:string;subject:string;body:string}[];busy:boolean;onApprove?:()=>void;onReject?:()=>void}){if(!status)return <section className="recovery-campaign-workspace empty"><span className="manager-kicker">Agent monitoring</span><h3>{empty}</h3><p>No creation work is required from you.</p></section>;return <section className="recovery-campaign-workspace"><div className="recovery-campaign-head"><div><span className="manager-kicker">{status==="proposed"?"Approval requested":"Agent activity"}</span><h3>{title}</h3><p>{count??0} eligible recipient{count===1?"":"s"}{detail?` · ${detail}`:""}</p></div><span className={`campaign-status ${status}`}>{status}</span></div>{status==="proposed"&&<p className="action-warning">Evolution selected the audience, validated consent, and prepared the complete activity. Nothing sends before approval.</p>}<div className="campaign-timeline">{touches?.map((touch,index)=><div className="campaign-delivery queued" key={index}><i/><span><strong>{touch.delayLabel}</strong><small>{touch.subject}</small></span><em>{status==="proposed"?"prepared":status}</em></div>)}</div>{status==="proposed"&&<div className="delivery-actions"><button className="primary" disabled={busy} onClick={onApprove}>Approve activity</button><button className="link" disabled={busy} onClick={onReject}>Reject</button></div>}</section>}
+function CustomerRow({customer,currency,open,onToggle}:{customer:LapsedCustomer;currency:string|null;open:boolean;onToggle:()=>void}){return <div className="winback-customer"><button type="button" onClick={onToggle}><span><strong>{customer.firstName||"Customer"}</strong><small>{customer.ordersCount} order{customer.ordersCount===1?"":"s"} · last purchase {daysSince(customer.lastOrderAt)} days ago</small></span><span><strong>{formatMoney(customer.totalSpent,currency)}</strong><small>lifetime</small></span></button>{open&&<div><span>Previously bought</span><p>{customer.lastItems.map(item=>item.title).join(", ")||"Order details unavailable"}</p></div>}</div>}

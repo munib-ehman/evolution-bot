@@ -42,6 +42,9 @@ import { runEmailDeliveryCheck, runEmailDeliveryGet, runEmailDeliverySave, runEm
 import { processRecoveryDeliveries, runRecoveryCampaignAction, runRecoveryUnsubscribe, runResendWebhook, type RecoveryCampaignEnv } from "./api/_recoveryCampaigns";
 import { processWinbackDeliveries, runWinbackCampaignAction, runWinbackUnsubscribe } from "./api/_winbackCampaigns";
 import { processBroadcastDeliveries, runBroadcastAction, runBroadcastAudience, runBroadcastUnsubscribe } from "./api/_broadcastCampaigns";
+import { processReviewDeliveries, runReviewCampaignAction, runReviewUnsubscribe } from "./api/_reviewCampaigns";
+import { runMarketingProfile } from "./api/_marketingProfile";
+import { runMarketingStatus } from "./api/_marketingStatus";
 import { runSupportCasesAction, runSupportCasesGet } from "./api/_supportCases";
 import {
   runActionPropose,
@@ -266,7 +269,7 @@ export function devApi(): Plugin {
       server.middlewares.use("/api/shopify-callback", (req, res) => {
         void (async () => {
           const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost:5173"}`);
-          const { redirect } = await runShopifyCallback(url, auditEnv, polarEnv);
+          const { redirect } = await runShopifyCallback(url, auditEnv);
           res.statusCode = 302;
           res.setHeader("Location", redirect);
           res.end();
@@ -577,6 +580,12 @@ export function devApi(): Plugin {
       server.middlewares.use("/api/broadcast-campaign", (req, res) => { void (async()=>{if(req.method!=="POST")return send(res,405,"Method not allowed");const auth=typeof req.headers.authorization==="string"?req.headers.authorization:null;return pipeResponse(res,await runBroadcastAction(JSON.parse(await readBody(req)||"{}")as Record<string,unknown>,auth,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err))); });
       server.middlewares.use("/api/broadcast-deliver", (req, res) => { void (async()=>{const auth=typeof req.headers.authorization==="string"?req.headers.authorization:"";if(!recoveryCampaignEnv.cronSecret||auth!==`Bearer ${recoveryCampaignEnv.cronSecret}`)return send(res,401,"Unauthorized");res.setHeader("Content-Type","application/json");res.end(JSON.stringify(await processBroadcastDeliveries(recoveryCampaignEnv)));})().catch(err=>send(res,500,String(err))); });
       server.middlewares.use("/api/broadcast-unsubscribe", (req, res) => { void (async()=>{const request=new Request(`http://${req.headers.host??"127.0.0.1:5173"}${req.url??"/api/broadcast-unsubscribe"}`,{headers:req.headers as Record<string,string>});return pipeResponse(res,await runBroadcastUnsubscribe(request,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err))); });
+
+      server.middlewares.use("/api/review-campaign", (req,res)=>{void(async()=>{if(req.method!=="POST")return send(res,405,"Method not allowed");const auth=typeof req.headers.authorization==="string"?req.headers.authorization:null;return pipeResponse(res,await runReviewCampaignAction(JSON.parse(await readBody(req)||"{}")as Record<string,unknown>,auth,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err)));});
+      server.middlewares.use("/api/review-deliver",(req,res)=>{void(async()=>{const auth=typeof req.headers.authorization==="string"?req.headers.authorization:"";if(!recoveryCampaignEnv.cronSecret||auth!==`Bearer ${recoveryCampaignEnv.cronSecret}`)return send(res,401,"Unauthorized");res.setHeader("Content-Type","application/json");res.end(JSON.stringify(await processReviewDeliveries(recoveryCampaignEnv)));})().catch(err=>send(res,500,String(err)));});
+      server.middlewares.use("/api/review-unsubscribe",(req,res)=>{void(async()=>{const request=new Request(`http://${req.headers.host??"127.0.0.1:5173"}${req.url??"/api/review-unsubscribe"}`,{headers:req.headers as Record<string,string>});return pipeResponse(res,await runReviewUnsubscribe(request,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err)));});
+      server.middlewares.use("/api/marketing-profile",(req,res)=>{void(async()=>{const origin=`http://${req.headers.host??"127.0.0.1:5173"}`,request=new Request(`${origin}${req.url??"/api/marketing-profile"}`,{method:req.method,headers:req.headers as Record<string,string>,body:req.method==="POST"?await readBody(req):undefined});return pipeResponse(res,await runMarketingProfile(request,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err)));});
+      server.middlewares.use("/api/marketing-decisions",(req,res)=>{void(async()=>{const request=new Request(`http://${req.headers.host??"127.0.0.1:5173"}${req.url??"/api/marketing-decisions"}`,{method:req.method,headers:req.headers as Record<string,string>});return pipeResponse(res,await runMarketingStatus(request,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err)));});
 
       server.middlewares.use("/api/recovery-deliver", (req, res) => {
         void (async () => {

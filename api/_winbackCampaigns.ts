@@ -4,6 +4,9 @@ import { hasRole, roleRequired } from "./_plan";
 import { getConnection } from "./_shopify";
 import { fetchLapsedCustomers } from "./_shopifyData";
 import type { RecoveryCampaignEnv } from "./_recoveryCampaigns";
+import { DEFAULT_TEMPLATES } from "./_retention";
+import { finalizeContact, reserveContact, suppressContact } from "./_marketingSafety";
+import { canonicalActivityId, recordCanonicalProposal, updateCanonicalActivityStatus, validateCanonicalApproval, writeIntelligentCopy } from "./_marketingIntelligence";
 
 type Touch = { delayLabel: string; subject: string; body: string };
 type Segment = "best" | "vip" | "repeat" | "recent" | "all";
@@ -51,7 +54,7 @@ function render(touch: Touch, customer: { firstName: string; lastItems: { title:
 export async function runWinbackCampaignAction(body: Record<string, unknown>, authHeader: string | null, env: RecoveryCampaignEnv): Promise<Response> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return json({ error: "Sign in first." }, 401);
-  if (!(await hasRole(env, user.id, "marketing", user.email))) { const denied=roleRequired("marketing"); return json(denied.body, denied.status); }
+  if (!(await hasRole(env, user.id, "marketing", user.email)) && !(await hasRole(env, user.id, "customer-success", user.email))) { const denied=roleRequired("customer-success"); return json(denied.body, denied.status); }
   const action = typeof body.action === "string" ? body.action : "";
   if (action === "history") {
     const res = await fetch(`${env.supabaseUrl}/rest/v1/winback_campaigns?user_id=eq.${user.id}&select=*,winback_deliveries(id,touch_index,due_at,status,delivery_status,error,sent_at,delivered_at,opened_at,clicked_at,bounced_at,complained_at,unsubscribed_at,resend_email_id)&order=created_at.desc&winback_deliveries.order=due_at.asc&limit=20`, { headers: headers(env) });
@@ -63,22 +66,25 @@ export async function runWinbackCampaignAction(body: Record<string, unknown>, au
   if (action === "reject" || action === "pause") {
     const status = action === "reject" ? "rejected" : "paused";
     await fetch(`${env.supabaseUrl}/rest/v1/winback_campaigns?id=eq.${id}`, { method: "PATCH", headers: headers(env), body: JSON.stringify({ status, updated_at: new Date().toISOString() }) });
+    await updateCanonicalActivityStatus(env,"winback_campaigns",id,status);
     if (action === "reject") await fetch(`${env.supabaseUrl}/rest/v1/winback_deliveries?campaign_id=eq.${id}&status=eq.queued`, { method: "PATCH", headers: headers(env), body: JSON.stringify({ status: "cancelled", updated_at: new Date().toISOString() }) });
     return json({ campaign: { ...campaign, status } });
   }
   if (action === "resume") {
     await fetch(`${env.supabaseUrl}/rest/v1/winback_campaigns?id=eq.${id}`, { method: "PATCH", headers: headers(env), body: JSON.stringify({ status: "scheduled", updated_at: new Date().toISOString() }) });
+    await updateCanonicalActivityStatus(env,"winback_campaigns",id,"scheduled");
     return json({ campaign: { ...campaign, status: "scheduled" } });
   }
   if (action !== "approve") return json({ error: "Unsupported campaign action." }, 400);
   if (campaign.status !== "proposed") return json({ error: `Campaign is already ${campaign.status}.` }, 409);
+  const validation=await validateCanonicalApproval(env,user.id,"winback_campaigns",id);if(!validation.allowed)return json({error:validation.error},409);
   const settings = await loadEmailDeliveryRow(env, user.id);
   if (!settings || settings.status !== "ready") return json({ error: "Complete email delivery setup and send a successful test first." }, 409);
   const conn = await getConnection(env, user.id);
   if (!conn) return json({ error: "Reconnect Shopify first." }, 409);
   const live = await fetchLapsedCustomers(conn, { minDays: 60, maxDays: 365 });
   if (!Array.isArray(live)) return json({ error: "Could not refresh lapsed customers from Shopify." }, 502);
-  const customers = audienceForSegment(live.filter((customer) => customer.email.includes("@")), campaign.segment || "all");
+  const customers = audienceForSegment(live.filter((customer) => customer.email.includes("@") && customer.marketingState === "SUBSCRIBED"), campaign.segment || "all");
   if (!customers.length) return json({ error: "There are no eligible lapsed customers to schedule." }, 409);
   const now = Date.now();
   const deliveries = customers.flatMap((customer) => [0, 10 * 86_400_000].map((offset, touch_index) => ({ campaign_id: id, user_id: user.id, customer_id: customer.id, touch_index, due_at: new Date(now + offset).toISOString(), status: "queued" })));
@@ -86,6 +92,7 @@ export async function runWinbackCampaignAction(body: Record<string, unknown>, au
   if (!inserted.ok) return json({ error: "Could not create the win-back schedule. Run the win-back migration." }, 502);
   const approvedAt = new Date().toISOString();
   await fetch(`${env.supabaseUrl}/rest/v1/winback_campaigns?id=eq.${id}`, { method: "PATCH", headers: headers(env), body: JSON.stringify({ status: "scheduled", approved_at: approvedAt, customer_count: customers.length, updated_at: approvedAt }) });
+  await updateCanonicalActivityStatus(env,"winback_campaigns",id,"scheduled",{approved_at:approvedAt});
   const result = await processWinbackDeliveries(env, user.id, 10);
   return json({ campaign: { ...campaign, status: "scheduled", approved_at: approvedAt }, scheduled: deliveries.length, sentNow: result.sent, skipped: result.skipped, failed: result.failed, testMode: Boolean(env.recoveryTestMode) });
 }
@@ -104,7 +111,7 @@ export async function processWinbackDeliveries(env: RecoveryCampaignEnv, userFil
     const conn = await getConnection(env, delivery.user_id);
     if (!settings || settings.status !== "ready" || !conn) { await mark(env, delivery.id, { status: "failed", error: "Delivery identity or Shopify connection is unavailable." }); failed++; continue; }
     const live = await fetchLapsedCustomers(conn, { minDays: 60, maxDays: 365 });
-    const eligible = Array.isArray(live) ? audienceForSegment(live.filter((item) => item.email.includes("@")), campaign.segment || "all") : [];
+    const eligible = Array.isArray(live) ? audienceForSegment(live.filter((item) => item.email.includes("@") && item.marketingState === "SUBSCRIBED"), campaign.segment || "all") : [];
     const customer = eligible.find((item) => item.id === delivery.customer_id) ?? null;
     if (!customer) { await mark(env, delivery.id, { status: "skipped", error: "Customer purchased again, unsubscribed, or is no longer eligible." }); skipped++; continue; }
     const touch = campaign.touches[delivery.touch_index];
@@ -113,20 +120,55 @@ export async function processWinbackDeliveries(env: RecoveryCampaignEnv, userFil
     const storeName = conn.shop_domain.replace(/\.myshopify\.com$/i, "");
     const rendered = render(touch, customer, storeName, `https://${conn.shop_domain}`);
     const to = env.recoveryTestMode && env.recoveryTestRecipient ? env.recoveryTestRecipient : customer.email;
+    const activityId=await canonicalActivityId(env,"winback_campaigns",delivery.campaign_id);
+    const reservation = await reserveContact(env, { userId: delivery.user_id, email: customer.email, kind: "winback",activityId });
+    if (!reservation.allowed) {
+      if (reservation.reason === "quiet_hours" || reservation.reason === "safety_check_failed") await mark(env,delivery.id,{status:"queued",due_at:new Date(Date.now()+60*60_000).toISOString(),error:`Deferred by contact policy: ${reservation.reason}.`});
+      else await mark(env,delivery.id,{status:"skipped",error:`Stopped by contact policy: ${reservation.reason}.`});
+      skipped++;continue;
+    }
     const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
     const counts = await Promise.all(["recovery_deliveries", "winback_deliveries"].map((table) => fetch(`${env.supabaseUrl}/rest/v1/${table}?user_id=eq.${delivery.user_id}&status=eq.sent&sent_at=gte.${encodeURIComponent(monthStart.toISOString())}&select=id`, { method: "HEAD", headers: { ...headers(env), Prefer: "count=exact" } })));
     const used = counts.reduce((sum, count) => sum + Number(count.headers.get("content-range")?.split("/")[1] ?? 0), 0);
-    if (used >= (env.monthlyEmailLimit ?? 400)) { await mark(env, delivery.id, { status: "failed", error: "Monthly email limit reached." }); failed++; continue; }
-    if (!env.encryptionKey) { await mark(env, delivery.id, { status: "failed", error: "Unsubscribe signing is not configured." }); failed++; continue; }
+    if (used >= (env.monthlyEmailLimit ?? 400)) { await finalizeContact(env,reservation.reservationId,"skipped",{reason:"monthly_limit"});await mark(env, delivery.id, { status: "failed", error: "Monthly email limit reached." }); failed++; continue; }
+    if (!env.encryptionKey) { await finalizeContact(env,reservation.reservationId,"skipped",{reason:"unsubscribe_signing_unavailable"});await mark(env, delivery.id, { status: "failed", error: "Unsubscribe signing is not configured." }); failed++; continue; }
     const sig = await signature(env.encryptionKey, delivery.id);
     const unsubscribe = `${env.publicOrigin ?? "https://www.runevolution.io"}/api/winback-unsubscribe?id=${encodeURIComponent(delivery.id)}&sig=${encodeURIComponent(sig)}`;
     const text = `${rendered.text}\n\nStop win-back emails: ${unsubscribe}`;
     const send = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "Idempotency-Key": `winback/${delivery.id}` }, body: JSON.stringify({ from: `${settings.sender_name} <${settings.sender_email}>`, to: [to], reply_to: settings.reply_to, subject: env.recoveryTestMode ? `[TEST for ${customer.email}] ${rendered.subject}` : rendered.subject, text, headers: { "List-Unsubscribe": `<${unsubscribe}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }) });
     const result = await send.json().catch(() => ({})) as { id?: string; message?: string };
-    if (send.ok && result.id) { await mark(env, delivery.id, { status: "sent", resend_email_id: result.id, sent_at: new Date().toISOString(), error: null }); sent++; }
-    else { await mark(env, delivery.id, { status: "failed", error: result.message ?? `Resend failed (${send.status}).` }); failed++; }
+    if (send.ok && result.id) { await mark(env, delivery.id, { status: "sent", resend_email_id: result.id, sent_at: new Date().toISOString(), error: null }); await finalizeContact(env,reservation.reservationId,"sent",{deliveryId:delivery.id}); sent++; }
+    else { await finalizeContact(env,reservation.reservationId,"skipped",{reason:"provider_failure"}); await mark(env, delivery.id, { status: "failed", error: result.message ?? `Resend failed (${send.status}).` }); failed++; }
+  }
+  const active = await fetch(`${env.supabaseUrl}/rest/v1/winback_campaigns?status=eq.scheduled${userFilter ? `&user_id=eq.${userFilter}` : ""}&select=id`, { headers: headers(env) });
+  if (active.ok) for (const item of await active.json() as { id: string }[]) {
+    const pending = await fetch(`${env.supabaseUrl}/rest/v1/winback_deliveries?campaign_id=eq.${item.id}&status=in.(queued,processing)&select=id&limit=1`, { headers: headers(env) });
+    if (pending.ok && (await pending.json() as unknown[]).length === 0) {const now=new Date().toISOString();await fetch(`${env.supabaseUrl}/rest/v1/winback_campaigns?id=eq.${item.id}`, { method: "PATCH", headers: headers(env), body: JSON.stringify({ status: "completed", completed_at:now, updated_at:now }) });await updateCanonicalActivityStatus(env,"winback_campaigns",item.id,"completed",{completed_at:now});}
   }
   return { processed: rows.length, sent, skipped, failed };
+}
+
+export async function detectWinbackOpportunities(env: RecoveryCampaignEnv, shops: { user_id: string }[]) {
+  let proposed = 0, skipped = 0, errors = 0;
+  for (const shop of shops) try {
+    const cooldown = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    const recent = await fetch(`${env.supabaseUrl}/rest/v1/winback_campaigns?user_id=eq.${shop.user_id}&created_at=gte.${encodeURIComponent(cooldown)}&select=id&limit=1`, { headers: headers(env) });
+    if (recent.ok && (await recent.json() as unknown[]).length) { skipped++; continue; }
+    const conn = await getConnection(env, shop.user_id); const live = conn ? await fetchLapsedCustomers(conn, { minDays: 60, maxDays: 365 }) : null;
+    if (!Array.isArray(live)) { errors++; continue; }
+    const contactable = live.filter(customer => customer.email.includes("@") && customer.marketingState === "SUBSCRIBED"); if (!contactable.length) { skipped++; continue; }
+    const repeat = contactable.filter(customer => customer.ordersCount >= 2);
+    const segment: Segment = repeat.length >= Math.max(2, Math.ceil(contactable.length * .2)) ? "best" : "all";
+    const audience = audienceForSegment(contactable, segment);
+    const savedRes = await fetch(`${env.supabaseUrl}/rest/v1/retention_sequences?user_id=eq.${shop.user_id}&select=templates&limit=1`, { headers: headers(env) });
+    const saved = savedRes.ok ? (await savedRes.json() as { templates?: { winback?: Touch[] } }[])[0]?.templates?.winback : null;
+    const lifetimeValue=audience.reduce((sum,customer)=>sum+customer.totalSpent,0),evidence={eligibleCustomers:audience.length,lifetimeValue,segment,inactiveDays:{min:60,max:365},repeatCustomers:repeat.length};
+    const generated=Array.isArray(saved)&&saved.length===2?{touches:saved}:await writeIntelligentCopy(env,{userId:shop.user_id,kind:"winback",store:conn!.shop_domain.replace(/\.myshopify\.com$/i,""),evidence,shape:'{"touches":[{"delayLabel":"string","subject":"string","body":"string with {{store_url}}"}]} exactly 2 touches',fallback:{touches:DEFAULT_TEMPLATES.winback}});
+    const touches=Array.isArray(generated.touches)&&generated.touches.length===2&&generated.touches.every(touch=>typeof touch.subject==="string"&&typeof touch.body==="string"&&touch.body.includes("{{store_url}}"))?generated.touches:DEFAULT_TEMPLATES.winback;
+    const result = await fetch(`${env.supabaseUrl}/rest/v1/winback_campaigns?select=id`, { method: "POST", headers: {...headers(env),Prefer:"return=representation"}, body: JSON.stringify({ user_id: shop.user_id, status: "proposed", touches, segment, customer_count: audience.length, lifetime_value:lifetimeValue, currency: null }) });
+    if (result.ok) {const id=(await result.json()as{id:string}[])[0]?.id;if(id)await recordCanonicalProposal(env,{userId:shop.user_id,kind:"winback",legacyTable:"winback_campaigns",legacyId:id,fingerprint:`winback:${segment}:${new Date().toISOString().slice(0,7)}`,title:"Customer win-back",audienceCount:audience.length,audienceValue:lifetimeValue,evidence,strategy:{segment,touches},confidence:.78});proposed++;} else errors++;
+  } catch { errors++; }
+  return { proposed, skipped, errors };
 }
 
 export async function runWinbackUnsubscribe(req: Request, env: RecoveryCampaignEnv) {
@@ -137,5 +179,7 @@ export async function runWinbackUnsubscribe(req: Request, env: RecoveryCampaignE
   if (!row) return new Response("This win-back sequence is already inactive.", { status: 200 });
   const now = new Date().toISOString();
   await fetch(`${env.supabaseUrl}/rest/v1/winback_deliveries?user_id=eq.${row.user_id}&customer_id=eq.${encodeURIComponent(row.customer_id)}&status=eq.queued`, { method: "PATCH", headers: headers(env), body: JSON.stringify({ status: "cancelled", delivery_status: "unsubscribed", unsubscribed_at: now, error: "Customer unsubscribed from win-back emails.", updated_at: now }) });
+  const conn=await getConnection(env,row.user_id),live=conn?await fetchLapsedCustomers(conn,{minDays:60,maxDays:365}):null,customer=Array.isArray(live)?live.find(item=>item.id===row.customer_id):null;
+  if(customer?.email)await suppressContact(env,row.user_id,customer.email,"unsubscribed","winback");
   return new Response("<!doctype html><meta name=viewport content='width=device-width'><title>Unsubscribed</title><body style='font-family:system-ui;max-width:560px;margin:80px auto;padding:24px'><h1>Win-back emails stopped</h1><p>You will not receive the remaining emails in this sequence.</p></body>", { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
 }

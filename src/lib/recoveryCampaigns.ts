@@ -20,3 +20,4 @@ export async function getRecoveryCampaignHistory(): Promise<RecoveryCampaignReco
   if (!res.ok) throw new Error(data.error ?? "Could not load recovery campaigns.");
   return data.campaigns ?? [];
 }
+export async function observeRecoveryOpportunities():Promise<void>{const token=await bearer();const res=await fetch("/api/recovery-campaign",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"observe"})});if(!res.ok){const data=await res.json().catch(()=>({}))as{error?:string};throw new Error(data.error??"Could not refresh recovery opportunities.");}}
