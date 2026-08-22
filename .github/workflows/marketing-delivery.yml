@@ -1,0 +1,29 @@
+name: Marketing email delivery
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: marketing-email-delivery
+  cancel-in-progress: false
+
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        endpoint: [recovery-deliver, winback-deliver, broadcast-deliver]
+    steps:
+      - name: Process due ${{ matrix.endpoint }} emails
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error \
+            --retry 2 \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "https://www.runevolution.io/api/${{ matrix.endpoint }}"

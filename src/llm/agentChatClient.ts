@@ -12,6 +12,10 @@
  */
 import { supabase } from "../lib/auth";
 import type { Message } from "../types";
+import type { ShopifyActionProposal } from "../lib/actions";
+import type { RecoveryCampaignProposal } from "../lib/recovery";
+import type { WinbackCampaignProposal } from "../lib/winbackCampaigns";
+import type { BroadcastCampaign } from "../lib/broadcastCampaigns";
 
 export class AgentChatError extends Error {
   constructor(
@@ -25,33 +29,55 @@ export class AgentChatError extends Error {
 }
 
 export interface AgentChatOptions {
+  manager?: "marketing" | "customer-success" | "seo" | "product" | "operations";
   signal?: AbortSignal;
   onProgress?: (label: string) => void;
   onToken?: (text: string) => void;
+  onAction?: (action: ShopifyActionProposal) => void;
+  onRecoveryProposal?: (proposal: RecoveryCampaignProposal) => void;
+  onWinbackProposal?: (proposal: WinbackCampaignProposal) => void;
+  onBroadcastProposal?: (proposal: BroadcastCampaign) => void;
+  onSupportCase?: (orderId: string) => void;
 }
 
 /** Server rebuilds the system prompt; send user/assistant turns only. */
-const HISTORY_TURNS = 12;
+const HISTORY_TURNS = 8;
+
+async function sessionToken(refresh = false): Promise<string | null> {
+  if (!supabase) return null;
+  const result = refresh
+    ? await supabase.auth.refreshSession()
+    : await supabase.auth.getSession();
+  if (result.error) return null;
+  return result.data.session?.access_token ?? null;
+}
+
+async function postAgentChat(
+  body: string,
+  signal: AbortSignal | undefined,
+  refresh = false,
+): Promise<Response> {
+  const token = await sessionToken(refresh);
+  if (!token) throw new AgentChatError(401, "Your session expired. Please sign in again.");
+  return fetch("/api/agent-chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body,
+    signal,
+  });
+}
 
 export async function runAgentChat(history: Message[], opts: AgentChatOptions = {}): Promise<string> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (supabase) {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
-  if (!headers.Authorization) throw new AgentChatError(401, "No session.");
-
   const messages = history
     .slice(-HISTORY_TURNS)
     .map((m) => ({ role: m.role, content: m.content }));
+  const body = JSON.stringify({ messages, manager: opts.manager });
 
-  const res = await fetch("/api/agent-chat", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ messages }),
-    signal: opts.signal,
-  });
+  // The workspace can remain open beyond the access-token lifetime. If the
+  // API rejects the cached token, refresh it and replay this same user turn
+  // once so their carefully entered answer is not lost.
+  let res = await postAgentChat(body, opts.signal);
+  if (res.status === 401) res = await postAgentChat(body, opts.signal, true);
 
   if (!res.ok) {
     let message = `Agent chat failed (${res.status}).`;
@@ -89,6 +115,11 @@ export async function runAgentChat(history: Message[], opts: AgentChatOptions = 
           progress?: string;
           error?: string;
           choices?: { delta?: { content?: string } }[];
+          action?: ShopifyActionProposal;
+          recoveryProposal?: RecoveryCampaignProposal;
+          winbackProposal?: WinbackCampaignProposal;
+          broadcastProposal?: BroadcastCampaign;
+          supportCase?: { orderId?: string };
         };
         try {
           json = JSON.parse(payload);
@@ -99,6 +130,11 @@ export async function runAgentChat(history: Message[], opts: AgentChatOptions = 
           throw new AgentChatError(500, json.error, reply.length > 0);
         }
         if (typeof json.progress === "string") opts.onProgress?.(json.progress);
+        if (json.action) opts.onAction?.(json.action);
+        if (json.recoveryProposal) opts.onRecoveryProposal?.(json.recoveryProposal);
+        if (json.winbackProposal) opts.onWinbackProposal?.(json.winbackProposal);
+        if (json.broadcastProposal) opts.onBroadcastProposal?.(json.broadcastProposal);
+        if (json.supportCase?.orderId) opts.onSupportCase?.(json.supportCase.orderId);
         const delta = json.choices?.[0]?.delta?.content;
         if (delta) {
           reply += delta;

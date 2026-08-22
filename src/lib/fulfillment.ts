@@ -1,0 +1,3 @@
+import { bearer } from "./recovery";
+export class FulfillmentError extends Error{constructor(message:string,public reconnectRequired=false){super(message);}}
+export async function createOrderFulfillment(orderId:string,trackingNumber:string,carrier:string){const response=await fetch("/api/fulfillment-create",{method:"POST",headers:{Authorization:`Bearer ${await bearer()}`,"Content-Type":"application/json"},body:JSON.stringify({orderId,trackingNumber,carrier})});const data=await response.json().catch(()=>({})) as {fulfilled?:boolean;error?:string;reconnectRequired?:boolean};if(!response.ok)throw new FulfillmentError(data.error??"Could not fulfill the order.",Boolean(data.reconnectRequired));return data;}

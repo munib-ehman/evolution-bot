@@ -53,6 +53,22 @@ export const KeyboardIcon = ({ size = 20 }: IconProps) => (
   </svg>
 );
 
+export const VolumeIcon = ({ size = 20 }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+    <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+    <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+  </svg>
+);
+
+export const VolumeOffIcon = ({ size = 20 }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+    <line x1="23" y1="9" x2="17" y2="15" />
+    <line x1="17" y1="9" x2="23" y2="15" />
+  </svg>
+);
+
 export const SparkleIcon = ({ size = 20 }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <path d="M12 2l1.9 5.6a4 4 0 0 0 2.5 2.5L22 12l-5.6 1.9a4 4 0 0 0-2.5 2.5L12 22l-1.9-5.6a4 4 0 0 0-2.5-2.5L2 12l5.6-1.9a4 4 0 0 0 2.5-2.5L12 2z" />

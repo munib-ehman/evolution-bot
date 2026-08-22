@@ -1,7 +1,7 @@
 /**
  * Polar billing (polar.sh, merchant of record) — the WEB checkout rail.
  *
- * Two mutually exclusive rails bill the $100/mo Operator plan:
+ * Two mutually exclusive rails bill independently purchasable managers:
  *   - Shopify-connected accounts → Shopify App Pricing (App Store policy
  *     forbids off-platform billing for them; see _events.ts subscription sync)
  *   - everyone else → Polar hosted checkout, wired here
@@ -14,16 +14,16 @@
  *       external_customer_id + metadata.user_id, returns the hosted URL.
  *   handlePolarWebhook — Standard Webhooks signature verification, then
  *       subscription.active → operator/polar, subscription.revoked → free.
- *       Like the Shopify webhook: 200 after a valid signature no matter what
- *       (Polar retries non-2xx up to 10 times), 401 only on a bad signature.
+ *       Returns a retryable error when the plan update fails, and 401 only on
+ *       a bad signature.
  */
 import { resolveUserFull, type AuditEnv } from "./_audit";
 import { getConnection } from "./_shopify";
 import { log } from "./_log";
+import { ROLES, type Role } from "./_plan";
 
 export interface PolarEnv extends AuditEnv {
   polarToken?: string;
-  polarProductId?: string;
   polarWebhookSecret?: string;
   /** Override with https://sandbox-api.polar.sh while testing. */
   polarApiBase?: string;
@@ -34,15 +34,30 @@ export function polarEnvFromProcess(): PolarEnv {
     supabaseUrl: (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim(),
     serviceRoleKey: (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim(),
     polarToken: (process.env.POLAR_ACCESS_TOKEN ?? "").trim(),
-    polarProductId: (process.env.POLAR_PRODUCT_ID ?? "").trim(),
     polarWebhookSecret: (process.env.POLAR_WEBHOOK_SECRET ?? "").trim(),
     polarApiBase: (process.env.POLAR_API_BASE ?? "").trim() || "https://api.polar.sh",
   };
 }
 
 export function polarConfigured(env: PolarEnv): boolean {
-  return Boolean(env.polarToken && env.polarProductId);
+  return Boolean(env.polarToken && env.supabaseUrl && env.serviceRoleKey);
 }
+
+async function polarProductForRole(env: PolarEnv, role: Role): Promise<string | null> {
+  const key = env.serviceRoleKey ?? "";
+  if (!env.supabaseUrl || !key) return null;
+  const res = await fetch(`${env.supabaseUrl}/rest/v1/manager_plans?role=eq.${encodeURIComponent(role)}&active=eq.true&select=polar_product_id&limit=1`, {
+    headers: { apikey: key, ...(key.startsWith("sb_secret_") ? {} : { Authorization: `Bearer ${key}` }) },
+    signal: AbortSignal.timeout(4_000),
+  });
+  if (!res.ok) return null;
+  const rows = await res.json() as { polar_product_id?: string | null }[];
+  return rows[0]?.polar_product_id?.trim() || null;
+}
+
+const serviceHeaders=(env:PolarEnv)=>{const key=env.serviceRoleKey??"";return {apikey:key,...(key.startsWith("sb_secret_")?{}:{Authorization:`Bearer ${key}`})};};
+async function loadPolarBilling(env:PolarEnv,userId:string){const response=await fetch(`${env.supabaseUrl}/rest/v1/role_entitlements?user_id=eq.${userId}&status=eq.active&billing_provider=eq.polar&select=role,provider_subscription_id`,{headers:serviceHeaders(env),signal:AbortSignal.timeout(4_000)});if(!response.ok)return {roles:[] as Role[],subscriptionId:null as string|null};const rows=await response.json() as {role?:string;provider_subscription_id?:string|null}[];return {roles:rows.map(row=>row.role).filter((role):role is Role=>ROLES.includes(role as Role)),subscriptionId:rows.find(row=>row.provider_subscription_id)?.provider_subscription_id??null};}
+async function saveCheckoutIntent(env:PolarEnv,userId:string,roles:Role[],subscriptionId?:string|null){const response=await fetch(`${env.supabaseUrl}/rest/v1/manager_checkout_intents?on_conflict=user_id`,{method:"POST",headers:{...serviceHeaders(env),"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"},body:JSON.stringify({user_id:userId,roles,status:"pending",polar_subscription_id:subscriptionId??null,updated_at:new Date().toISOString()}),signal:AbortSignal.timeout(4_000)});return response.ok;}
 
 // ---------------------------------------------------------------------------
 // POST /api/polar-checkout — mint a hosted checkout session for the caller
@@ -51,12 +66,21 @@ export async function runPolarCheckout(
   authHeader: string | null,
   origin: string,
   env: PolarEnv,
+  roleValue: unknown = ["marketing"],
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   if (!polarConfigured(env)) {
     return { status: 503, body: { error: "Checkout isn't configured yet — email us instead." } };
   }
   const user = await resolveUserFull(env, authHeader);
   if (!user) return { status: 401, body: { error: "Sign in first." } };
+  const requested=Array.isArray(roleValue)?roleValue:[roleValue];
+  const roles=[...new Set(requested.filter((value):value is Role=>ROLES.includes(value as Role)))];
+  if(!roles.length||roles.length!==requested.length)return {status:400,body:{error:"Choose at least one valid manager."}};
+  const billing=await loadPolarBilling(env,user.id);
+  const targetRoles=[...new Set([...billing.roles,...roles])];
+  const products=await Promise.all(roles.map(async role=>({role,productId:await polarProductForRole(env,role)})));
+  const missing=products.find(item=>!item.productId);
+  if(missing)return {status:503,body:{error:`Checkout is not configured for ${missing.role}.`}};
 
   // App Store policy: Shopify-connected accounts must bill through Shopify
   // App Pricing. The UI already routes them there — this enforces it.
@@ -67,6 +91,15 @@ export async function runPolarCheckout(
     };
   }
 
+  if(!(await saveCheckoutIntent(env,user.id,targetRoles,billing.subscriptionId)))return {status:502,body:{error:"Couldn't save your manager selection."}};
+  if(billing.subscriptionId){
+    try{
+      const updated=await fetch(`${env.polarApiBase}/v1/subscriptions/${billing.subscriptionId}`,{method:"PATCH",headers:{Authorization:`Bearer ${env.polarToken}`,"Content-Type":"application/json"},body:JSON.stringify({seats:targetRoles.length}),signal:AbortSignal.timeout(10_000)});
+      if(!updated.ok)return {status:502,body:{error:"Couldn't update your manager subscription."}};
+      return {status:200,body:{url:`${origin}/app?upgrade=success`}};
+    }catch{return {status:502,body:{error:"Couldn't reach the payment provider."}};}
+  }
+
   try {
     const res = await fetch(`${env.polarApiBase}/v1/checkouts/`, {
       method: "POST",
@@ -75,7 +108,11 @@ export async function runPolarCheckout(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        products: [env.polarProductId],
+        // One seat is billed for each selected manager.
+        products: [products[0].productId],
+        seats: targetRoles.length,
+        min_seats: targetRoles.length,
+        max_seats: targetRoles.length,
         success_url: `${origin}/app?upgrade=success`,
         customer_email: user.email ?? undefined,
         external_customer_id: user.id,
@@ -149,9 +186,10 @@ export async function runPolarPortal(
 }
 
 // ---------------------------------------------------------------------------
-// Standard Webhooks signature (https://www.standardwebhooks.com/): HMAC-SHA256
-// over `${id}.${timestamp}.${body}`, keyed with the base64-DECODED whsec_
-// secret; header carries space-separated `v1,<base64sig>` candidates.
+// Standard Webhooks verification implemented with Web Crypto so this module
+// remains compatible with Vercel's Edge runtime. Polar's SDK treats the
+// configured secret as UTF-8 bytes (including the `whsec_` prefix), rather
+// than base64-decoding the suffix.
 
 const TIMESTAMP_TOLERANCE_SECS = 5 * 60;
 const encoder = new TextEncoder();
@@ -168,38 +206,34 @@ export async function verifyPolarSignature(
     return false;
   }
 
-  let keyBytes: Uint8Array<ArrayBuffer>;
   try {
-    const b64 = secret.startsWith("whsec_") ? secret.slice(6) : secret;
-    keyBytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const signature = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      encoder.encode(`${headers.id}.${headers.timestamp}.${rawBody}`),
+    );
+    const expected = btoa(String.fromCharCode(...new Uint8Array(signature)));
+
+    for (const candidate of headers.signature.split(" ")) {
+      const [version, value] = candidate.split(",", 2);
+      if (version !== "v1" || !value || value.length !== expected.length) continue;
+      let diff = 0;
+      for (let i = 0; i < expected.length; i++) {
+        diff |= expected.charCodeAt(i) ^ value.charCodeAt(i);
+      }
+      if (diff === 0) return true;
+    }
+    return false;
   } catch {
     return false;
   }
-
-  const key = await crypto.subtle.importKey(
-    "raw",
-    keyBytes,
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    encoder.encode(`${headers.id}.${headers.timestamp}.${rawBody}`),
-  );
-  const expected = btoa(String.fromCharCode(...new Uint8Array(sig)));
-
-  // The header may list several versioned signatures (key rotation).
-  for (const candidate of headers.signature.split(" ")) {
-    const [version, value] = candidate.split(",", 2);
-    if (version !== "v1" || !value) continue;
-    if (value.length !== expected.length) continue;
-    let diff = 0;
-    for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ value.charCodeAt(i);
-    if (diff === 0) return true;
-  }
-  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +242,8 @@ export async function verifyPolarSignature(
 interface PolarWebhookPayload {
   type?: string;
   data?: {
+    id?: string;
+    product_id?: string;
     metadata?: Record<string, unknown>;
     customer?: { external_id?: string | null };
   };
@@ -240,37 +276,55 @@ export async function handlePolarWebhook(
   try {
     payload = JSON.parse(rawBody) as PolarWebhookPayload;
   } catch {
-    return { status: 200, body: { received: true } };
+    log("warn", "polar-webhook", "payload_rejected", {});
+    return { status: 400, body: { error: "Invalid webhook payload." } };
   }
   const type = payload.type ?? "";
   const userId = payloadUserId(payload);
+  const intentResponse=userId?await fetch(`${env.supabaseUrl}/rest/v1/manager_checkout_intents?user_id=eq.${userId}&select=roles&limit=1`,{headers:serviceHeaders(env),signal:AbortSignal.timeout(4_000)}):null;
+  const intentRows=intentResponse?.ok?await intentResponse.json() as {roles?:string[]}[]:[];
+  const intentRoles=(intentRows[0]?.roles??[]).filter((role):role is Role=>ROLES.includes(role as Role));
 
   // Only the two definitive lifecycle moments touch the plan. canceled keeps
   // access until the period ends — revoked is when the benefits actually stop.
-  if ((type === "subscription.active" || type === "subscription.revoked") && userId) {
-    const active = type === "subscription.active";
-    const filter = active
-      ? `user_id=eq.${userId}`
-      : `user_id=eq.${userId}&plan_source=eq.polar`;
+  if ((type === "subscription.active" || type === "subscription.updated" || type === "subscription.revoked") && userId && intentRoles.length) {
+    const active = type !== "subscription.revoked";
     try {
-      await fetch(`${env.supabaseUrl}/rest/v1/profiles?${filter}`, {
-        method: "PATCH",
+      const deactivate=await fetch(`${env.supabaseUrl}/rest/v1/role_entitlements?user_id=eq.${userId}&billing_provider=eq.polar`,{method:"PATCH",headers:{...serviceHeaders(env),"Content-Type":"application/json"},body:JSON.stringify({status:"inactive",updated_at:new Date().toISOString()}),signal:AbortSignal.timeout(6_000)});
+      if(!deactivate.ok)throw new Error("Role reset failed");
+      const response = await fetch(`${env.supabaseUrl}/rest/v1/role_entitlements?on_conflict=user_id,role`, {
+        method: "POST",
         headers: {
           apikey: env.serviceRoleKey ?? "",
           Authorization: `Bearer ${env.serviceRoleKey}`,
           "Content-Type": "application/json",
-          Prefer: "return=minimal",
+          Prefer: "resolution=merge-duplicates,return=minimal",
         },
-        body: JSON.stringify(active ? { plan: "operator", plan_source: "polar" } : { plan: "free" }),
+        body: JSON.stringify(intentRoles.map(role=>({user_id:userId,role,status:active?"active":"inactive",billing_provider:"polar",provider_product_id:payload.data?.product_id??null,provider_subscription_id:payload.data?.id??null,updated_at:new Date().toISOString()}))),
         signal: AbortSignal.timeout(6_000),
       });
+      if (!response.ok) {
+        log("error", "polar-webhook", "plan_sync_failed", { userId, type, status: response.status });
+        return { status: 502, body: { error: "Plan update failed." } };
+      }
       log("info", "polar-webhook", "plan_synced", { userId, type });
     } catch {
-      // Answer 200 anyway — Polar's retries would re-run the same PATCH, but
-      // a support ping beats a retry storm; the log line is the alert.
       log("error", "polar-webhook", "plan_sync_failed", { userId, type });
+      return { status: 502, body: { error: "Plan update failed." } };
     }
   }
 
   return { status: 200, body: { received: true } };
+}
+
+async function roleForPolarProduct(env: PolarEnv, productId?: string): Promise<Role | null> {
+  const key = env.serviceRoleKey ?? "";
+  if (!productId || !env.supabaseUrl || !key) return null;
+  const response = await fetch(`${env.supabaseUrl}/rest/v1/manager_plans?polar_product_id=eq.${encodeURIComponent(productId)}&select=role&limit=1`, {
+    headers: { apikey: key, ...(key.startsWith("sb_secret_") ? {} : { Authorization: `Bearer ${key}` }) },
+    signal: AbortSignal.timeout(4_000),
+  });
+  if (!response.ok) return null;
+  const rows = await response.json() as { role?: string }[];
+  return ROLES.includes(rows[0]?.role as Role) ? rows[0]?.role as Role : null;
 }

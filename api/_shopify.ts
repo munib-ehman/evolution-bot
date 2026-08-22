@@ -16,7 +16,8 @@ import { migratePolarToShopify, type PolarMigrateEnv } from "./_polarMigrate";
 import { log } from "./_log";
 
 export const SHOPIFY_API_VERSION = "2026-04";
-export const SHOPIFY_SCOPES_DEFAULT = "read_products,read_orders,read_checkouts,read_customers";
+export const SHOPIFY_SCOPES_DEFAULT =
+  "write_products,write_files,write_discounts,read_orders,write_orders,read_checkouts,read_customers,write_customers,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders";
 /** OAuth states older than this are refused (stops replayed links). */
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
@@ -29,6 +30,7 @@ export interface ShopifyEnv extends AuditEnv {
 export interface ShopifyConnection {
   shop_domain: string;
   access_token: string;
+  scopes?: string | null;
   /** Expiring-token fields (null on legacy rows, which Shopify now rejects). */
   refresh_token?: string | null;
   token_expires_at?: string | null;
@@ -146,7 +148,8 @@ export async function runShopifyAuthStart(
   const state = await makeState(userId, shop, env.shopifyApiSecret);
   const url = new URL(`https://${shop}/admin/oauth/authorize`);
   url.searchParams.set("client_id", env.shopifyApiKey);
-  url.searchParams.set("scope", env.shopifyScopes || SHOPIFY_SCOPES_DEFAULT);
+  // Scopes are managed by the deployed shopify.app.toml configuration. Shopify
+  // requires this parameter to be omitted for managed installation.
   url.searchParams.set("redirect_uri", `${origin}/api/shopify-callback`);
   url.searchParams.set("state", state);
   return { status: 200, body: { url: url.toString() } };
@@ -189,18 +192,23 @@ export async function runShopifyCallback(
   let tokenExpiresAt: string | null = null;
   let refreshExpiresAt: string | null = null;
   try {
+    const params = new URLSearchParams({
+      client_id: env.shopifyApiKey,
+      client_secret: env.shopifyApiSecret,
+      code,
+      expiring: "1",
+    });
     const res = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_id: env.shopifyApiKey,
-        client_secret: env.shopifyApiSecret,
-        code,
-        expiring: "1",
-      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: params.toString(),
       signal: AbortSignal.timeout(8_000),
     });
-    if (!res.ok) return fail("token-exchange");
+    if (!res.ok) {
+      const failure = await res.json().catch(() => ({})) as { error?: string; error_description?: string };
+      log("warn", "shopify-callback", "token_exchange_rejected", { shop, status: res.status, error: failure.error, description: failure.error_description?.slice(0, 160) });
+      return fail("token-exchange");
+    }
     const data = (await res.json()) as {
       access_token?: string;
       scope?: string;
@@ -300,7 +308,11 @@ export async function saveConnection(
       }),
       signal: AbortSignal.timeout(6_000),
     });
-    if (!conn.ok) return false;
+    if (!conn.ok) {
+      const failure = await conn.json().catch(() => ({})) as { code?: string; message?: string };
+      log("error", "shopify", "connection_save_failed", { shop, status: conn.status, code: failure.code, message: failure.message?.slice(0, 160) });
+      return false;
+    }
     // …and the visible store row, so the app knows a store is connected.
     await fetch(`${env.supabaseUrl}/rest/v1/stores?on_conflict=user_id`, {
       method: "POST",
@@ -337,7 +349,7 @@ export async function getConnection(env: ShopifyEnv, userId: string): Promise<Sh
   let conn: ShopifyConnection | null = null;
   try {
     const res = await fetch(
-      `${env.supabaseUrl}/rest/v1/shopify_connections?user_id=eq.${userId}&select=shop_domain,access_token,refresh_token,token_expires_at`,
+      `${env.supabaseUrl}/rest/v1/shopify_connections?user_id=eq.${userId}&select=shop_domain,access_token,scopes,refresh_token,token_expires_at`,
       {
         headers: { apikey: env.serviceRoleKey, Authorization: `Bearer ${env.serviceRoleKey}` },
         signal: AbortSignal.timeout(4_000),
@@ -369,15 +381,16 @@ async function refreshConnection(
   conn: ShopifyConnection,
 ): Promise<ShopifyConnection | null> {
   try {
+    const params = new URLSearchParams({
+      client_id: env.shopifyApiKey ?? "",
+      client_secret: env.shopifyApiSecret ?? "",
+      grant_type: "refresh_token",
+      refresh_token: conn.refresh_token ?? "",
+    });
     const res = await fetch(`https://${conn.shop_domain}/admin/oauth/access_token`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_id: env.shopifyApiKey,
-        client_secret: env.shopifyApiSecret,
-        grant_type: "refresh_token",
-        refresh_token: conn.refresh_token,
-      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: params.toString(),
       signal: AbortSignal.timeout(8_000),
     });
     if (!res.ok) {

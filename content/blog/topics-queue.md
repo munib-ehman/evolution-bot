@@ -13,8 +13,8 @@ Format:
 
 ## Pending
 
-- Browse abandonment emails: worth it or noise?
-- How to price products: margin math most store owners skip
+- Inventory planning for solo store owners: avoiding stockouts and dead stock
+- Email list building for ecommerce without annoying popups
 - Bundling strategies that raise average order value
 - Upsells and cross-sells that don't feel pushy
 - Customer support response templates for common ecommerce tickets
@@ -51,9 +51,6 @@ Format:
 
 ## Written
 
-- [2026-08-22] Welcome email series: the highest ROI automation you're not using — /blog/welcome-email-series-automation
-- [2026-08-19] Email list building for ecommerce without annoying popups — /blog/email-list-building-without-annoying-popups
-- [2026-08-18] Inventory planning for solo store owners: avoiding stockouts and dead stock — /blog/inventory-planning-solo-store-owners
 - [2026-08-08] Sourcing products from suppliers: a checklist for small stores — /blog/sourcing-products-from-suppliers-checklist
 - [2026-07-17] How to reduce abandoned checkouts on Shopify without discounting — /blog/reduce-abandoned-checkouts-shopify
 - [2026-07-18] Abandoned cart email sequence that actually converts: timing, copy, examples — /blog/abandoned-cart-email-sequence-that-converts
@@ -98,3 +95,6 @@ Format:
 - [2026-07-30] Countdown timers for Shopify: urgency marketing that doesn't feel fake (competitor-trend: Omnisend's new Tickvio countdown-timer integration + 2026 urgency-marketing conversion data) — /blog/countdown-timers-shopify-urgency-marketing
 - [2026-07-30] Google Trends SEO for Shopify stores: catching demand while it spikes (competitor-trend: Yotpo's "Google Trends for SEO: The Velocity Playbook" + 2026 ecommerce SEO trend coverage) — /blog/google-trends-seo-for-shopify-stores
 - [2026-07-30] How to find your next winning product without gambling on ads — /blog/find-winning-product-without-gambling-on-ads
+- [2026-08-22] Welcome email series: the highest ROI automation you're not using — /blog/welcome-email-series-ecommerce
+- [2026-08-22] Browse abandonment emails: worth it or noise? — /blog/browse-abandonment-emails-worth-it
+- [2026-08-22] How to price products: margin math most store owners skip — /blog/how-to-price-products-margin-math
