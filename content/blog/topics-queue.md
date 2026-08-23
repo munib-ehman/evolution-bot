@@ -15,9 +15,6 @@ Format:
 
 - Inventory planning for solo store owners: avoiding stockouts and dead stock
 - Email list building for ecommerce without annoying popups
-- Bundling strategies that raise average order value
-- Upsells and cross-sells that don't feel pushy
-- Customer support response templates for common ecommerce tickets
 - How to answer presale questions fast enough to win the sale
 - Multilingual support on a small store: when it's worth it
 - Loyalty programs for small stores: simple beats fancy
@@ -98,3 +95,6 @@ Format:
 - [2026-08-22] Welcome email series: the highest ROI automation you're not using — /blog/welcome-email-series-ecommerce
 - [2026-08-22] Browse abandonment emails: worth it or noise? — /blog/browse-abandonment-emails-worth-it
 - [2026-08-22] How to price products: margin math most store owners skip — /blog/how-to-price-products-margin-math
+- [2026-08-23] Bundling strategies that raise average order value — /blog/bundling-strategies-raise-average-order-value
+- [2026-08-23] Upsells and cross-sells that don't feel pushy — /blog/upsells-cross-sells-without-being-pushy
+- [2026-08-23] Customer support response templates for common ecommerce tickets — /blog/customer-support-response-templates-ecommerce
