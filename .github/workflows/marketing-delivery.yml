@@ -1,24 +1,28 @@
-name: Marketing email delivery
+name: Scheduled application jobs
 
 on:
   schedule:
     - cron: "*/5 * * * *"
+    - cron: "7 * * * *"
+    - cron: "15 3 * * *"
+    - cron: "30 4 * * 1"
   workflow_dispatch:
 
 concurrency:
-  group: marketing-email-delivery
+  group: scheduled-application-jobs-${{ github.event.schedule || 'manual' }}
   cancel-in-progress: false
 
 jobs:
-  deliver:
+  frequent:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '*/5 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
-        endpoint: [recovery-deliver, winback-deliver, broadcast-deliver]
+        endpoint: [marketing-worker, recovery-deliver, winback-deliver, broadcast-deliver, review-deliver]
     steps:
-      - name: Process due ${{ matrix.endpoint }} emails
+      - name: Run ${{ matrix.endpoint }}
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
@@ -27,3 +31,48 @@ jobs:
             --retry 2 \
             --header "Authorization: Bearer $CRON_SECRET" \
             "https://www.runevolution.io/api/${{ matrix.endpoint }}"
+
+  hourly:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '7 * * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Observe stores and enqueue marketing work
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error \
+            --retry 2 \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "https://www.runevolution.io/api/recovery-observer"
+
+  daily:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '15 3 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Aggregate action metrics
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error \
+            --retry 2 \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "https://www.runevolution.io/api/action-metrics"
+
+  weekly:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 4 * * 1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run weekly product manager
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error \
+            --retry 2 \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "https://www.runevolution.io/api/product-manager-weekly"
