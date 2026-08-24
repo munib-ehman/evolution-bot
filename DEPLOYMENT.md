@@ -120,7 +120,7 @@ $bytes = New-Object byte[] 48
 
 Copy the single output value to **Vercel → Project Settings → Environment Variables**, name it `CRON_SECRET`, select **Production**, and redeploy. Alternatively, run `vercel env add CRON_SECRET production`. Do not add the real value to `.env.example` or commit it.
 
-The Vercel configuration intentionally contains no cron jobs so the project can deploy on the Hobby plan. All scheduled work runs from `.github/workflows/marketing-delivery.yml`: worker and delivery jobs every five minutes, store observation hourly, action metrics daily, and the product-manager job weekly. Add the **same value** as a GitHub Actions repository secret named `CRON_SECRET`; the workflow sends it to each secured endpoint as a bearer token. GitHub Actions schedules use UTC and may start a few minutes late during periods of high load.
+The Vercel configuration intentionally contains no cron jobs so the project can deploy on the Hobby plan. All scheduled work runs from `.github/workflows/marketing-delivery.yml`: worker and delivery jobs every five minutes, store observation hourly, action metrics daily, and the autonomous Product Manager daily. Add the **same value** as a GitHub Actions repository secret named `CRON_SECRET`; the workflow sends it to each secured endpoint as a bearer token. GitHub Actions schedules use UTC and may start a few minutes late during periods of high load.
 
 ## 5. Configure web billing with Polar
 

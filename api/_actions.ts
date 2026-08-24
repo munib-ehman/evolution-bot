@@ -441,10 +441,7 @@ async function loadAction(env: ShopifyEnv, id: string, userId: string): Promise<
   return res.ok ? ((await res.json()) as ShopifyActionRow[])[0] ?? null : null;
 }
 
-export async function runActionPropose(body: ActionProposeBody, authHeader: string | null, env: ShopifyEnv): Promise<Response> {
-  if (!env.supabaseUrl || !env.serviceRoleKey) return json(503, { error: "Action storage isn't configured." });
-  const ctx = await authContext(authHeader, env);
-  if ("error" in ctx) return ctx.error;
+async function proposeAction(body: ActionProposeBody, ctx: Exclude<AuthContext,{error:Response}>, env: ShopifyEnv): Promise<Response> {
   const kind = String(body.kind ?? "") as ShopifyActionKind;
   if (!["product_update", "product_status_update", "product_draft_create", "collection_upsert", "order_email_update", "discount_code_create", "discount_automatic_create"].includes(kind)) {
     return json(400, { error: "Unsupported action kind." });
@@ -569,6 +566,20 @@ export async function runActionPropose(body: ActionProposeBody, authHeader: stri
   const row = ((await res.json()) as ShopifyActionRow[])[0];
   await event(env, row, "proposed");
   return json(201, { action: row });
+}
+
+export async function runActionPropose(body: ActionProposeBody, authHeader: string | null, env: ShopifyEnv): Promise<Response> {
+  if (!env.supabaseUrl || !env.serviceRoleKey) return json(503, { error: "Action storage isn't configured." });
+  const ctx = await authContext(authHeader, env);
+  if ("error" in ctx) return ctx.error;
+  return proposeAction(body,ctx,env);
+}
+
+/** Server-only proposal entry point for scheduled managers. It preserves the
+ * same validation, entitlement, before-state, and event path as user requests. */
+export async function runAutomaticActionPropose(body:ActionProposeBody,user:{id:string;email?:string|null},conn:ShopifyConnection,env:ShopifyEnv):Promise<Response>{
+  if(!env.supabaseUrl||!env.serviceRoleKey)return json(503,{error:"Action storage isn't configured."});
+  return proposeAction(body,{user:{id:user.id,email:user.email??null},conn},env);
 }
 
 async function preflight(row: ShopifyActionRow, conn: ShopifyConnection): Promise<boolean> {

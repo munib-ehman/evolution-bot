@@ -1,5 +1,5 @@
 import { resolveUserFull } from "./_audit";
-import { runActionPropose, type ShopifyActionRow } from "./_actions";
+import { runActionPropose, runAutomaticActionPropose, type ShopifyActionRow } from "./_actions";
 import { hasRole, roleRequired } from "./_plan";
 import { getConnection, shopifyGraphql, type ShopifyConnection, type ShopifyEnv } from "./_shopify";
 import { buildProductsDigest } from "./_skillTools";
@@ -100,7 +100,10 @@ export async function productManagerSnapshot(authHeader:string|null,env:ShopifyE
   }
   const savedResearch=await latestResearch(env,user.id,conn.shop_domain);
   const latestResearchReport=savedResearch&&reportFitsCatalog(savedResearch as HuntReport,{host:conn.shop_domain,storeTitle:conn.shop_domain,storeDescription:"Connected Shopify catalog",priceBand:null,productTitles:(digest.products as DigestProduct[]).map(product=>product.title)})?savedResearch:null;
-  return Response.json({shop:conn.shop_domain,scanned:products.length,listingAverage,needsWork:products.filter(p=>p.recommendation==="improve").length,promote:products.filter(p=>p.recommendation==="promote").length,archiveCandidates:products.filter(p=>p.recommendation==="archive_candidate").length,signals:{orders:signals.ordersAvailable,abandonedCheckouts:signals.checkoutsAvailable,pageViews:false},products,collections,latestResearch:latestResearchReport,generatedAt:new Date().toISOString()},{headers:{"Cache-Control":"no-store"}});
+  const decisionResponse=env.supabaseUrl&&env.serviceRoleKey?await fetch(`${env.supabaseUrl}/rest/v1/product_manager_decision_runs?user_id=eq.${user.id}&select=outcome,error,completed_at,action_id&order=completed_at.desc&limit=1`,{headers:{apikey:env.serviceRoleKey,Authorization:`Bearer ${env.serviceRoleKey}`}}).catch(()=>null):null;
+  const latestDecision=decisionResponse?.ok?(await decisionResponse.json() as {outcome:string;error?:string|null;completed_at:string;action_id?:string|null}[])[0]??null:null;
+  const observerHealthy=Boolean(latestDecision&&Date.now()-Date.parse(latestDecision.completed_at)<36*60*60_000&&latestDecision.outcome!=="failed");
+  return Response.json({shop:conn.shop_domain,scanned:products.length,listingAverage,needsWork:products.filter(p=>p.recommendation==="improve").length,promote:products.filter(p=>p.recommendation==="promote").length,archiveCandidates:products.filter(p=>p.recommendation==="archive_candidate").length,signals:{orders:signals.ordersAvailable,abandonedCheckouts:signals.checkoutsAvailable,pageViews:false},products,collections,latestResearch:latestResearchReport,agentHealth:{observerHealthy,lastRun:latestDecision?.completed_at??null,lastOutcome:latestDecision?.outcome??null,lastError:latestDecision?.error??null},generatedAt:new Date().toISOString()},{headers:{"Cache-Control":"no-store"}});
 }
 
 type ProductDetail={id:string;title:string;descriptionHtml?:string|null;vendor?:string|null;productType?:string|null;tags?:string[];category?:{name?:string|null;fullName?:string|null};media?:{nodes?:{id?:string;alt?:string|null}[]};options?:{name?:string;values?:string[]}[];variants?:{nodes?:{title?:string;selectedOptions?:{name?:string;value?:string}[]}[]};metafields?:{nodes?:{namespace?:string;key?:string;type?:string;value?:string;jsonValue?:unknown;definition?:{name?:string|null};reference?:{name?:string;displayName?:string};references?:{nodes?:{name?:string;displayName?:string}[]}}[]}};
@@ -186,4 +189,45 @@ export async function productManagerArchive(body:{productId?:unknown;title?:unkn
     return Response.json({error:"This product no longer meets the archive safety rule: active for 90+ days, zero units sold in 90 days, zero abandoned-checkout appearances in 30 days, with both data sources available."},{status:409});
   }
   return runActionPropose({kind:"product_status_update",summary:`Archive ${title}`,items:[{productId,status:"ARCHIVED"}],evidence:{rationale:"No recorded sales or abandoned-checkout activity was found in the analyzed windows. Review inventory and traffic outside Shopify before approval.",limitations:"Shopify does not provide product page-view data here, so this is not proof that shoppers rejected the product."}},authHeader,env);
+}
+
+const serviceHeaders=(env:ShopifyEnv)=>({apikey:env.serviceRoleKey??"",Authorization:`Bearer ${env.serviceRoleKey??""}`,"Content-Type":"application/json"});
+async function recordProductDecision(env:ShopifyEnv,input:{userId:string;shopDomain:string;outcome:string;candidates:unknown[];selectedProductId?:string;actionId?:string;error?:string}){
+  if(!env.supabaseUrl||!env.serviceRoleKey)return;
+  await fetch(`${env.supabaseUrl}/rest/v1/product_manager_decision_runs`,{method:"POST",headers:serviceHeaders(env),body:JSON.stringify({user_id:input.userId,shop_domain:input.shopDomain,trigger:"scheduled_observer",candidates:input.candidates,selected_product_id:input.selectedProductId??null,action_id:input.actionId??null,outcome:input.outcome,error:input.error??null,completed_at:new Date().toISOString()})}).catch(()=>undefined);
+}
+
+/** Scheduled Product Manager loop: observe, prioritize, research, and prepare one
+ * approval-gated decision. It never mutates Shopify directly. */
+export async function prepareAutonomousProductDecision(env:ShopifyEnv,userId:string):Promise<{outcome:string;actionId?:string;productId?:string}>{
+  const conn=await getConnection(env,userId);
+  if(!conn)return{outcome:"skipped_disconnected"};
+  if(!(await hasRole(env,userId,"product"))){await recordProductDecision(env,{userId,shopDomain:conn.shop_domain,outcome:"skipped_entitlement",candidates:[]});return{outcome:"skipped_entitlement"};}
+  const recentSince=new Date(Date.now()-7*86_400_000).toISOString();
+  const recentResponse=await fetch(`${env.supabaseUrl}/rest/v1/shopify_actions?user_id=eq.${userId}&role=eq.product&created_at=gte.${encodeURIComponent(recentSince)}&select=id,status,payload`,{headers:serviceHeaders(env)});
+  const recent=recentResponse.ok?await recentResponse.json() as {id:string;status:string;payload?:{items?:{productId?:string}[]}}[]:[];
+  if(recent.some(row=>row.status==="proposed"||row.status==="executing")){await recordProductDecision(env,{userId,shopDomain:conn.shop_domain,outcome:"waiting_for_approval",candidates:[]});return{outcome:"waiting_for_approval"};}
+  const [digest,signals]=await Promise.all([buildProductsDigest(conn,100),salesSignals(conn)]);
+  if("error" in digest){await recordProductDecision(env,{userId,shopDomain:conn.shop_domain,outcome:"failed",candidates:[],error:digest.error});return{outcome:"failed"};}
+  const recentlyHandled=new Set(recent.flatMap(row=>row.payload?.items??[]).map(item=>item.productId).filter(Boolean));
+  const candidates=(digest.products as DigestProduct[]).map(product=>{
+    const completeness=listingScore(product),sales=signals.byTitle.get(product.title.trim().toLowerCase())??{units:0,revenue:0},abandoned=signals.abandoned.get(product.title.trim().toLowerCase())??0;
+    return{product,completeness,priority:Math.round((100-completeness)*.6+Math.min(abandoned*8,25)+Math.min(sales.units*2,15)),sales,abandoned};
+  }).filter(row=>row.completeness<70&&!recentlyHandled.has(row.product.id)).sort((a,b)=>b.priority-a.priority).slice(0,3);
+  const auditCandidates=candidates.map(row=>({productId:row.product.id,title:row.product.title,listingScore:row.completeness,priority:row.priority,units90:row.sales.units,abandoned30:row.abandoned}));
+  for(const candidate of candidates){
+    const data=await shopifyGraphql<{shop?:{billingAddress?:{countryCodeV2?:string|null}};product?:ProductDetail}>(conn.shop_domain,conn.access_token,`query ProductManagerListing($id:ID!){shop{billingAddress{countryCodeV2}} product(id:$id){id title descriptionHtml vendor productType tags category{name fullName} options{name values} variants(first:50){nodes{title selectedOptions{name value}}} metafields(first:50){nodes{namespace key type value jsonValue definition{name} reference{... on TaxonomyValue{name} ... on Metaobject{displayName}} references(first:20){nodes{... on TaxonomyValue{name} ... on Metaobject{displayName}}}}} media(first:50){nodes{id alt}}}}`,{id:candidate.product.id});
+    const product=data?.product;if(!product||!listingFactsReady(product,{}))continue;
+    const market=clean(data?.shop?.billingAddress?.countryCodeV2,8).toLowerCase()||"us",listing=await generateListing(env,product,market,{});if(!listing)continue;
+    const mediaAlt=(product.media?.nodes??[]).filter(media=>media.id&&!clean(media.alt,200)).map(media=>({id:media.id!,alt:product.title}));
+    const proposed=await runAutomaticActionPropose({role:"product",kind:"product_update",summary:`Product Manager recommends improving ${product.title}`,items:[{productId:product.id,title:listing.title,descriptionHtml:listing.descriptionHtml,tags:listing.tags,...(mediaAlt.length?{mediaAlt}:{})}],evidence:{rationale:listing.rationale,keywords:listing.keywords,marketplace:listing.marketplace,listingVa:listing.listingVa,limitations:`Prepared automatically from verified Shopify facts and current marketplace language. Shopify remains unchanged until merchant approval. SEO metadata, price, and inventory are unchanged.`},optimizerVersion:"product-listing-va-v1"},{id:userId},conn,env);
+    const body=await proposed.json().catch(()=>({})) as{action?:ShopifyActionRow;error?:string};
+    if(body.action){await recordProductDecision(env,{userId,shopDomain:conn.shop_domain,outcome:"proposed",candidates:auditCandidates,selectedProductId:product.id,actionId:body.action.id});return{outcome:"proposed",actionId:body.action.id,productId:product.id};}
+  }
+  const archiveCandidate=(digest.products as DigestProduct[]).find(product=>{const sales=signals.byTitle.get(product.title.trim().toLowerCase())??{units:0},abandoned=signals.abandoned.get(product.title.trim().toLowerCase())??0,oldEnough=Boolean(product.createdAt&&Date.now()-Date.parse(product.createdAt)>=90*86_400_000);return signals.ordersAvailable&&signals.checkoutsAvailable&&oldEnough&&product.status==="active"&&sales.units===0&&abandoned===0&&!recentlyHandled.has(product.id);});
+  if(archiveCandidate){
+    const proposed=await runAutomaticActionPropose({role:"product",kind:"product_status_update",summary:`Product Manager recommends archiving ${archiveCandidate.title}`,items:[{productId:archiveCandidate.id,status:"ARCHIVED"}],evidence:{rationale:"The scheduled observer found no recorded sales in 90 days or abandoned-checkout activity in 30 days for an active product older than 90 days.",limitations:"Shopify page-view data is unavailable, so merchant approval is required and external traffic or inventory plans should be reviewed first."}},{id:userId},conn,env),body=await proposed.json().catch(()=>({})) as{action?:ShopifyActionRow};
+    if(body.action){const archiveAudit=[...auditCandidates,{productId:archiveCandidate.id,title:archiveCandidate.title,decision:"archive_candidate"}];await recordProductDecision(env,{userId,shopDomain:conn.shop_domain,outcome:"proposed",candidates:archiveAudit,selectedProductId:archiveCandidate.id,actionId:body.action.id});return{outcome:"proposed",actionId:body.action.id,productId:archiveCandidate.id};}
+  }
+  await recordProductDecision(env,{userId,shopDomain:conn.shop_domain,outcome:"no_safe_action",candidates:auditCandidates});return{outcome:"no_safe_action"};
 }

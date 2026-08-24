@@ -1,5 +1,22 @@
 import assert from "node:assert/strict";
 import { createServer } from "vite";
+import { readFile } from "node:fs/promises";
+
+const [cronSource,managerSource,actionSource,migrationSource,workflowSource]=await Promise.all([
+  readFile(new URL("../api/_productManagerCron.ts",import.meta.url),"utf8"),
+  readFile(new URL("../api/_productManager.ts",import.meta.url),"utf8"),
+  readFile(new URL("../api/_actions.ts",import.meta.url),"utf8"),
+  readFile(new URL("../supabase/2026-08-24_agentic_product_manager.sql",import.meta.url),"utf8"),
+  readFile(new URL("../.github/workflows/marketing-delivery.yml",import.meta.url),"utf8"),
+]);
+assert.match(cronSource,/prepareAutonomousProductDecision/,"the scheduled scan must advance into autonomous decision preparation");
+assert.match(managerSource,/waiting_for_approval/,"the observer must stop when a merchant decision is already waiting");
+assert.match(managerSource,/recentlyHandled/,"the observer must deduplicate recently handled products");
+assert.match(managerSource,/runAutomaticActionPropose/,"automatic decisions must use the guarded Shopify proposal engine");
+assert.match(managerSource,/product_status_update/,"the observer must cover conservative lifecycle decisions as well as listing work");
+assert.match(actionSource,/same validation, entitlement, before-state, and event path/,"scheduled proposals must share the user proposal safety path");
+assert.match(migrationSource,/product_manager_decision_runs/,"automatic Product Manager decisions must be auditable");
+assert.match(workflowSource,/30 4 \* \* \*/,"the autonomous Product Manager must be scheduled daily");
 
 const server=await createServer({server:{middlewareMode:true},appType:"custom",logLevel:"silent"});
 try{

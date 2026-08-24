@@ -5,7 +5,7 @@ on:
     - cron: "*/5 * * * *"
     - cron: "7 * * * *"
     - cron: "15 3 * * *"
-    - cron: "30 4 * * 1"
+    - cron: "30 4 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -62,12 +62,12 @@ jobs:
             --header "Authorization: Bearer $CRON_SECRET" \
             "https://www.runevolution.io/api/action-metrics"
 
-  weekly:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 4 * * 1'
+  product-manager:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 4 * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Run weekly product manager
+      - name: Run autonomous product manager
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
