@@ -2,15 +2,20 @@ import { useEffect, useRef } from "react";
 import type { Message } from "../types";
 import type { AssistantStatus } from "../hooks/useAssistant";
 import { renderMarkdown } from "../lib/markdown";
+import { ActionCard } from "./ActionCard";
+import { RecoveryApprovalCard } from "./RecoveryApprovalCard";
+import { WinbackApprovalCard } from "./WinbackApprovalCard";
+import { BroadcastApprovalCard } from "./BroadcastApprovalCard";
 
 interface Props {
   messages: Message[];
   status: AssistantStatus;
+  compact?: boolean;
   /** Fired when the owner clicks "Queue this fix" under a report. */
   onEscalate?: (taskTool: string, note: string) => void;
 }
 
-export function MessageList({ messages, status, onEscalate }: Props) {
+export function MessageList({ messages, status, compact = false, onEscalate }: Props) {
   const endRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to the newest message.
@@ -19,8 +24,8 @@ export function MessageList({ messages, status, onEscalate }: Props) {
   }, [messages, status]);
 
   return (
-    <div className="transcript" role="log" aria-live="polite">
-      {messages.map((m) =>
+    <div className={`transcript ${compact ? "compact" : ""}`} role="log" aria-live="polite">
+      {(compact ? messages.slice(-3) : messages).map((m) =>
         m.markdown ? (
           <div key={m.id} className="bubble assistant report">
             {m.content ? (
@@ -43,6 +48,10 @@ export function MessageList({ messages, status, onEscalate }: Props) {
         ) : (
           <div key={m.id} className={`bubble ${m.role}`}>
             {m.content}
+            {m.action && <ActionCard initial={m.action} />}
+            {m.recoveryProposal && <RecoveryApprovalCard proposal={m.recoveryProposal} />}
+            {m.winbackProposal && <WinbackApprovalCard proposal={m.winbackProposal} />}
+            {m.broadcastProposal && <BroadcastApprovalCard proposal={m.broadcastProposal} />}
           </div>
         ),
       )}

@@ -2,7 +2,9 @@
 
 Evolution is an AI operator for Shopify founders. It combines a conversational 3D avatar with store audits, live product research, cart recovery, retention campaigns, fulfillment monitoring, and Shopify-grounded AI chat.
 
-The public website and operator UI are built with React, TypeScript, and Vite. Production capabilities are served through Vercel API routes and use Supabase for authentication and persistence. Shopify provides read-only store data, Groq powers hosted AI and voice features, and Polar provides web subscription billing.
+The approved-write operator planned for the next release is documented in [V1.1_FEATURES.md](./V1.1_FEATURES.md).
+
+The public website and operator UI are built with React, TypeScript, and Vite. Production capabilities are served through Vercel API routes and use Supabase for authentication and persistence. Shopify provides live store data and merchant-approved actions, Groq powers hosted AI and voice features, and Polar provides web subscription billing.
 
 ## Product surfaces
 
@@ -15,7 +17,7 @@ The public website and operator UI are built with React, TypeScript, and Vite. P
 - **Operations** — summarizes fulfillment activity and receives live Shopify events.
 - **Voice avatar** — supports typed or spoken conversations, server or browser speech synthesis, lip-sync, and a procedural fallback avatar.
 
-Evolution is read-only against Shopify. It drafts and recommends actions but does not silently modify a merchant's store.
+Evolution never silently modifies a merchant's store. v1.1 can prepare persisted Shopify actions, but every mutation requires an explicit before-and-after approval.
 
 ## Architecture
 
@@ -139,7 +141,7 @@ Kokoro and Transformers-based speech features may download large model assets on
 - Sensitive Supabase operations use the service-role key only in API routes.
 - Public audit crawling rejects local, private, and otherwise unsafe targets.
 - Expensive endpoints use request limits backed by Supabase.
-- Shopify access scopes are read-only by default.
+- Shopify write scopes are limited to products, files, and discounts; every mutation is proposal-bound and merchant-approved.
 
 ## License
 

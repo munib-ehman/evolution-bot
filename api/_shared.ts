@@ -35,7 +35,7 @@ export const CHAT_MAX_TOTAL_CHARS = 24_000;
  * needs headroom for catalog answers — listing a whole store's products at
  * 220 tokens truncated mid-list.
  */
-export const CHAT_MAX_COMPLETION_TOKENS = 600;
+export const CHAT_MAX_COMPLETION_TOKENS = 400;
 
 /**
  * The app's voice settings still hold Kokoro voice ids (the offline fallback

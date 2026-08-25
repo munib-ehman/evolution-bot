@@ -1,0 +1,2 @@
+import { runBroadcastAction } from "./_broadcastCampaigns"; import { recoveryCampaignEnvFromProcess } from "./_recoveryCampaigns";
+export const config={runtime:"edge"};export default async function handler(req:Request){if(req.method!=="POST")return new Response("Method not allowed",{status:405});return runBroadcastAction(await req.json().catch(()=>({}))as Record<string,unknown>,req.headers.get("authorization"),recoveryCampaignEnvFromProcess());}

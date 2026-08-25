@@ -28,6 +28,7 @@ export interface LapsedCustomer {
   ordersCount: number;
   totalSpent: number;
   lastItems: { title: string; qty: number }[];
+  marketingState?: string | null;
 }
 
 export interface RecentBuyer {
@@ -36,6 +37,7 @@ export interface RecentBuyer {
   firstName: string;
   email: string;
   orderedAt: string;
+  fulfilledAt: string;
   totalPrice: number;
   items: { title: string; qty: number }[];
 }

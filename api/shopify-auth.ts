@@ -2,7 +2,7 @@
  * /api/shopify-auth — step 1 of the Shopify connect flow.
  *
  * POST { shop } with the owner's Supabase bearer token → { url } of
- * Shopify's authorize page (read-only scopes). The client navigates there;
+ * Shopify's authorize page (read plus approved-action scopes). The client navigates there;
  * Shopify sends the owner back to /api/shopify-callback. Logic lives in
  * _shopify.ts so dev-api.ts runs the identical flow.
  */

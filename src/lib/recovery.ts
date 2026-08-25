@@ -16,6 +16,18 @@ export interface RecoveryTouch {
   body: string;
 }
 
+export interface RecoveryCampaignProposal {
+  id: string;
+  status: "proposed";
+  touches: RecoveryTouch[];
+  cartCount: number;
+  totalValue: number;
+  currency: string | null;
+  storeName: string;
+  deliveryReady: boolean;
+  createdAt: string;
+}
+
 export interface RecoveryCart {
   id: string;
   createdAt: string;

@@ -11,6 +11,13 @@
     "blog": "node tools/build-blog.mjs",
     "build": "node tools/build-blog.mjs && tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
+    "test:seo": "node tools/test-seo-manager.mjs",
+    "test:customer-success": "node tools/test-customer-success.mjs",
+    "test:product-manager": "node tools/test-product-manager.mjs",
+    "test:product-manager:e2e": "node tools/test-product-manager-e2e.mjs",
+    "test:role-isolation": "node tools/test-role-isolation.mjs",
+    "test:marketing-agent": "node tools/test-marketing-agent.mjs",
+    "test:customer-success-agent": "node tools/test-customer-success-agent.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

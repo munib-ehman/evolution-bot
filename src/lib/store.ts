@@ -68,6 +68,9 @@ export interface AuditPage {
 }
 
 export type Plan = "free" | "operator";
+export type ManagerRole = "marketing" | "customer-success" | "seo" | "product" | "operations";
+export type Entitlements = Record<ManagerRole, boolean>;
+export const EMPTY_ENTITLEMENTS: Entitlements = { marketing:false, "customer-success":false, seo:false, product:false, operations:false };
 
 export interface CatalogItem {
   title: string;
@@ -167,6 +170,20 @@ export async function getPlan(): Promise<Plan> {
   } catch {
     return "free";
   }
+}
+
+export async function getEntitlements(): Promise<Entitlements> {
+  if (!supabase) return { marketing:true, "customer-success":true, seo:true, product:true, operations:true };
+  try {
+    const [{ data: rows, error }, { data: profile }] = await Promise.all([
+      supabase.from("role_entitlements").select("role,status").eq("status", "active"),
+      supabase.from("profiles").select("plan").maybeSingle(),
+    ]);
+    if (error) return profile?.plan === "operator" ? { marketing:true, "customer-success":true, seo:true, product:true, operations:true } : { ...EMPTY_ENTITLEMENTS };
+    const value={...EMPTY_ENTITLEMENTS};
+    for(const row of rows??[]) if(row.role in value)value[row.role as ManagerRole]=true;
+    return value;
+  } catch { return { ...EMPTY_ENTITLEMENTS }; }
 }
 
 export async function getLatestAudit(): Promise<AuditReport | null> {

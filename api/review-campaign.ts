@@ -1,0 +1,2 @@
+import { runReviewCampaignAction } from "./_reviewCampaigns";import{recoveryCampaignEnvFromProcess}from"./_recoveryCampaigns";
+export const config={runtime:"edge"};export default async function handler(req:Request){if(req.method!=="POST")return new Response("Method not allowed",{status:405});return runReviewCampaignAction(await req.json().catch(()=>({}))as Record<string,unknown>,req.headers.get("authorization"),recoveryCampaignEnvFromProcess());}
