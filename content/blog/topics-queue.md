@@ -15,9 +15,6 @@ Format:
 
 - Inventory planning for solo store owners: avoiding stockouts and dead stock
 - Email list building for ecommerce without annoying popups
-- Subscriptions and reorders: recurring revenue for one-person stores
-- Google Merchant Center rejections: common fixes
-- How to audit your own Shopify store in one afternoon
 - Revenue leaks: the 7 places small stores lose money silently
 - Checkout friction: small fixes with outsized impact
 - Mobile conversion: why your phone traffic doesn't buy
@@ -98,3 +95,6 @@ Format:
 - [2026-08-25] How to answer presale questions fast enough to win the sale — /blog/answer-presale-questions-fast
 - [2026-08-25] Multilingual support on a small store: when it's worth it — /blog/multilingual-support-small-store
 - [2026-08-25] Loyalty programs for small stores: simple beats fancy — /blog/loyalty-programs-small-stores-simple
+- [2026-08-27] Subscriptions and reorders: recurring revenue for one-person stores — /blog/subscriptions-reorders-recurring-revenue
+- [2026-08-27] Google Merchant Center rejections: common fixes — /blog/google-merchant-center-rejections-common-fixes
+- [2026-08-27] How to audit your own Shopify store in one afternoon — /blog/audit-shopify-store-one-afternoon
