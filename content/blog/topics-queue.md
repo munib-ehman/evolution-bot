@@ -15,10 +15,7 @@ Format:
 
 - Inventory planning for solo store owners: avoiding stockouts and dead stock
 - Email list building for ecommerce without annoying popups
-- Revenue leaks: the 7 places small stores lose money silently
 - Checkout friction: small fixes with outsized impact
-- Mobile conversion: why your phone traffic doesn't buy
-- Site speed and Core Web Vitals for Shopify: what actually matters
 - A/B testing on low traffic: what you can and can't learn
 - Seasonal prep: getting a small store ready for BFCM
 - Holiday shipping cutoffs: communicating them without losing sales
@@ -98,3 +95,6 @@ Format:
 - [2026-08-27] Subscriptions and reorders: recurring revenue for one-person stores — /blog/subscriptions-reorders-recurring-revenue
 - [2026-08-27] Google Merchant Center rejections: common fixes — /blog/google-merchant-center-rejections-common-fixes
 - [2026-08-27] How to audit your own Shopify store in one afternoon — /blog/audit-shopify-store-one-afternoon
+- [2026-08-27] Revenue leaks: the 7 places small stores lose money silently — /blog/revenue-leaks-small-ecommerce-stores
+- [2026-08-27] Mobile conversion: why your phone traffic doesn't buy — /blog/mobile-conversion-shopify-phone-traffic
+- [2026-08-27] Site speed and Core Web Vitals for Shopify: what actually matters — /blog/shopify-site-speed-core-web-vitals
