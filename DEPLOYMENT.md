@@ -63,7 +63,7 @@ Create or link the Shopify Partner app and configure:
 ```dotenv
 SHOPIFY_API_KEY=
 SHOPIFY_API_SECRET=
-SHOPIFY_SCOPES=read_products,read_orders,read_checkouts,read_customers
+SHOPIFY_SCOPES=write_products,write_files,write_discounts,read_orders,read_checkouts,read_customers,write_customers
 VITE_SHOPIFY_API_KEY=
 VITE_SHOPIFY_APP_HANDLE=runevolution
 ```
@@ -82,12 +82,22 @@ Set the OAuth redirect URL to:
 https://<your-domain>/api/shopify-callback
 ```
 
-The repository's `shopify.app.toml` defines read-only scopes, embedded behavior, ordinary webhook subscriptions, and privacy-compliance endpoints. Review its domain and handle, then push it with the Shopify CLI:
+The repository's `shopify.app.toml` defines the constrained v1.1 write scopes, embedded behavior, ordinary webhook subscriptions, and privacy-compliance endpoints. It is already linked through its `client_id`. A TOML file cannot create the initial Dev Dashboard app by itself.
+
+For a new app, authenticate Shopify CLI and create/link the app once:
 
 ```bash
+shopify auth login
 shopify app config link
+```
+
+Choose **Create a new app** when prompted. Shopify CLI writes the resulting `client_id` into the selected TOML configuration. After that, review the production domain and handle and deploy every configuration change with:
+
+```bash
 shopify app deploy
 ```
+
+`shopify app deploy` synchronizes Shopify configuration and creates a new app version; it does not deploy the Vercel application itself.
 
 Required webhook endpoints:
 
@@ -96,21 +106,34 @@ POST https://<your-domain>/api/shopify-webhook
 POST https://<your-domain>/api/shopify-compliance
 ```
 
-Do not add write scopes unless the product behavior and approval model are intentionally changed.
+Write scopes power v1.1's merchant-approved action cards. Existing stores must reconnect after scope changes; never execute a Shopify mutation outside the persisted proposal and approval flow.
+
+### Generate the Vercel cron secret
+
+`CRON_SECRET` does not come from Shopify. Generate your own random secret and save it as a server-only Vercel environment variable. For example:
+
+```powershell
+$bytes = New-Object byte[] 48
+[Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+[Convert]::ToBase64String($bytes)
+```
+
+Copy the single output value to **Vercel → Project Settings → Environment Variables**, name it `CRON_SECRET`, select **Production**, and redeploy. Alternatively, run `vercel env add CRON_SECRET production`. Do not add the real value to `.env.example` or commit it.
+
+The Vercel configuration intentionally contains no cron jobs so the project can deploy on the Hobby plan. All scheduled work runs from `.github/workflows/marketing-delivery.yml`: worker and delivery jobs every five minutes, store observation hourly, action metrics daily, and the autonomous Product Manager daily. Add the **same value** as a GitHub Actions repository secret named `CRON_SECRET`; the workflow sends it to each secured endpoint as a bearer token. GitHub Actions schedules use UTC and may start a few minutes late during periods of high load.
 
 ## 5. Configure web billing with Polar
 
-Polar is the billing rail for accounts that do not subscribe through Shopify. Create an organization access token, then use the included idempotent setup utility:
+Polar is the billing rail for accounts that do not subscribe through Shopify. Apply `supabase/2026-08-19_role_entitlements.sql`, create an organization access token, then run the included idempotent setup utility:
 
 ```bash
 POLAR_ACCESS_TOKEN=<token> node tools/polar-setup.mjs
 ```
 
-Add its returned values to Vercel:
+Enable Polar's seat-based pricing beta under **Settings → General → Features** first. The utility creates one `Evolution Managers` product billed at $50 per selected manager and stores its Polar ID in `public.manager_plans`. Keep these secrets in Vercel:
 
 ```dotenv
 POLAR_ACCESS_TOKEN=
-POLAR_PRODUCT_ID=
 POLAR_WEBHOOK_SECRET=
 # POLAR_API_BASE=https://sandbox-api.polar.sh
 ```

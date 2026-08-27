@@ -32,6 +32,7 @@ export function Composer({ onSend, disabled, canTalk, active, onVoice }: Props) 
     if (!text) return;
     onSend(text);
     setValue("");
+    if (inputRef.current) inputRef.current.style.height = "42px";
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -50,7 +51,11 @@ export function Composer({ onSend, disabled, canTalk, active, onVoice }: Props) 
         className="composer-input"
         placeholder="Type a message…"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          e.currentTarget.style.height = "42px";
+          e.currentTarget.style.height = `${Math.min(64, e.currentTarget.scrollHeight)}px`;
+        }}
         onKeyDown={onKeyDown}
         rows={1}
         aria-label="Message"

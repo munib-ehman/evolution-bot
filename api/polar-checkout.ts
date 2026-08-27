@@ -21,11 +21,13 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
+  const payload=await req.json().catch(()=>({})) as {roles?:unknown;role?:unknown};
 
   const { status, body } = await runPolarCheckout(
     req.headers.get("authorization"),
     new URL(req.url).origin,
     env,
+    payload.roles ?? payload.role,
   );
   return new Response(JSON.stringify(body), {
     status,

@@ -13,19 +13,9 @@ Format:
 
 ## Pending
 
-- Bundling strategies that raise average order value
-- Upsells and cross-sells that don't feel pushy
-- Customer support response templates for common ecommerce tickets
-- How to answer presale questions fast enough to win the sale
-- Multilingual support on a small store: when it's worth it
-- Loyalty programs for small stores: simple beats fancy
-- Subscriptions and reorders: recurring revenue for one-person stores
-- Google Merchant Center rejections: common fixes
-- How to audit your own Shopify store in one afternoon
-- Revenue leaks: the 7 places small stores lose money silently
+- Inventory planning for solo store owners: avoiding stockouts and dead stock
+- Email list building for ecommerce without annoying popups
 - Checkout friction: small fixes with outsized impact
-- Mobile conversion: why your phone traffic doesn't buy
-- Site speed and Core Web Vitals for Shopify: what actually matters
 - A/B testing on low traffic: what you can and can't learn
 - Seasonal prep: getting a small store ready for BFCM
 - Holiday shipping cutoffs: communicating them without losing sales
@@ -49,11 +39,6 @@ Format:
 
 ## Written
 
-- [2026-08-27] How to price products: margin math most store owners skip — /blog/how-to-price-products-margin-math
-- [2026-08-25] Browse abandonment emails: worth it or noise? — /blog/browse-abandonment-emails-worth-it-or-noise
-- [2026-08-22] Welcome email series: the highest ROI automation you're not using — /blog/welcome-email-series-automation
-- [2026-08-19] Email list building for ecommerce without annoying popups — /blog/email-list-building-without-annoying-popups
-- [2026-08-18] Inventory planning for solo store owners: avoiding stockouts and dead stock — /blog/inventory-planning-solo-store-owners
 - [2026-08-08] Sourcing products from suppliers: a checklist for small stores — /blog/sourcing-products-from-suppliers-checklist
 - [2026-07-17] How to reduce abandoned checkouts on Shopify without discounting — /blog/reduce-abandoned-checkouts-shopify
 - [2026-07-18] Abandoned cart email sequence that actually converts: timing, copy, examples — /blog/abandoned-cart-email-sequence-that-converts
@@ -98,3 +83,18 @@ Format:
 - [2026-07-30] Countdown timers for Shopify: urgency marketing that doesn't feel fake (competitor-trend: Omnisend's new Tickvio countdown-timer integration + 2026 urgency-marketing conversion data) — /blog/countdown-timers-shopify-urgency-marketing
 - [2026-07-30] Google Trends SEO for Shopify stores: catching demand while it spikes (competitor-trend: Yotpo's "Google Trends for SEO: The Velocity Playbook" + 2026 ecommerce SEO trend coverage) — /blog/google-trends-seo-for-shopify-stores
 - [2026-07-30] How to find your next winning product without gambling on ads — /blog/find-winning-product-without-gambling-on-ads
+- [2026-08-22] Welcome email series: the highest ROI automation you're not using — /blog/welcome-email-series-ecommerce
+- [2026-08-22] Browse abandonment emails: worth it or noise? — /blog/browse-abandonment-emails-worth-it
+- [2026-08-22] How to price products: margin math most store owners skip — /blog/how-to-price-products-margin-math
+- [2026-08-23] Bundling strategies that raise average order value — /blog/bundling-strategies-raise-average-order-value
+- [2026-08-23] Upsells and cross-sells that don't feel pushy — /blog/upsells-cross-sells-without-being-pushy
+- [2026-08-23] Customer support response templates for common ecommerce tickets — /blog/customer-support-response-templates-ecommerce
+- [2026-08-25] How to answer presale questions fast enough to win the sale — /blog/answer-presale-questions-fast
+- [2026-08-25] Multilingual support on a small store: when it's worth it — /blog/multilingual-support-small-store
+- [2026-08-25] Loyalty programs for small stores: simple beats fancy — /blog/loyalty-programs-small-stores-simple
+- [2026-08-27] Subscriptions and reorders: recurring revenue for one-person stores — /blog/subscriptions-reorders-recurring-revenue
+- [2026-08-27] Google Merchant Center rejections: common fixes — /blog/google-merchant-center-rejections-common-fixes
+- [2026-08-27] How to audit your own Shopify store in one afternoon — /blog/audit-shopify-store-one-afternoon
+- [2026-08-27] Revenue leaks: the 7 places small stores lose money silently — /blog/revenue-leaks-small-ecommerce-stores
+- [2026-08-27] Mobile conversion: why your phone traffic doesn't buy — /blog/mobile-conversion-shopify-phone-traffic
+- [2026-08-27] Site speed and Core Web Vitals for Shopify: what actually matters — /blog/shopify-site-speed-core-web-vitals

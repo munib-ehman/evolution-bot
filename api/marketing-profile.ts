@@ -1,0 +1,1 @@
+import{runMarketingProfile}from"./_marketingProfile";import{recoveryCampaignEnvFromProcess}from"./_recoveryCampaigns";export const config={runtime:"edge"};export default(req:Request)=>runMarketingProfile(req,recoveryCampaignEnvFromProcess());

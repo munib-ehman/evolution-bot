@@ -1,181 +1,165 @@
 ---
-title: How to Price Products — The Margin Math Most Store Owners Skip
-description: Price ecommerce products with real margin math. Calculate landed cost, target margin, break-even volume, discounts, returns, and channel costs before launch.
+title: How to Price Products: Margin Math Most Store Owners Skip
+description: Price ecommerce products with margin math that includes product cost, fees, shipping, returns, overhead, discounts, and a worked break-even example.
 slug: how-to-price-products-margin-math
-date: 2026-08-27
+date: 2026-08-22
 ---
 
-You double the wholesale cost, round to a price that looks normal, and move on. Then a discount, free shipping, payment fee, and return all take their share—and the product that looked profitable is barely contributing to the business.
+To price a product, start with the contribution you need from each sale—not a competitor's price and not a simple “cost times two” rule. Add the costs that change with an order, account for percentage fees, choose a target contribution margin, then check whether the result can cover fixed overhead and still make sense to the customer.
 
-Pricing is not just choosing what a customer might pay. It is deciding whether each sale leaves enough money to replace the item, deliver the order, acquire the customer, and help cover the costs of running the store.
+The useful output is not one magical price. It is a floor, a target price, and a clear view of what happens when you discount.
 
-You do not need a finance model to get a useful answer. You need one honest cost sheet, the correct margin formula, and a few scenarios that reflect how the product will actually be sold.
+## Do not confuse markup and margin
 
-## Start with the cost of one sellable unit
+Markup measures profit relative to cost. Margin measures profit relative to selling price. They are not interchangeable.
 
-The supplier's unit price is only the first line. Build a landed unit cost using the costs required to get inventory ready for sale:
+Suppose an item costs $20 and sells for $40:
+
+> Markup = ($40 − $20) ÷ $20 = 100%
+
+> Gross margin = ($40 − $20) ÷ $40 = 50%
+
+Calling that a 100% margin would make every later decision wrong. Shopify uses the margin definition—profit divided by price—in its [product details guidance](https://help.shopify.com/en/manual/products/details/product-details-page).
+
+Gross margin is still only a first view. It can exclude fulfillment, payment fees, shipping subsidy, expected returns, and acquisition cost. Use it to compare product economics, then calculate contribution for the actual pricing decision.
+
+## Build the variable cost stack
+
+List costs that increase when you sell one more unit. Use recent actual averages, not the cheapest month you remember.
 
 - product or manufacturing cost
-- inbound freight and insurance
-- duties, tariffs, and customs-broker fees
-- product packaging, labels, and inserts
-- inspection or testing allocated across the order
-- preparation or assembly before fulfillment
-- an allowance for defective or unusable units
-
-Allocate shipment-level costs across **sellable** units, not merely units ordered. If 500 units cost $5,000 from the supplier, inbound and import costs are $1,200, and only 480 units are sellable, the starting cost is:
-
-> ($5,000 + $1,200) ÷ 480 = $12.92 per sellable unit
-
-That is more useful than calling the product a $10 item.
-
-For U.S. tax reporting, inventory and cost-of-goods-sold treatment can depend on the business and accounting method. The IRS explains inventory components and the cost-of-goods-sold calculation in [Publication 334, Tax Guide for Small Business](https://www.irs.gov/publications/p334). Use an accountant for the tax treatment that applies to your store; use the operating cost sheet here to make pricing decisions.
-
-## Margin and markup are not the same
-
-These two numbers are often confused:
-
-> Markup % = (price − cost) ÷ cost
-
-> Gross margin % = (price − cost) ÷ price
-
-If an item costs $20 and sells for $40, the markup is 100%, but the gross margin is 50%. Applying “a 60% margin” by multiplying cost by 1.6 produces only a 37.5% margin.
-
-To find the price required for a target gross margin:
-
-> Price = cost ÷ (1 − target margin)
-
-At a $20 cost and a 60% target margin:
-
-> $20 ÷ (1 − 0.60) = $50
-
-Use decimal form in the formula: 60% becomes 0.60. A target margin must remain below 100%; otherwise the denominator is zero or negative and the calculation is not meaningful.
-
-## Gross margin is a checkpoint, not the finish line
-
-The price-minus-product-cost calculation tells you whether the merchandise has room to work. It does not include every cost created by an order.
-
-Add the variable costs that apply when a sale happens:
-
+- inbound freight, duties, and inspection allocated per sellable unit
+- packaging and pick-and-pack cost
 - outbound shipping you absorb
-- fulfillment pick-and-pack fees
-- payment-processing and platform transaction fees
-- sales commission or marketplace fees
-- discounts funded by the store
-- expected returns, refunds, replacements, and return shipping
-- packaging used for the outbound parcel
-- performance marketing cost where it can be attributed sensibly
+- payment and platform charges that vary with the order
+- expected return, damage, and replacement allowance
+- royalties or marketplace commissions tied to the sale
 
-Some charges are a percentage of the selling price and some are a fixed amount. Model both. Do not subtract customer-paid sales tax as store revenue when it is collected for a tax authority, and do not treat customer-paid shipping as free money without also recording the carrier and fulfillment costs.
+Keep fixed monthly overhead—software, base rent, salaries, insurance, and professional fees—separate for now. You will test whether the unit contribution covers it later.
 
-This produces contribution margin:
+Shopify's Cost per item field can support product and variant margin reporting, but Shopify says that field excludes taxes, shipping, and other costs for resold products. Its [profit report documentation](https://help.shopify.com/en/manual/reports-and-analytics/shopify-reports/report-types/default-reports/profit-reports) also notes that profit reports depend on costs recorded when the item sold and that the field is static. Use the report as an input, not proof that every real cost is included.
 
-> Contribution per unit = net selling price − product cost − other variable costs
+For a deeper order-level check, use this [true profit per order calculation](/blog/true-profit-per-order-not-just-revenue).
 
-Contribution is what remains to cover fixed expenses and profit. Our guide to [true profit per order](/blog/true-profit-per-order-not-just-revenue) takes the order-level view; this article uses the same discipline before you commit to a list price.
+## Price from a target contribution margin
 
-## Run the normal-sale scenario
+When all variable costs are fixed dollar amounts, the basic formula is:
 
-Suppose the sellable unit cost is $12.92 and you are considering a $36 list price. A typical full-price order allocates these variable costs to the item:
+> Price = variable cost per unit ÷ (1 − target contribution margin)
 
-- net selling price: $36.00
-- landed product cost: −$12.92
-- outbound packaging and fulfillment: −$3.25
-- shipping subsidy: −$4.50
-- payment cost assumed for this scenario: −$1.34
-- expected returns and replacements allowance: −$1.80
+If payment or marketplace fees are a percentage of the selling price, include that rate in the denominator:
 
-The contribution is:
+> Price = fixed-dollar variable costs ÷ (1 − percentage fee rate − target contribution margin)
 
-> $36.00 − $12.92 − $3.25 − $4.50 − $1.34 − $1.80 = $12.19
+The denominator must stay positive. If your percentage fees plus target margin approach 100%, the assumed economics cannot produce a valid price.
 
-That is 33.9% of the $36 selling price. The assumptions are illustrative, not benchmarks. Replace every number—including payment cost and return allowance—with your own contracts and order history.
+### Worked example
 
-Now the pricing question becomes concrete: is $12.19 enough contribution per unit to cover the store's fixed costs at a sales volume you can realistically reach?
+A store is pricing a kitchen tool with these expected per-order costs:
 
-## Calculate break-even volume
+- product and inbound cost: $21
+- packaging and fulfillment: $2
+- outbound shipping subsidy: $5
+- return and replacement allowance: $2
+- fixed-dollar variable costs: $30
+- payment fees: 3% of selling price
+- target contribution margin: 25%
 
-The U.S. Small Business Administration defines the break-even point as the point where total cost and total revenue are equal and provides the units formula in its [break-even analysis guide](https://www.sba.gov/business-guide/plan-your-business/calculate-your-startup-costs/break-even-point).
+Apply the formula:
 
-For one product or a simplified product line:
+> $30 ÷ (1 − 0.03 − 0.25) = $41.67
 
-> Break-even units = allocated fixed costs ÷ contribution per unit
+At a rounded $42 price, the estimated payment fee is $1.26. After $30 of other variable costs, contribution is $10.74, or about 25.6% of the selling price.
 
-If this product needs to cover $1,500 a month of fixed costs and contributes $12.19 per unit:
+This is a model, not a promise. Carrier rates, return behavior, and product mix will move. Replace every example input with your own trailing data, and calculate at the variant level when costs differ.
 
-> $1,500 ÷ $12.19 = 123.05
+## Check whether unit contribution covers the business
 
-You cannot sell a fraction of a unit, so you would need 124 units to pass break-even under those assumptions. If expected demand is 40 units, the price, cost structure, or fixed-cost allocation needs another look.
+A healthy-looking unit margin can still leave the store short if volume cannot cover fixed costs.
 
-For a multi-product store, do not pretend every SKU has the same contribution. Use the expected sales mix, or calculate how much contribution each product actually supplies and compare the total with fixed costs.
+Use:
 
-## Stress-test the price you will really collect
+> Break-even units = monthly fixed costs ÷ contribution per unit
 
-The list price is not always the realized price. Build at least four rows:
+If fixed costs are $2,200 and contribution is $10.74, the business needs about 205 units a month to cover those fixed costs before owner profit and tax.
 
-1. full-price order
-2. common promotional discount
-3. free-shipping order
-4. high-cost return or acquisition scenario
+Then run three cases:
 
-In the example above, a 20% discount reduces the $36 price to $28.80. If percentage-based fees also change and the other assumptions stay the same, recalculate the entire row rather than simply subtracting 20% from the contribution.
+- **Base:** realistic current volume and return rate
+- **Weak month:** fewer units, higher shipping, or more returns
+- **Promotion:** discounted selling price and higher expected volume
 
-Discounts cut revenue, not product cost. A 20% discount therefore reduces contribution by more than 20% when many costs remain fixed per unit. Set a discount floor based on required contribution, and configure staff and marketing tools so a promotion cannot quietly cross it.
+Do not bury owner pay by pretending your time is free. Decide whether it belongs in fixed overhead or your profit target and use the same treatment each month.
 
-## Price for channels separately when costs differ
+Fixed app costs also deserve a regular review. This guide to the [average Shopify app stack cost](/blog/average-shopify-app-stack-cost-per-month) shows how small recurring tools can raise the break-even point.
 
-Your own site, a wholesale account, and a marketplace can have different economics. Each may change commission, payment, fulfillment, returns, advertising, or customer-service cost.
+## Find your discount floor before launching a sale
 
-Create one contribution row per channel. A marketplace price does not have to match your direct-store price when policies and customer expectations allow a difference, but check contractual requirements and communicate prices honestly. Wholesale needs enough room for the retailer's economics as well as yours; do not divide the retail price by two out of habit and hope the remaining amount covers production.
+A discount cuts contribution faster than it cuts revenue because most unit costs do not fall with the selling price.
 
-If currency conversion or cross-border duties change what you receive, model the destination rather than applying one global number to every order.
+At the $42 example price, a 15% discount produces a $35.70 selling price. With a 3% fee, the estimated contribution becomes:
 
-## Check the market without copying it
+> $35.70 − $30 − $1.07 = $4.63
 
-Competitor prices tell you the range customers will encounter, not the price your economics can support. Compare products on the things that affect the decision: quantity, materials, warranty, shipping, returns, service, availability, and brand position.
+That is about a 13% contribution margin, roughly half the dollar contribution of the full-price order. If the promotion does not create enough genuinely incremental orders, it can raise revenue while reducing the cash available to cover overhead.
 
-If your required price is far above comparable offers, you have four honest options:
+Record three numbers for every SKU:
 
-- prove and communicate a meaningful difference
-- reduce cost without reducing the promised product
-- redesign the offer, pack size, or channel
-- decide not to sell the product
+1. regular price and expected contribution
+2. lowest planned promotional price and contribution
+3. absolute floor below which the order no longer supports the business
 
-Selling below a sustainable price is not validation. It can show demand for a deal your business cannot afford to repeat.
+Include shipping offers in this check. “Free” shipping is still a store cost, and the right threshold depends on actual order economics. Use the [free shipping threshold formula](/blog/free-shipping-threshold-how-to-set-yours) before treating shipping as a promotional afterthought.
 
-## Use compare-at and sale prices truthfully
+## Use competitors as a market check, not a calculator
 
-A crossed-out reference price should represent a genuine comparison, not a fictional anchor created to make the current price look like a bargain. In the United States, the Federal Trade Commission's [Guides Against Deceptive Pricing](https://www.ecfr.gov/current/title-16/chapter-I/subchapter-B/part-233) address former-price comparisons, retail-price comparisons, and other advertised savings claims.
+Competitor prices tell you what alternatives a shopper sees. They do not reveal the competitor's product cost, return rate, wholesale mix, cash position, or required margin.
 
-Shopify's [product pricing documentation](https://help.shopify.com/en/manual/products/details/product-pricing) explains price, compare-at price, unit pricing, and cost-per-item fields. Those fields can display and support pricing operations, but the store remains responsible for whether a comparison and required unit-price display are accurate under applicable law.
+After calculating your target price, compare products with similar quality, package size, warranty, service, and delivery terms. If your sustainable price is much higher, choose deliberately:
 
-## Review price after launch
+- explain and prove the extra value
+- reduce the variable cost without reducing the customer outcome
+- change the bundle or package size
+- sell through a channel with different economics
+- accept a lower target margin for a strategic item
+- stop carrying a product that cannot support itself
 
-Pricing is a decision with assumptions attached. Save the version you approved, then compare it with reality:
+Do not quietly remove necessary costs from the spreadsheet until the desired price appears. That makes the model prettier, not the product more profitable.
 
-- realized selling price after discounts
-- actual landed cost by purchase order
-- actual fulfillment and shipping cost
-- payment and channel fees
-- returns and replacements by SKU
-- contribution per unit and per order
-- units sold versus break-even assumption
+## Keep sale and compare-at pricing honest
 
-Review after enough normal orders to reveal a pattern, and immediately after a supplier increase, carrier change, new channel, tax or duty change, or major promotion. Do not wait for the bank balance to tell you the assumptions failed.
+In the United States, the current [FTC Guides Against Deceptive Pricing](https://www.ecfr.gov/current/title-16/chapter-I/subchapter-B/part-233) say a former price used for a comparison should be a genuine price offered openly and in good faith, not an inflated figure created to advertise a false reduction. Other countries and US states can impose additional rules.
 
-## The pricing sheet to build today
+Keep records of when a regular price was offered and sold, and do not use a fictional compare-at price to make the target price look cheaper. Check the requirements for every market where you sell; this article is operating guidance, not legal advice.
 
-Use one row per SKU and include:
+## Put the price into Shopify and monitor the result
 
-- landed cost per sellable unit
-- proposed list price
-- gross margin percentage
-- normal realized price
-- variable cost by category
-- contribution dollars and percentage
-- promotional-price contribution
-- break-even units
-- minimum acceptable price
-- date and source for every assumption
+Shopify recommends considering marketing, subscription, and transaction expenses when pricing products, alongside product cost and the value you provide. Its [pricing guidance](https://help.shopify.com/en/manual/products/dropshipping/creating-a-product-line/pricing-your-products) is a useful platform-level checklist.
 
-Then make three decisions: launch at the proposed price, change the economics, or do not carry the item. Pricing is not finished when the storefront accepts a number. It is finished when the store can explain what remains from a normal sale, what remains from a discounted sale, and how many sales are needed to make the product worth stocking.
+After updating a price:
+
+- enter accurate cost data for every variant
+- confirm tax settings, currencies, unit pricing, and compare-at displays
+- test product, cart, checkout, and discount behavior on mobile
+- monitor unit contribution, conversion, returns, and support feedback
+- review after supplier, carrier, fee, or product changes
+
+A conversion dip does not automatically mean the price is wrong, and a revenue lift does not prove it is right. Review contribution dollars over a representative period. Low-volume stores should avoid conclusions after a few orders.
+
+## A one-page pricing worksheet
+
+For each SKU, keep:
+
+- selling price
+- product and inbound cost
+- packaging and fulfillment
+- shipping subsidy
+- percentage fees
+- return or replacement allowance
+- contribution dollars and margin
+- regular and promotional price floors
+- expected monthly units
+- share of fixed overhead covered
+- date and reason for the next review
+
+Start with your five highest-volume products. Replace estimates with actuals, calculate the promotion floor, and identify the one SKU where a small cost or price change has the largest effect on monthly contribution. That is a more useful first pricing decision than copying another store's number.

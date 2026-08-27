@@ -93,6 +93,7 @@ async function redactShop(env: SkillEnv, shop: string, userId: string): Promise<
     del(`store_events?user_id=eq.${userId}`),
     del(`recovery_sequences?user_id=eq.${userId}`),
     del(`retention_sequences?user_id=eq.${userId}`),
+    del(`support_notifications?user_id=eq.${userId}`),
     del(`audits?store_url=eq.${encodeURIComponent(`https://${shop}`)}`),
     del(`stores?user_id=eq.${userId}`),
   ]);
@@ -173,6 +174,13 @@ export async function handleShopifyCompliance(
   }
 
   if (topic === "customers/redact") {
+    if (userId && env.supabaseUrl && env.serviceRoleKey) {
+      const orderIds = (payload.orders_requested ?? []).map((id) => `gid://shopify/Order/${id}`);
+      await Promise.all(orderIds.map((orderId) => fetch(
+        `${env.supabaseUrl}/rest/v1/support_notifications?user_id=eq.${userId}&order_id=eq.${encodeURIComponent(orderId)}`,
+        { method: "DELETE", headers: svcHeaders(env) },
+      ).catch(() => null)));
+    }
     await logComplianceTask(
       env,
       userId,

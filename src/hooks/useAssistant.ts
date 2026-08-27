@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Message, Product, Settings } from "../types";
 import { getAssistantReply, isMockMode } from "../llm/client";
-import { createSpeaker, stopSpeaking, warmUpVoice, DEFAULT_VOICE, type ModelProgress } from "../tts";
+import { createSpeaker, stopSpeaking, warmUpVoice, DEFAULT_VOICE, type ModelProgress, type StreamingSpeaker } from "../tts";
 import { lat } from "../lib/latency";
 import { WebSpeechRecognizer, webSpeechSupported } from "../stt/webSpeech";
 import { LocalRecorder } from "../stt/transformersStt";
@@ -30,6 +30,23 @@ import { FILE_FIXES_SKILL_ID, type SkillChip } from "../lib/skills";
 
 export type AssistantStatus = "idle" | "thinking" | "speaking";
 export type MicState = "idle" | "listening" | "transcribing";
+export type ManagerRole = "marketing" | "customer-success" | "seo" | "product" | "operations";
+
+function managerGreeting(manager: ManagerRole): string {
+  if (manager === "customer-success") {
+    return "Hey, I’m your Customer Success Manager. I’ll prioritize customer risks, prepare review requests only for fulfilled orders, and identify customers who may not return. Customer emails send only from the support queue after you review and approve the exact message.";
+  }
+  if (manager === "seo") {
+    return "Hey, I’m your SEO Manager. I’ll review your products, find relevant search terms, and prepare clear before-and-after improvements. Nothing changes until you approve it.";
+  }
+  if (manager === "product") {
+    return "Hey, I’m your Product Manager. I’ll research new products, improve shopper-facing listings, and recommend catalog and collection changes. Every Shopify change remains a proposal until you approve it.";
+  }
+  if (manager === "operations") {
+    return "Hey, I’m your Operations Manager. I’ll investigate fulfillment delays, inventory risks, returns, and customer-impacting issues, then recommend the safest concrete resolution. I won’t claim a shipment, cancellation, refund, or customer message happened unless an approved action confirms it.";
+  }
+  return "Hey, I’m your Marketing Manager. I’m monitoring your store for email revenue opportunities. Ask me to recover carts, win back customers, or plan a campaign—nothing sends without your approval.";
+}
 
 // Bump this suffix whenever a default changes in a way that must override a
 // previously-persisted value (e.g. the default avatar URL). Old settings are
@@ -64,6 +81,7 @@ export function useAssistant() {
   const [error, setError] = useState<string | null>(null);
   const [ttsProgress, setTtsProgress] = useState<ModelProgress | null>(null);
   const [avatarFellBack, setAvatarFellBack] = useState(false);
+  const [actionRevision, setActionRevision] = useState(0);
   // True once the product catalog has resolved (loaded OR failed) — one of the
   // signals the boot splash waits on before revealing the app.
   const [catalogReady, setCatalogReady] = useState(false);
@@ -78,6 +96,7 @@ export function useAssistant() {
   const settingsRef = useRef<Settings>(settings);
   settingsRef.current = settings;
   const abortRef = useRef<AbortController | null>(null);
+  const activeSpeakerRef = useRef<StreamingSpeaker | null>(null);
   const recognizerRef = useRef<WebSpeechRecognizer | null>(null);
   const recorderRef = useRef<LocalRecorder | null>(null);
   // Lets `send` re-arm the mic for the hands-free talk-mode loop without a
@@ -86,6 +105,7 @@ export function useAssistant() {
   // The app disables hands-free re-listening while the chat view is open, so
   // the mic never surprise-activates outside the voice stage.
   const handsFreeRef = useRef(true);
+  const managerRef = useRef<ManagerRole>("marketing");
 
   // Load the product catalog (static file, no backend).
   useEffect(() => {
@@ -103,9 +123,7 @@ export function useAssistant() {
       {
         id: newId(),
         role: "assistant",
-        content: isMockMode
-          ? "Hey, welcome to Evolution! I'm your AI copilot — tap the mic and ask about your catalog or hand me a task. Prefer typing? Switch anytime."
-          : "Welcome to Evolution! I'm your AI copilot. Tap the mic and tell me what to take off your plate today.",
+        content: managerGreeting("marketing"),
       },
     ]);
   }, []);
@@ -118,8 +136,27 @@ export function useAssistant() {
     });
   }, []);
 
+  const toggleSound = useCallback(() => {
+    const enabled = settingsRef.current.ttsEngine !== "off" && !settingsRef.current.textOnly;
+    activeSpeakerRef.current?.cancel();
+    activeSpeakerRef.current = null;
+    stopSpeaking();
+    updateSettings(enabled ? { ttsEngine: "off" } : { ttsEngine: "kokoro", textOnly: false });
+    if (enabled) setStatus((current) => current === "speaking" ? "idle" : current);
+  }, [updateSettings]);
+
   const appendMessage = useCallback((msg: Message) => {
     setMessages((prev) => [...prev, msg]);
+  }, []);
+
+  const setManagerContext = useCallback((manager: ManagerRole) => {
+    managerRef.current = manager;
+    abortRef.current?.abort();
+    activeSpeakerRef.current?.cancel();
+    stopSpeaking();
+    setStatus("idle");
+    setError(null);
+    setMessages([{ id: newId(), role: "assistant", content: managerGreeting(manager) }]);
   }, []);
 
   // Connected-store context (store URL + audit) injected into every turn's
@@ -148,7 +185,7 @@ export function useAssistant() {
 
   /** Core: send a user turn, get a reply, speak it (unless text-only). */
   const send = useCallback(
-    async (rawText: string, opts?: { fromVoice?: boolean }) => {
+    async (rawText: string, opts?: { fromVoice?: boolean; manager?: ManagerRole }) => {
       const text = rawText.trim();
       if (!text || status === "thinking") return;
 
@@ -182,6 +219,7 @@ export function useAssistant() {
             },
           })
         : null;
+      activeSpeakerRef.current = speaker;
 
       // The reply bubble streams in as the model writes, batched so a fast
       // token stream doesn't thrash React (or starve the avatar's render loop).
@@ -221,6 +259,51 @@ export function useAssistant() {
         }
       };
 
+      const onAction = (action: import("../lib/actions").ShopifyActionProposal) => {
+        if (controller.signal.aborted) return;
+        setActionRevision((revision) => revision + 1);
+        if (!bubbleShown) {
+          bubbleShown = true;
+          appendMessage({ id: assistantId, role: "assistant", content: "", pending: true, action });
+        } else {
+          updateMessage(assistantId, { action });
+        }
+      };
+
+      const onRecoveryProposal = (recoveryProposal: import("../lib/recovery").RecoveryCampaignProposal) => {
+        if (controller.signal.aborted) return;
+        if (!bubbleShown) {
+          bubbleShown = true;
+          appendMessage({ id: assistantId, role: "assistant", content: "", pending: true, recoveryProposal });
+        } else {
+          updateMessage(assistantId, { recoveryProposal });
+        }
+      };
+
+      const onWinbackProposal = (winbackProposal: import("../lib/winbackCampaigns").WinbackCampaignProposal) => {
+        if (controller.signal.aborted) return;
+        if (!bubbleShown) {
+          bubbleShown = true;
+          appendMessage({ id: assistantId, role: "assistant", content: "", pending: true, winbackProposal });
+        } else {
+          updateMessage(assistantId, { winbackProposal });
+        }
+      };
+
+      const onBroadcastProposal = (broadcastProposal: import("../lib/broadcastCampaigns").BroadcastCampaign) => {
+        if (controller.signal.aborted) return;
+        if (!bubbleShown) {
+          bubbleShown = true;
+          appendMessage({ id: assistantId, role: "assistant", content: "", pending: true, broadcastProposal });
+        } else {
+          updateMessage(assistantId, { broadcastProposal });
+        }
+      };
+      const onSupportCase=(orderId:string)=>{
+        if(controller.signal.aborted)return;
+        window.dispatchEvent(new CustomEvent("evolution:support-case-prepared",{detail:{orderId}}));
+      };
+
       try {
         // Store connected → the agentic path: the model can pull real store
         // data itself. Falls back to the generic brain when the agent is
@@ -230,16 +313,25 @@ export function useAssistant() {
         if (storeContextRef.current !== null) {
           try {
             reply = await runAgentChat(history, {
+              manager: opts?.manager,
               signal: controller.signal,
               onProgress,
               onToken,
+              onAction,
+              onRecoveryProposal,
+              onWinbackProposal,
+              onBroadcastProposal,
+              onSupportCase,
             });
           } catch (err) {
             if (controller.signal.aborted) {
               speaker?.cancel();
               return;
             }
-            if (err instanceof AgentChatError && err.streamedSomething) throw err;
+            // A connected-store request must never fall back to the generic,
+            // tool-less model after an agent error. That model can describe
+            // actions but cannot perform them, which creates false success.
+            if (err instanceof AgentChatError) throw err;
             console.warn("[assistant] agent chat unavailable, using the generic brain:", err);
           }
         }
@@ -267,6 +359,7 @@ export function useAssistant() {
           await speaker.finish();
           lat.mark("speakDone");
         }
+        if (activeSpeakerRef.current === speaker) activeSpeakerRef.current = null;
         if (!controller.signal.aborted) updateMessage(assistantId, { pending: false, progress: undefined });
 
         // Hands-free conversation: if this turn came in BY VOICE, re-open the mic
@@ -287,6 +380,7 @@ export function useAssistant() {
         }
       } catch (err) {
         speaker?.cancel();
+        if (activeSpeakerRef.current === speaker) activeSpeakerRef.current = null;
         if (paintTimer !== null) window.clearTimeout(paintTimer);
         if (controller.signal.aborted) return;
         console.error("[assistant] reply failed:", err);
@@ -539,6 +633,7 @@ export function useAssistant() {
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      activeSpeakerRef.current?.cancel();
       stopSpeaking();
       recognizerRef.current?.abort();
       recorderRef.current?.abort();
@@ -558,12 +653,15 @@ export function useAssistant() {
     catalogReady,
     settings,
     updateSettings,
+    toggleSound,
     avatarFellBack,
+    actionRevision,
     setAvatarFellBack,
     send,
     runSkillFlow,
     escalateToTeam,
     setStoreContext,
+    setManagerContext,
     postAssistantMessage,
     toggleMic,
     cancelListening,

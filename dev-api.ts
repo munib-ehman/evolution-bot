@@ -24,9 +24,13 @@ import { checkRateLimit } from "./api/_ratelimit";
 import { runShopifyAuthStart, runShopifyCallback, runShopifyDisconnect, type ShopifyEnv } from "./api/_shopify";
 import { runSkill, type SkillRunBody } from "./api/_skills";
 import { runStoreCatalog } from "./api/_catalog";
+import { runSeoSnapshot } from "./api/_seoManager";
+import { runSeoOptimize, type SeoOptimizeBody } from "./api/_seoOptimizer";
+import { productManagerArchive, productManagerOptimize, productManagerSnapshot } from "./api/_productManager";
 import { runRecoveryCarts, runRecoveryDraft } from "./api/_recovery";
 import { runRetentionCustomers, runRetentionDraft } from "./api/_retention";
 import { runOpsSnapshot } from "./api/_ops";
+import { runCreateFulfillment } from "./api/_fulfillment";
 import { handleShopifyWebhook, runOpsLiveSetup } from "./api/_events";
 import { handleShopifyCompliance } from "./api/_compliance";
 import { runShopifySession } from "./api/_embedded";
@@ -34,6 +38,25 @@ import { runAgentChat, type AgentChatBody } from "./api/_agentChat";
 import { runPolarCheckout, runPolarPortal, handlePolarWebhook, polarConfigured, type PolarEnv } from "./api/_polar";
 import type { SkillEnv } from "./api/_skillTools";
 import { sendTaskEmail } from "./api/_email";
+import { runEmailDeliveryCheck, runEmailDeliveryGet, runEmailDeliverySave, runEmailDeliveryTest, type EmailDeliveryEnv } from "./api/_emailDelivery";
+import { processRecoveryDeliveries, runRecoveryCampaignAction, runRecoveryUnsubscribe, runResendWebhook, type RecoveryCampaignEnv } from "./api/_recoveryCampaigns";
+import { processWinbackDeliveries, runWinbackCampaignAction, runWinbackUnsubscribe } from "./api/_winbackCampaigns";
+import { processBroadcastDeliveries, runBroadcastAction, runBroadcastAudience, runBroadcastUnsubscribe } from "./api/_broadcastCampaigns";
+import { processReviewDeliveries, runReviewCampaignAction, runReviewUnsubscribe } from "./api/_reviewCampaigns";
+import { runMarketingProfile } from "./api/_marketingProfile";
+import { runMarketingStatus } from "./api/_marketingStatus";
+import { runSupportCasesAction, runSupportCasesGet } from "./api/_supportCases";
+import {
+  runActionPropose,
+  runActionExecute,
+  runActionUpdate,
+  runActionReject,
+  runActionUndo,
+  runActionHistory,
+  runActionMetrics,
+  type ActionEnv,
+  type ActionProposeBody,
+} from "./api/_actions";
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -88,6 +111,9 @@ export function devApi(): Plugin {
   let auditEnv: ShopifyEnv = {};
   let skillEnv: SkillEnv = {};
   let polarEnv: PolarEnv = {};
+  let actionEnv: ActionEnv = {};
+  let emailDeliveryEnv: EmailDeliveryEnv = {};
+  let recoveryCampaignEnv: RecoveryCampaignEnv = {};
 
   return {
     name: "dev-api",
@@ -118,10 +144,12 @@ export function devApi(): Plugin {
       polarEnv = {
         ...auditEnv,
         polarToken: (env.POLAR_ACCESS_TOKEN ?? "").trim(),
-        polarProductId: (env.POLAR_PRODUCT_ID ?? "").trim(),
         polarWebhookSecret: (env.POLAR_WEBHOOK_SECRET ?? "").trim(),
         polarApiBase: (env.POLAR_API_BASE ?? "").trim() || "https://api.polar.sh",
       };
+      actionEnv = { ...auditEnv, cronSecret: (env.CRON_SECRET ?? "").trim() };
+      emailDeliveryEnv = { ...auditEnv, resendKey: (env.RESEND_API_KEY ?? "").trim(), encryptionKey: (env.EMAIL_CREDENTIAL_ENCRYPTION_KEY ?? "").trim(), sharedSendingDomain: (env.RESEND_SHARED_DOMAIN ?? "runevolution.io").trim(), sharedFromAddress: (env.RESEND_SHARED_FROM_ADDRESS ?? "info@runevolution.io").trim() };
+      recoveryCampaignEnv = { ...emailDeliveryEnv, ...auditEnv, cronSecret: (env.CRON_SECRET ?? "").trim(), recoveryTestMode: /^(1|true|yes)$/i.test(env.RECOVERY_TEST_MODE ?? ""), recoveryTestRecipient: (env.RECOVERY_TEST_RECIPIENT ?? "").trim(), monthlyEmailLimit: Number(env.RECOVERY_MONTHLY_LIMIT ?? 400) || 400 };
       if (!key) {
         server.config.logger.warn(
           "[dev-api] GROQ_API_KEY not set in .env — /api/chat and /api/tts will report unconfigured (the app falls back to mock replies and the in-browser voice).",
@@ -241,7 +269,7 @@ export function devApi(): Plugin {
       server.middlewares.use("/api/shopify-callback", (req, res) => {
         void (async () => {
           const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost:5173"}`);
-          const { redirect } = await runShopifyCallback(url, auditEnv, polarEnv);
+          const { redirect } = await runShopifyCallback(url, auditEnv);
           res.statusCode = 302;
           res.setHeader("Location", redirect);
           res.end();
@@ -276,9 +304,9 @@ export function devApi(): Plugin {
         void (async () => {
           if (req.method === "GET") return send(res, 204);
           if (req.method !== "POST") return send(res, 405, "Method not allowed");
-          let body: { url?: unknown };
+          let body: { url?: unknown; targetMarket?: unknown };
           try {
-            body = JSON.parse(await readBody(req)) as { url?: unknown };
+            body = JSON.parse(await readBody(req)) as { url?: unknown; targetMarket?: unknown };
           } catch {
             res.statusCode = 400;
             res.setHeader("Content-Type", "application/json");
@@ -488,6 +516,151 @@ export function devApi(): Plugin {
         });
       });
 
+      server.middlewares.use("/api/email-delivery-settings", (req, res) => {
+        void (async () => {
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          if (req.method === "GET") return pipeResponse(res, await runEmailDeliveryGet(auth, emailDeliveryEnv, new URL(req.url ?? "", `http://${req.headers.host}`).searchParams.get("role")));
+          if (req.method === "POST") {
+            const body = JSON.parse(await readBody(req) || "{}") as Record<string, unknown>;
+            if (body.action === "check") return pipeResponse(res, await runEmailDeliveryCheck(auth, emailDeliveryEnv, body.role));
+            if (body.action === "test") return pipeResponse(res, await runEmailDeliveryTest(auth, emailDeliveryEnv, body.role));
+            return pipeResponse(res, await runEmailDeliverySave(body, auth, emailDeliveryEnv));
+          }
+          return send(res, 405, "Method not allowed");
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/recovery-campaign", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const body = JSON.parse(await readBody(req) || "{}") as Record<string, unknown>;
+          return pipeResponse(res, await runRecoveryCampaignAction(body, auth, recoveryCampaignEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/fulfillment-create", (req,res)=>{
+        void(async()=>{if(req.method!=="POST")return send(res,405,"Method not allowed");const auth=typeof req.headers.authorization==="string"?req.headers.authorization:null;const body=JSON.parse(await readBody(req)||"{}") as Record<string,unknown>;const result=await runCreateFulfillment(body,auth,skillEnv);res.statusCode=result.status;res.setHeader("Content-Type","application/json");res.setHeader("Cache-Control","no-store");res.end(JSON.stringify(result.body));})().catch(error=>{if(!res.headersSent)send(res,500,String(error));else res.end();});
+      });
+
+      server.middlewares.use("/api/support-cases", (req, res) => {
+        void (async () => {
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          if (req.method === "GET") return pipeResponse(res, await runSupportCasesGet(auth, recoveryCampaignEnv));
+          if (req.method === "POST") return pipeResponse(res, await runSupportCasesAction(JSON.parse(await readBody(req) || "{}") as Record<string, unknown>, auth, recoveryCampaignEnv));
+          return send(res, 405, "Method not allowed");
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/winback-campaign", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          const body = JSON.parse(await readBody(req) || "{}") as Record<string, unknown>;
+          return pipeResponse(res, await runWinbackCampaignAction(body, auth, recoveryCampaignEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/winback-deliver", (req, res) => {
+        void (async () => {
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
+          if (!recoveryCampaignEnv.cronSecret || auth !== `Bearer ${recoveryCampaignEnv.cronSecret}`) return send(res, 401, "Unauthorized");
+          res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(await processWinbackDeliveries(recoveryCampaignEnv)));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/winback-unsubscribe", (req, res) => {
+        void (async () => {
+          const request = new Request(`http://${req.headers.host ?? "127.0.0.1:5173"}${req.url ?? "/api/winback-unsubscribe"}`, { headers: req.headers as Record<string, string> });
+          return pipeResponse(res, await runWinbackUnsubscribe(request, recoveryCampaignEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/broadcast-audience", (req, res) => { void (async()=>{const auth=typeof req.headers.authorization==="string"?req.headers.authorization:null;return pipeResponse(res,await runBroadcastAudience(auth,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err))); });
+      server.middlewares.use("/api/broadcast-campaign", (req, res) => { void (async()=>{if(req.method!=="POST")return send(res,405,"Method not allowed");const auth=typeof req.headers.authorization==="string"?req.headers.authorization:null;return pipeResponse(res,await runBroadcastAction(JSON.parse(await readBody(req)||"{}")as Record<string,unknown>,auth,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err))); });
+      server.middlewares.use("/api/broadcast-deliver", (req, res) => { void (async()=>{const auth=typeof req.headers.authorization==="string"?req.headers.authorization:"";if(!recoveryCampaignEnv.cronSecret||auth!==`Bearer ${recoveryCampaignEnv.cronSecret}`)return send(res,401,"Unauthorized");res.setHeader("Content-Type","application/json");res.end(JSON.stringify(await processBroadcastDeliveries(recoveryCampaignEnv)));})().catch(err=>send(res,500,String(err))); });
+      server.middlewares.use("/api/broadcast-unsubscribe", (req, res) => { void (async()=>{const request=new Request(`http://${req.headers.host??"127.0.0.1:5173"}${req.url??"/api/broadcast-unsubscribe"}`,{headers:req.headers as Record<string,string>});return pipeResponse(res,await runBroadcastUnsubscribe(request,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err))); });
+
+      server.middlewares.use("/api/review-campaign", (req,res)=>{void(async()=>{if(req.method!=="POST")return send(res,405,"Method not allowed");const auth=typeof req.headers.authorization==="string"?req.headers.authorization:null;return pipeResponse(res,await runReviewCampaignAction(JSON.parse(await readBody(req)||"{}")as Record<string,unknown>,auth,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err)));});
+      server.middlewares.use("/api/review-deliver",(req,res)=>{void(async()=>{const auth=typeof req.headers.authorization==="string"?req.headers.authorization:"";if(!recoveryCampaignEnv.cronSecret||auth!==`Bearer ${recoveryCampaignEnv.cronSecret}`)return send(res,401,"Unauthorized");res.setHeader("Content-Type","application/json");res.end(JSON.stringify(await processReviewDeliveries(recoveryCampaignEnv)));})().catch(err=>send(res,500,String(err)));});
+      server.middlewares.use("/api/review-unsubscribe",(req,res)=>{void(async()=>{const request=new Request(`http://${req.headers.host??"127.0.0.1:5173"}${req.url??"/api/review-unsubscribe"}`,{headers:req.headers as Record<string,string>});return pipeResponse(res,await runReviewUnsubscribe(request,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err)));});
+      server.middlewares.use("/api/marketing-profile",(req,res)=>{void(async()=>{const origin=`http://${req.headers.host??"127.0.0.1:5173"}`,request=new Request(`${origin}${req.url??"/api/marketing-profile"}`,{method:req.method,headers:req.headers as Record<string,string>,body:req.method==="POST"?await readBody(req):undefined});return pipeResponse(res,await runMarketingProfile(request,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err)));});
+      server.middlewares.use("/api/marketing-decisions",(req,res)=>{void(async()=>{const request=new Request(`http://${req.headers.host??"127.0.0.1:5173"}${req.url??"/api/marketing-decisions"}`,{method:req.method,headers:req.headers as Record<string,string>});return pipeResponse(res,await runMarketingStatus(request,recoveryCampaignEnv));})().catch(err=>send(res,500,String(err)));});
+
+      server.middlewares.use("/api/recovery-deliver", (req, res) => {
+        void (async () => {
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
+          if (!recoveryCampaignEnv.cronSecret || auth !== `Bearer ${recoveryCampaignEnv.cronSecret}`) return send(res, 401, "Unauthorized");
+          res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify(await processRecoveryDeliveries(recoveryCampaignEnv)));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/recovery-unsubscribe", (req, res) => {
+        void (async () => {
+          const origin = `http://${req.headers.host ?? "127.0.0.1:5173"}`;
+          const request = new Request(`${origin}${req.url ?? ""}`, { method: req.method ?? "GET" });
+          return pipeResponse(res, await runRecoveryUnsubscribe(request, recoveryCampaignEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/resend-webhook", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          const raw = await readBody(req);
+          const request = new Request(`http://${req.headers.host ?? "127.0.0.1:5173"}/api/resend-webhook`, { method: "POST", headers: req.headers as Record<string, string>, body: raw });
+          return pipeResponse(res, await runResendWebhook(request, recoveryCampaignEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/action-propose", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: ActionProposeBody;
+          try { body = JSON.parse(await readBody(req)) as ActionProposeBody; }
+          catch { return send(res, 400, "Invalid request body."); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionPropose(body, auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/action-execute", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let actionId: unknown;
+          try { actionId = (JSON.parse(await readBody(req)) as { actionId?: unknown }).actionId; }
+          catch { return send(res, 400, "Invalid request body."); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionExecute(actionId, auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/action-undo", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let actionId: unknown;
+          try { actionId = (JSON.parse(await readBody(req)) as { actionId?: unknown }).actionId; }
+          catch { return send(res, 400, "Invalid request body."); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionUndo(actionId, auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/action-history", (req, res) => {
+        void (async () => {
+          if (req.method !== "GET") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionHistory(auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/action-metrics", (req, res) => {
+        void (async () => {
+          if (req.method !== "GET" && req.method !== "POST") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionMetrics(auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
       server.middlewares.use("/api/store-products", (req, res) => {
         void (async () => {
           if (req.method !== "GET") return send(res, 405, "Method not allowed");
@@ -501,6 +674,75 @@ export function devApi(): Plugin {
           if (!res.headersSent) send(res, 500, String(err));
           else res.end();
         });
+      });
+
+      server.middlewares.use("/api/action-update", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: { actionId?: unknown; items?: unknown };
+          try { body = JSON.parse(await readBody(req)) as { actionId?: unknown; items?: unknown }; }
+          catch { return send(res, 400, "Invalid request body."); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionUpdate(body.actionId, body.items, auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/action-reject", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let actionId: unknown;
+          try { actionId = (JSON.parse(await readBody(req)) as { actionId?: unknown }).actionId; }
+          catch { return send(res, 400, "Invalid request body."); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runActionReject(actionId, auth, actionEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/seo-snapshot", (req, res) => {
+        void (async () => {
+          if (req.method !== "GET") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runSeoSnapshot(auth, auditEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/product-manager-snapshot", (req, res) => {
+        void (async () => {
+          if (req.method !== "GET") return send(res, 405, "Method not allowed");
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await productManagerSnapshot(auth, auditEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/product-manager-optimize", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: { productId?: unknown; confirmedFacts?: unknown };
+          try { body = JSON.parse(await readBody(req)) as typeof body; } catch { return send(res, 400, "Invalid JSON body"); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await productManagerOptimize(body, auth, auditEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/product-manager-archive", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: { productId?: unknown; title?: unknown };
+          try { body = JSON.parse(await readBody(req)) as typeof body; } catch { return send(res, 400, "Invalid JSON body"); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await productManagerArchive(body, auth, auditEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/seo-optimize", (req, res) => {
+        void (async () => {
+          if (req.method !== "POST") return send(res, 405, "Method not allowed");
+          let body: SeoOptimizeBody;
+          try { body = JSON.parse(await readBody(req)) as SeoOptimizeBody; }
+          catch { return send(res, 400, "Invalid JSON body"); }
+          const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
+          await pipeResponse(res, await runSeoOptimize(body, auth, auditEnv));
+        })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
       });
 
       server.middlewares.use("/api/task-notify", (req, res) => {
@@ -557,7 +799,8 @@ export function devApi(): Plugin {
           if (req.method !== "POST") return send(res, 405, "Method not allowed");
           const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
           const origin = `http://${req.headers.host ?? "localhost:5173"}`;
-          const { status, body } = await runPolarCheckout(auth, origin, polarEnv);
+          const payload=JSON.parse(await readBody(req)||"{}") as {roles?:unknown;role?:unknown};
+          const { status, body } = await runPolarCheckout(auth, origin, polarEnv, payload.roles ?? payload.role);
           res.statusCode = status;
           res.setHeader("Content-Type", "application/json");
           res.setHeader("Cache-Control", "no-store");

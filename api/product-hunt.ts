@@ -21,9 +21,9 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  let body: { url?: unknown };
+  let body: { url?: unknown; targetMarket?: unknown };
   try {
-    body = (await req.json()) as { url?: unknown };
+    body = (await req.json()) as { url?: unknown; targetMarket?: unknown };
   } catch {
     return new Response(JSON.stringify({ error: "Invalid request body." }), {
       status: 400,
