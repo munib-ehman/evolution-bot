@@ -16,9 +16,6 @@ Format:
 - Inventory planning for solo store owners: avoiding stockouts and dead stock
 - Email list building for ecommerce without annoying popups
 - Checkout friction: small fixes with outsized impact
-- Dead email list? How to revive subscribers safely
-- Review responses: turning bad reviews into trust
-- UGC for small stores: getting photos and videos from customers
 - Influencer outreach on a $0 budget
 - Organic social for ecommerce: what's worth posting
 - Ad creative angles: finding hooks without an agency
@@ -98,3 +95,6 @@ Format:
 - [2026-08-28] A/B testing on low traffic: what you can and can't learn — /blog/ab-testing-low-traffic-ecommerce
 - [2026-08-28] Seasonal prep: getting a small store ready for BFCM — /blog/bfcm-preparation-small-ecommerce-store
 - [2026-08-28] Holiday shipping cutoffs: communicating them without losing sales — /blog/holiday-shipping-cutoffs-ecommerce
+- [2026-08-29] Dead email list? How to revive subscribers safely — /blog/revive-dead-email-list-safely
+- [2026-08-29] Review responses: turning bad reviews into trust — /blog/respond-to-bad-reviews-build-trust
+- [2026-08-29] UGC for small stores: getting photos and videos from customers — /blog/get-customer-ugc-small-store
