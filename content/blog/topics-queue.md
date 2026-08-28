@@ -16,9 +16,6 @@ Format:
 - Inventory planning for solo store owners: avoiding stockouts and dead stock
 - Email list building for ecommerce without annoying popups
 - Checkout friction: small fixes with outsized impact
-- A/B testing on low traffic: what you can and can't learn
-- Seasonal prep: getting a small store ready for BFCM
-- Holiday shipping cutoffs: communicating them without losing sales
 - Dead email list? How to revive subscribers safely
 - Review responses: turning bad reviews into trust
 - UGC for small stores: getting photos and videos from customers
@@ -98,3 +95,6 @@ Format:
 - [2026-08-27] Revenue leaks: the 7 places small stores lose money silently — /blog/revenue-leaks-small-ecommerce-stores
 - [2026-08-27] Mobile conversion: why your phone traffic doesn't buy — /blog/mobile-conversion-shopify-phone-traffic
 - [2026-08-27] Site speed and Core Web Vitals for Shopify: what actually matters — /blog/shopify-site-speed-core-web-vitals
+- [2026-08-28] A/B testing on low traffic: what you can and can't learn — /blog/ab-testing-low-traffic-ecommerce
+- [2026-08-28] Seasonal prep: getting a small store ready for BFCM — /blog/bfcm-preparation-small-ecommerce-store
+- [2026-08-28] Holiday shipping cutoffs: communicating them without losing sales — /blog/holiday-shipping-cutoffs-ecommerce
