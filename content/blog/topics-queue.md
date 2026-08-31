@@ -16,9 +16,6 @@ Format:
 - Inventory planning for solo store owners: avoiding stockouts and dead stock
 - Email list building for ecommerce without annoying popups
 - Checkout friction: small fixes with outsized impact
-- When to fire an app: signs a tool isn't paying for itself
-- Shopify analytics vs reality: metrics that mislead owners
-- MER (marketing efficiency ratio) explained for small stores
 - Forecasting demand without a data team
 - Anomaly alerts: catching a broken checkout before it costs you a weekend
 - Supplier coordination: emails that get factories to respond
@@ -98,3 +95,6 @@ Format:
 - [2026-08-29] Influencer outreach on a $0 budget — /blog/influencer-outreach-zero-budget
 - [2026-08-29] Organic social for ecommerce: what's worth posting — /blog/organic-social-ecommerce-what-to-post
 - [2026-08-29] Ad creative angles: finding hooks without an agency — /blog/ad-creative-angles-without-agency
+- [2026-08-31] When to fire an app: signs a tool isn't paying for itself — /blog/when-to-fire-shopify-app
+- [2026-08-31] Shopify analytics vs reality: metrics that mislead owners — /blog/shopify-analytics-misleading-metrics
+- [2026-08-31] MER (marketing efficiency ratio) explained for small stores — /blog/marketing-efficiency-ratio-small-ecommerce-store
