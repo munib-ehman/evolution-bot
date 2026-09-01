@@ -16,9 +16,6 @@ Format:
 - Inventory planning for solo store owners: avoiding stockouts and dead stock
 - Email list building for ecommerce without annoying popups
 - Checkout friction: small fixes with outsized impact
-- Forecasting demand without a data team
-- Anomaly alerts: catching a broken checkout before it costs you a weekend
-- Supplier coordination: emails that get factories to respond
 - Order and shipping update emails customers actually read
 - How one-person stores compete with brands 10x their size
 - The real cost of context switching for solo founders
@@ -98,3 +95,6 @@ Format:
 - [2026-08-31] When to fire an app: signs a tool isn't paying for itself — /blog/when-to-fire-shopify-app
 - [2026-08-31] Shopify analytics vs reality: metrics that mislead owners — /blog/shopify-analytics-misleading-metrics
 - [2026-08-31] MER (marketing efficiency ratio) explained for small stores — /blog/marketing-efficiency-ratio-small-ecommerce-store
+- [2026-09-01] Forecasting demand without a data team — /blog/forecast-demand-small-ecommerce-store
+- [2026-09-01] Anomaly alerts: catching a broken checkout before it costs you a weekend — /blog/ecommerce-checkout-anomaly-alerts
+- [2026-09-01] Supplier coordination: emails that get factories to respond — /blog/supplier-coordination-email-templates
