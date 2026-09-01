@@ -15,28 +15,7 @@ Format:
 
 - Inventory planning for solo store owners: avoiding stockouts and dead stock
 - Email list building for ecommerce without annoying popups
-- Subscriptions and reorders: recurring revenue for one-person stores
-- Google Merchant Center rejections: common fixes
-- How to audit your own Shopify store in one afternoon
-- Revenue leaks: the 7 places small stores lose money silently
 - Checkout friction: small fixes with outsized impact
-- Mobile conversion: why your phone traffic doesn't buy
-- Site speed and Core Web Vitals for Shopify: what actually matters
-- A/B testing on low traffic: what you can and can't learn
-- Seasonal prep: getting a small store ready for BFCM
-- Holiday shipping cutoffs: communicating them without losing sales
-- Dead email list? How to revive subscribers safely
-- Review responses: turning bad reviews into trust
-- UGC for small stores: getting photos and videos from customers
-- Influencer outreach on a $0 budget
-- Organic social for ecommerce: what's worth posting
-- Ad creative angles: finding hooks without an agency
-- When to fire an app: signs a tool isn't paying for itself
-- Shopify analytics vs reality: metrics that mislead owners
-- MER (marketing efficiency ratio) explained for small stores
-- Forecasting demand without a data team
-- Anomaly alerts: catching a broken checkout before it costs you a weekend
-- Supplier coordination: emails that get factories to respond
 - Order and shipping update emails customers actually read
 - How one-person stores compete with brands 10x their size
 - The real cost of context switching for solo founders
@@ -98,3 +77,24 @@ Format:
 - [2026-08-25] How to answer presale questions fast enough to win the sale — /blog/answer-presale-questions-fast
 - [2026-08-25] Multilingual support on a small store: when it's worth it — /blog/multilingual-support-small-store
 - [2026-08-25] Loyalty programs for small stores: simple beats fancy — /blog/loyalty-programs-small-stores-simple
+- [2026-08-27] Subscriptions and reorders: recurring revenue for one-person stores — /blog/subscriptions-reorders-recurring-revenue
+- [2026-08-27] Google Merchant Center rejections: common fixes — /blog/google-merchant-center-rejections-common-fixes
+- [2026-08-27] How to audit your own Shopify store in one afternoon — /blog/audit-shopify-store-one-afternoon
+- [2026-08-27] Revenue leaks: the 7 places small stores lose money silently — /blog/revenue-leaks-small-ecommerce-stores
+- [2026-08-27] Mobile conversion: why your phone traffic doesn't buy — /blog/mobile-conversion-shopify-phone-traffic
+- [2026-08-27] Site speed and Core Web Vitals for Shopify: what actually matters — /blog/shopify-site-speed-core-web-vitals
+- [2026-08-28] A/B testing on low traffic: what you can and can't learn — /blog/ab-testing-low-traffic-ecommerce
+- [2026-08-28] Seasonal prep: getting a small store ready for BFCM — /blog/bfcm-preparation-small-ecommerce-store
+- [2026-08-28] Holiday shipping cutoffs: communicating them without losing sales — /blog/holiday-shipping-cutoffs-ecommerce
+- [2026-08-29] Dead email list? How to revive subscribers safely — /blog/revive-dead-email-list-safely
+- [2026-08-29] Review responses: turning bad reviews into trust — /blog/respond-to-bad-reviews-build-trust
+- [2026-08-29] UGC for small stores: getting photos and videos from customers — /blog/get-customer-ugc-small-store
+- [2026-08-29] Influencer outreach on a $0 budget — /blog/influencer-outreach-zero-budget
+- [2026-08-29] Organic social for ecommerce: what's worth posting — /blog/organic-social-ecommerce-what-to-post
+- [2026-08-29] Ad creative angles: finding hooks without an agency — /blog/ad-creative-angles-without-agency
+- [2026-08-31] When to fire an app: signs a tool isn't paying for itself — /blog/when-to-fire-shopify-app
+- [2026-08-31] Shopify analytics vs reality: metrics that mislead owners — /blog/shopify-analytics-misleading-metrics
+- [2026-08-31] MER (marketing efficiency ratio) explained for small stores — /blog/marketing-efficiency-ratio-small-ecommerce-store
+- [2026-09-01] Forecasting demand without a data team — /blog/forecast-demand-small-ecommerce-store
+- [2026-09-01] Anomaly alerts: catching a broken checkout before it costs you a weekend — /blog/ecommerce-checkout-anomaly-alerts
+- [2026-09-01] Supplier coordination: emails that get factories to respond — /blog/supplier-coordination-email-templates
