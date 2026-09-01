@@ -12,7 +12,7 @@ Evolution's complete production stack is Vercel + Supabase + Shopify + Groq, wit
 
 The service-role key bypasses RLS and must exist only in Vercel/server environment variables. Never expose it through a `VITE_` variable.
 
-Product Hunt requires both `2026-07-27_rate_limits.sql` and `2026-07-29_product_hunt.sql`. Shopify, billing, recovery, retention, compliance, and operations depend on their corresponding migrations.
+Product Hunt requires both `2026-07-27_rate_limits.sql` and `2026-07-29_product_hunt.sql`. Shopify, billing, recovery, retention, compliance, and operations depend on their corresponding migrations. Apply `2026-08-26_autonomy_contracts.sql` before enabling Autopilot; it stores the founder's daily preparation pace for the shared approval inbox.
 
 ## 2. Configure Groq
 

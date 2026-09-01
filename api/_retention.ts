@@ -98,7 +98,7 @@ export async function runRetentionCustomers(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResult(401, { error: "Sign in first." });
-  if (!(await hasRole(env, user.id, "marketing", user.email))) return roleRequired("marketing");
+  if (!(await hasRole(env,user.id,"customer-success",user.email))&&!(await hasRole(env,user.id,"marketing",user.email))) return roleRequired("customer-success");
 
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResult(409, { error: "Connect your Shopify store first." });
@@ -174,7 +174,7 @@ export async function runRetentionDraft(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const user = await resolveUserFull(env, authHeader);
   if (!user) return jsonResult(401, { error: "Sign in first." });
-  if (!(await hasRole(env, user.id, "marketing", user.email))) return roleRequired("marketing");
+  if (!(await hasRole(env,user.id,"customer-success",user.email))&&!(await hasRole(env,user.id,"marketing",user.email))) return roleRequired("customer-success");
 
   const conn = await getConnection(env, user.id);
   if (!conn) return jsonResult(409, { error: "Connect your Shopify store first." });

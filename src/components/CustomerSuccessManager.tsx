@@ -17,10 +17,10 @@ function NodeIcon({kind}:{kind:Focus}) {
   return <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 7l8 6 8-6"/></svg>;
 }
 
-export function CustomerSuccessManager({active,agentVisual,agentReply,storeUrl,onAsk,onOpenStore,onOpenSupport,onOpenReviews,onOpenRetention,onOpenDelivery,onOpenRules,onOpenDecisions}:{
+export function CustomerSuccessManager({active,agentVisual,agentReply,storeUrl,onAsk,onOpenStore,onOpenSupport,onOpenReviews,onOpenRetention,onOpenDelivery}:{
   active:boolean;agentVisual:ReactNode;agentReply?:string;storeUrl:string|null;onAsk:(prompt:string)=>void;onOpenStore:()=>void;
   onOpenSupport:(section:"risks"|"responses"|"resolution")=>void;onOpenReviews:(section:"eligibility"|"requests"|"results")=>void;
-  onOpenRetention:(section:"detection"|"care"|"outcomes")=>void;onOpenDelivery:()=>void;onOpenRules:()=>void;onOpenDecisions:()=>void;
+  onOpenRetention:(section:"detection"|"care"|"outcomes")=>void;onOpenDelivery:()=>void;
 }) {
   const [state,setState]=useState<LoadState>("idle"),[retention,setRetention]=useState<RetentionData|null>(null),[ops,setOps]=useState<OpsSnapshot|null>(null),[delivery,setDelivery]=useState<EmailDeliverySettings|null>(null),[supportCases,setSupportCases]=useState<SupportCase[]>([]),[reviews,setReviews]=useState<ReviewCampaignRecord[]>([]),[winbacks,setWinbacks]=useState<WinbackCampaignRecord[]>([]);
   const [focus,setFocus]=useState<Focus>("support"),[drillFocus,setDrillFocus]=useState<Focus|null>(null);
@@ -43,7 +43,7 @@ export function CustomerSuccessManager({active,agentVisual,agentReply,storeUrl,o
   const openFeature=(kind:Focus,label:string)=>{if(kind==="support")onOpenSupport(label==="Response preparation"?"responses":label==="Resolution tracking"?"resolution":"risks");else if(kind==="reviews")onOpenReviews(label==="Review requests"?"requests":label==="Review outcomes"?"results":"eligibility");else if(kind==="retention")onOpenRetention(label==="Care planning"?"care":label==="Retention outcomes"?"outcomes":"detection");else onOpenDelivery();};
 
   return <div className={`marketing-manager evolution-live customer-success-manager focus-${focus}`}>
-    <header className="live-head"><div><span>Customer success manager</span><h2>Agent workspace</h2></div><div><button type="button" className="link" onClick={onOpenDecisions}>Decisions</button><button type="button" className="link" onClick={onOpenRules}>Operator rules</button></div></header>
+    <header className="live-head"><div><span>Customer success manager</span><h2>Agent workspace</h2></div></header>
     <div className="agent-canvas">
       <div className={`capability-tree ${drillFocus?`drilled drill-${drillCamera}`:"overview"}`}>
         {drillFocus&&<button type="button" className="tree-back" onClick={()=>setDrillFocus(null)}><span>×</span><small>All capabilities</small></button>}

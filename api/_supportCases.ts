@@ -4,6 +4,7 @@ import { hasRole, roleRequired, type Role } from "./_plan";
 import { getConnection } from "./_shopify";
 import { fetchSupportRiskOrders, type SupportRiskOrder } from "./_shopifyData";
 import type { RecoveryCampaignEnv } from "./_recoveryCampaigns";
+import { autopilotAllowance } from "./_autonomy";
 
 type Resolution = "investigating" | "ship_date" | "cancel_refund" | "custom";
 type NotificationRow = {
@@ -71,7 +72,8 @@ export async function runSupportCasesGet(authHeader: string | null, env: Recover
   if (role === "customer-success") {
     const known = new Set(rows.map((row) => row.order_id));
     const now = new Date().toISOString();
-    const proposals = live.risks.filter((order) => !known.has(order.id) && order.email.includes("@")).map((order) => {
+    const allowance=await autopilotAllowance(env,checked.user.id);
+    const proposals = live.risks.filter((order) => !known.has(order.id) && order.email.includes("@")).slice(0,allowance.remaining).map((order) => {
       const draft = buildSupportDraft(order, "investigating");
       return { user_id: checked.user.id, role, order_id: order.id, order_name: order.name, status: "proposed", resolution: "investigating", subject: draft.subject, body: draft.body, resend_email_id: null, delivery_status: null, approved_at: null, sent_at: null, resolved_at: null, error: null, updated_at: now };
     });
@@ -97,7 +99,8 @@ export async function detectCustomerSuccessRisks(env: RecoveryCampaignEnv, shops
     if (!rows) { errors++; continue; }
     const known = new Set(rows.map(row => row.order_id));
     const now = new Date().toISOString();
-    const proposals = live.risks.filter(order => !known.has(order.id) && order.email.includes("@")).map(order => {
+    const allowance=await autopilotAllowance(env,shop.user_id);
+    const proposals = live.risks.filter(order => !known.has(order.id) && order.email.includes("@")).slice(0,allowance.remaining).map(order => {
       const draft = buildSupportDraft(order, "investigating");
       return { user_id: shop.user_id, role: "customer-success", order_id: order.id, order_name: order.name, status: "proposed", resolution: "investigating", subject: draft.subject, body: draft.body, resend_email_id: null, delivery_status: null, approved_at: null, sent_at: null, resolved_at: null, error: null, updated_at: now };
     });

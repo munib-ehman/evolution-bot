@@ -57,6 +57,7 @@ import {
   type ActionEnv,
   type ActionProposeBody,
 } from "./api/_actions";
+import { runAutonomy } from "./api/_autonomy";
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -621,6 +622,15 @@ export function devApi(): Plugin {
           const auth = typeof req.headers.authorization === "string" ? req.headers.authorization : null;
           await pipeResponse(res, await runActionPropose(body, auth, actionEnv));
         })().catch((err) => { if (!res.headersSent) send(res, 500, String(err)); else res.end(); });
+      });
+
+      server.middlewares.use("/api/autonomy",(req,res)=>{
+        void(async()=>{
+          if(req.method!=="GET"&&req.method!=="POST")return send(res,405,"Method not allowed");
+          const body=req.method==="POST"?await readBody(req):undefined;
+          const request=new Request(`http://${req.headers.host??"127.0.0.1:5173"}/api/autonomy`,{method:req.method,headers:req.headers as Record<string,string>,body});
+          await pipeResponse(res,await runAutonomy(request,actionEnv));
+        })().catch(err=>{if(!res.headersSent)send(res,500,String(err));else res.end();});
       });
 
       server.middlewares.use("/api/action-execute", (req, res) => {

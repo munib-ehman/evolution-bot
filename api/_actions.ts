@@ -14,6 +14,7 @@ import {
 } from "./_shopify";
 import { log } from "./_log";
 import { GROQ_BASE } from "./_shared";
+import { autopilotAllowance } from "./_autonomy";
 
 export type ShopifyActionKind =
   | "product_update"
@@ -579,6 +580,8 @@ export async function runActionPropose(body: ActionProposeBody, authHeader: stri
  * same validation, entitlement, before-state, and event path as user requests. */
 export async function runAutomaticActionPropose(body:ActionProposeBody,user:{id:string;email?:string|null},conn:ShopifyConnection,env:ShopifyEnv):Promise<Response>{
   if(!env.supabaseUrl||!env.serviceRoleKey)return json(503,{error:"Action storage isn't configured."});
+  const allowance=await autopilotAllowance(env,user.id);
+  if(allowance.remaining<1)return json(429,{error:`Autopilot reached today's ${allowance.limit}-item preparation pace.`});
   return proposeAction(body,{user:{id:user.id,email:user.email??null},conn},env);
 }
 

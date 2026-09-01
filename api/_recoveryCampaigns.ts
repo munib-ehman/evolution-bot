@@ -8,6 +8,7 @@ import { DEFAULT_TOUCHES } from "./_recovery";
 import { finalizeContact, reserveContact, suppressContact, suppressDeliveryContact } from "./_marketingSafety";
 import { canonicalActivityId, recordCanonicalProposal, updateCanonicalActivityStatus, validateCanonicalApproval, writeIntelligentCopy } from "./_marketingIntelligence";
 import { recordMarketingDeliveryEvent } from "./_marketingAttribution";
+import { autopilotAllowance } from "./_autonomy";
 
 export interface RecoveryCampaignEnv extends EmailDeliveryEnv, ShopifyEnv {
   cronSecret?: string;
@@ -227,6 +228,7 @@ export async function detectRecoveryOpportunities(env: RecoveryCampaignEnv, targ
         await fetch(`${env.supabaseUrl}/rest/v1/recovery_campaigns?id=eq.${active.id}`, { method: "PATCH", headers: h(env), body: JSON.stringify(carts.length ? { cart_count: carts.length, total_value: totalValue, updated_at: now } : { status: "completed", completed_at: now, updated_at: now }) });
         skipped++; continue;
       }
+      if ((await autopilotAllowance(env,shop.user_id)).remaining<1) { skipped++; continue; }
       if (!carts.length) { skipped++; continue; }
       const cooldown = new Date(Date.now() - 14 * 86_400_000).toISOString();
       const recent = await fetch(`${env.supabaseUrl}/rest/v1/recovery_campaigns?user_id=eq.${shop.user_id}&status=eq.rejected&created_at=gte.${encodeURIComponent(cooldown)}&select=id&limit=1`, { headers: h(env) });

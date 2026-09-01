@@ -103,14 +103,14 @@ export function ActionCard({ initial, onChanged }: { initial: ShopifyActionPropo
     finally { setBusy(false); }
   };
   const reject = async () => {
-    if (busy || !window.confirm(`Reject this prepared update?\n\n${action.summary}`)) return;
+    if (busy) return;
     setBusy(true); setError(null);
     try { const next = await rejectAction(action.id); setAction(next); setEditing(false); onChanged?.(next); }
     catch (e) { setError(e instanceof Error ? e.message : "Couldn't reject this update."); }
     finally { setBusy(false); }
   };
   const apply = async () => {
-    if (busy || !window.confirm(`Apply this change to Shopify?\n\n${action.summary}`)) return;
+    if (busy) return;
     setBusy(true); setError(null);
     try {
       const next = await executeAction(action.id); setAction(next); onChanged?.(next);
@@ -123,7 +123,7 @@ export function ActionCard({ initial, onChanged }: { initial: ShopifyActionPropo
     finally { setBusy(false); }
   };
   const undo = async () => {
-    if (busy || !window.confirm(`Undo this Shopify action?\n\n${action.summary}`)) return;
+    if (busy) return;
     setBusy(true); setError(null);
     try { const next = await undoAction(action.id); setAction(next); onChanged?.(next); }
     catch (e) { setError(e instanceof Error ? e.message : "Undo failed."); }

@@ -197,8 +197,8 @@ async function recordProductDecision(env:ShopifyEnv,input:{userId:string;shopDom
   await fetch(`${env.supabaseUrl}/rest/v1/product_manager_decision_runs`,{method:"POST",headers:serviceHeaders(env),body:JSON.stringify({user_id:input.userId,shop_domain:input.shopDomain,trigger:"scheduled_observer",candidates:input.candidates,selected_product_id:input.selectedProductId??null,action_id:input.actionId??null,outcome:input.outcome,error:input.error??null,completed_at:new Date().toISOString()})}).catch(()=>undefined);
 }
 
-/** Scheduled Product Manager loop: observe, prioritize, research, and prepare one
- * approval-gated decision. It never mutates Shopify directly. */
+/** Scheduled Product Manager loop: observe, prioritize, and prepare one
+ * approval-ready proposal. It never mutates Shopify directly. */
 export async function prepareAutonomousProductDecision(env:ShopifyEnv,userId:string):Promise<{outcome:string;actionId?:string;productId?:string}>{
   const conn=await getConnection(env,userId);
   if(!conn)return{outcome:"skipped_disconnected"};
@@ -218,9 +218,13 @@ export async function prepareAutonomousProductDecision(env:ShopifyEnv,userId:str
   for(const candidate of candidates){
     const data=await shopifyGraphql<{shop?:{billingAddress?:{countryCodeV2?:string|null}};product?:ProductDetail}>(conn.shop_domain,conn.access_token,`query ProductManagerListing($id:ID!){shop{billingAddress{countryCodeV2}} product(id:$id){id title descriptionHtml vendor productType tags category{name fullName} options{name values} variants(first:50){nodes{title selectedOptions{name value}}} metafields(first:50){nodes{namespace key type value jsonValue definition{name} reference{... on TaxonomyValue{name} ... on Metaobject{displayName}} references(first:20){nodes{... on TaxonomyValue{name} ... on Metaobject{displayName}}}}} media(first:50){nodes{id alt}}}}`,{id:candidate.product.id});
     const product=data?.product;if(!product||!listingFactsReady(product,{}))continue;
-    const market=clean(data?.shop?.billingAddress?.countryCodeV2,8).toLowerCase()||"us",listing=await generateListing(env,product,market,{});if(!listing)continue;
     const mediaAlt=(product.media?.nodes??[]).filter(media=>media.id&&!clean(media.alt,200)).map(media=>({id:media.id!,alt:product.title}));
-    const proposed=await runAutomaticActionPropose({role:"product",kind:"product_update",summary:`Product Manager recommends improving ${product.title}`,items:[{productId:product.id,title:listing.title,descriptionHtml:listing.descriptionHtml,tags:listing.tags,...(mediaAlt.length?{mediaAlt}:{})}],evidence:{rationale:listing.rationale,keywords:listing.keywords,marketplace:listing.marketplace,listingVa:listing.listingVa,limitations:`Prepared automatically from verified Shopify facts and current marketplace language. Shopify remains unchanged until merchant approval. SEO metadata, price, and inventory are unchanged.`},optimizerVersion:"product-listing-va-v1"},{id:userId},conn,env);
+    if(mediaAlt.length){
+      const proposed=await runAutomaticActionPropose({role:"product",kind:"product_update",summary:`Add missing image descriptions to ${product.title}`,items:[{productId:product.id,mediaAlt}],evidence:{rationale:`${mediaAlt.length} product image${mediaAlt.length===1?" has":"s have"} no alternative text. Adding the verified product title improves accessibility without changing the storefront offer.`,limitations:"Only missing image alternative text is changed. Existing text, product copy, price, inventory, and publication state are untouched."}},{id:userId},conn,env),body=await proposed.json().catch(()=>({})) as{action?:ShopifyActionRow};
+      if(body.action){await recordProductDecision(env,{userId,shopDomain:conn.shop_domain,outcome:"proposed",candidates:auditCandidates,selectedProductId:product.id,actionId:body.action.id});return{outcome:"proposed",actionId:body.action.id,productId:product.id};}
+    }
+    const market=clean(data?.shop?.billingAddress?.countryCodeV2,8).toLowerCase()||"us",listing=await generateListing(env,product,market,{});if(!listing)continue;
+    const proposed=await runAutomaticActionPropose({role:"product",kind:"product_update",summary:`Product Manager recommends improving ${product.title}`,items:[{productId:product.id,title:listing.title,descriptionHtml:listing.descriptionHtml,tags:listing.tags}],evidence:{rationale:listing.rationale,keywords:listing.keywords,marketplace:listing.marketplace,listingVa:listing.listingVa,limitations:`Prepared automatically from verified Shopify facts and current marketplace language. Shopify remains unchanged until merchant approval. SEO metadata, price, and inventory are unchanged.`},optimizerVersion:"product-listing-va-v1"},{id:userId},conn,env);
     const body=await proposed.json().catch(()=>({})) as{action?:ShopifyActionRow;error?:string};
     if(body.action){await recordProductDecision(env,{userId,shopDomain:conn.shop_domain,outcome:"proposed",candidates:auditCandidates,selectedProductId:product.id,actionId:body.action.id});return{outcome:"proposed",actionId:body.action.id,productId:product.id};}
   }

@@ -15,6 +15,13 @@ for(const [role,files] of Object.entries(checks))for(const file of files){
 }
 const chat=read("api/_agentChat.ts");
 assert.match(chat,/hasRole\(env, user\.id, manager/,"chat must authorize its selected manager");
+const app=read("src/App.tsx");
+const managerSwitcher=read("src/components/ManagerRoleSwitcher.tsx");
+const styles=read("src/index.css");
+assert.match(app,/managerView&&entitlements&&<ManagerRoleSwitcher/,"the role selector must live inside the active manager workspace");
+assert.match(managerSwitcher,/available\.map/,"the switcher must list only purchased manager roles");
+assert.doesNotMatch(styles,/\.live-head\s*>\s*div:last-child/,"single-column manager headers must not collapse the role selector beside the title");
+assert.doesNotMatch(app,/tasks-btn \$\{marketingView|tasks-btn \$\{productView/,"manager roles must not return as separate header pills");
 const actions=read("api/_actions.ts");
 assert.match(actions,/actionRoleError/,"stored actions must re-check their owning role");
 assert.match(actions,/role=in\.\(/,"action history must filter inaccessible roles");

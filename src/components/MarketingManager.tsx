@@ -19,9 +19,9 @@ function NodeIcon({ kind }: { kind: Focus }) {
   return <svg viewBox="0 0 24 24"><path d="m3 11 18-5-5 18-4-8-9-5ZM12 16l4-4"/></svg>;
 }
 
-export function MarketingManager({ active, agentVisual, agentReply, storeUrl, onAsk, onOpenStore, onOpenRecovery, onOpenWinback, onOpenDelivery, onOpenBroadcast, onOpenStrategy, onOpenDecisions }: {
+export function MarketingManager({ active, agentVisual, agentReply, storeUrl, onAsk, onOpenStore, onOpenRecovery, onOpenWinback, onOpenDelivery, onOpenBroadcast, onOpenAutopilot }: {
   active: boolean; agentVisual: ReactNode; agentReply?: string; onAsk: (prompt: string) => void; onOpenRecovery: (section: "monitoring" | "emails" | "revenue") => void;
-  storeUrl: string | null; onOpenStore: () => void; onOpenWinback: (section: "winback" | "reviews" | "lapse") => void; onOpenDelivery: () => void; onOpenBroadcast: (section: "workflow") => void; onOpenStrategy:()=>void;onOpenDecisions:()=>void;
+  storeUrl: string | null; onOpenStore: () => void; onOpenWinback: (section: "winback" | "reviews" | "lapse") => void; onOpenDelivery: () => void; onOpenBroadcast: (section: "workflow") => void; onOpenAutopilot:()=>void;
 }) {
   const [state, setState] = useState<LoadState>("idle");
   const [recovery, setRecovery] = useState<RecoveryData | null>(null);
@@ -92,7 +92,7 @@ export function MarketingManager({ active, agentVisual, agentReply, storeUrl, on
   const stateText: Record<NodeState, string> = { checking: "Checking", clear: "Okay", attention: "Review needed", blocked: "Action required", available: "Available" };
 
   return <div className={`marketing-manager evolution-live focus-${focus}`}>
-    <header className="live-head"><div><span>Marketing manager</span><h2>Agent workspace</h2></div><div><button type="button" className="link" onClick={onOpenDecisions}>Decisions</button><button type="button" className="link" onClick={onOpenStrategy}>Operator rules</button></div></header>
+    <header className="live-head"><div><span>Marketing manager</span><h2>Agent workspace</h2></div></header>
     <div className="agent-canvas">
       <div className={`capability-tree ${drillFocus ? `drilled drill-${drillFocus}` : "overview"}`}>
         {drillFocus && <button type="button" className="tree-back" onClick={() => setDrillFocus(null)} aria-label="Return to capability overview"><span>×</span><small>All capabilities</small></button>}
@@ -100,7 +100,7 @@ export function MarketingManager({ active, agentVisual, agentReply, storeUrl, on
           <button type="button" className={`store-source ${storeUrl ? "connected" : "disconnected"}`} onClick={onOpenStore} aria-label={storeUrl ? "Shopify store connected. Open store settings" : "Connect a Shopify store"}>
             <span className="shopify-mark">S</span><span><small>{storeUrl ? "Live data source" : "Data source required"}</small><strong>{storeUrl ? "Shopify connected" : "Connect Shopify"}</strong></span><i>{storeUrl ? "✓" : "+"}</i>
           </button>
-          <button type="button" className={`tree-root ${agentHealth&&!agentHealth.workerHealthy?"state-blocked":""}`} onClick={onOpenDecisions} aria-label={agentHealth&&!agentHealth.workerHealthy?"Background worker needs attention. Open agent health":"Marketing manager is monitoring automatically. Open decisions"}><span className="root-spark">✦</span><span><small>{agentHealth&&!agentHealth.workerHealthy?"Background worker needs attention":"Monitoring automatically"}</small><strong>Marketing manager</strong></span></button>
+          <button type="button" className={`tree-root ${agentHealth&&!agentHealth.workerHealthy?"state-blocked":""}`} onClick={onOpenAutopilot} aria-label={agentHealth&&!agentHealth.workerHealthy?"Background worker needs attention. Open Autopilot":"Marketing manager is monitoring automatically. Open Autopilot"}><span className="root-spark">✦</span><span><small>{agentHealth&&!agentHealth.workerHealthy?"Background worker needs attention":"Monitoring automatically"}</small><strong>Marketing manager</strong></span></button>
           <svg className="tree-lines" viewBox="0 0 760 430" preserveAspectRatio="none" aria-hidden="true">
             <path className="source-line" d="M380 58V86"/>
             <path className="root-branch line-recovery" d="M380 150C380 192 95 184 95 230"/><path className="root-branch line-customers" d="M380 150C380 192 285 184 285 230"/><path className="root-branch line-delivery" d="M380 150C380 192 475 184 475 230"/><path className="root-branch line-campaign" d="M380 150C380 192 665 184 665 230"/>

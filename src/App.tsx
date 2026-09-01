@@ -14,7 +14,7 @@ import { ToolsPanel } from "./components/ToolsPanel";
 import { RecoveryPanel } from "./components/RecoveryPanel";
 import { WinbackPanel } from "./components/WinbackPanel";
 import { OpsPanel } from "./components/OpsPanel";
-import { ActionCenter } from "./components/ActionCenter";
+import { AutonomyPanel } from "./components/AutonomyPanel";
 import { LiveToasts } from "./components/LiveToasts";
 import { UpgradePanel } from "./components/UpgradePanel";
 import { AdminQueue, isAdmin } from "./components/AdminQueue";
@@ -25,8 +25,6 @@ import { consumeUpgradeIntent } from "./lib/upgradeIntent";
 import { SKILL_CHIPS, type SkillChip } from "./lib/skills";
 import { MarketingManager } from "./components/MarketingManager";
 import { EmailDeliveryPanel } from "./components/EmailDeliveryPanel";
-import { MarketingOperatorSetup } from "./components/MarketingOperatorSetup";
-import { MarketingDecisionsInbox } from "./components/MarketingDecisionsInbox";
 import { BroadcastCampaignPanel } from "./components/BroadcastCampaignPanel";
 import { SeoManager } from "./components/SeoManager";
 import { CustomerSuccessManager } from "./components/CustomerSuccessManager";
@@ -34,6 +32,7 @@ import { ProductAgentManager } from "./components/ProductAgentManager";
 import { OperationsManager } from "./components/OperationsManager";
 import { RetentionPanel } from "./components/RetentionPanel";
 import { SupportPanel } from "./components/SupportPanel";
+import { ManagerRoleSwitcher } from "./components/ManagerRoleSwitcher";
 
 const AvatarScene = lazy(() => import("./avatar/AvatarScene").then(module => ({ default: module.AvatarScene })));
 
@@ -106,14 +105,10 @@ export default function App() {
   const [supportRole,setSupportRole]=useState<"customer-success"|"operations">("customer-success");
   const [supportSection,setSupportSection]=useState<"risks"|"responses"|"resolution">("risks");
   const [supportFocusOrderId,setSupportFocusOrderId]=useState<string|null>(null);
-  const [actionsOpen, setActionsOpen] = useState(false);
+  const [autonomyOpen,setAutonomyOpen]=useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [deliveryRole,setDeliveryRole]=useState<"marketing"|"customer-success"|"operations">("marketing");
   const [broadcastOpen, setBroadcastOpen] = useState(false);
-  const [marketingSetupOpen,setMarketingSetupOpen]=useState(false);
-  const [marketingDecisionsOpen,setMarketingDecisionsOpen]=useState(false);
-  const [customerSuccessSetupOpen,setCustomerSuccessSetupOpen]=useState(false);
-  const [customerSuccessDecisionsOpen,setCustomerSuccessDecisionsOpen]=useState(false);
   const [campaignSection, setCampaignSection] = useState<"workflow">("workflow");
   const [customerQueueOpen, setCustomerQueueOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -130,7 +125,7 @@ export default function App() {
     setSupportOpen(false);
     setDeliveryOpen(false);
     setBroadcastOpen(false);
-    setActionsOpen(true);
+    setAutonomyOpen(true);
   }, [a.actionRevision]);
   useEffect(()=>{const open=(event:Event)=>{const orderId=(event as CustomEvent<{orderId?:string}>).detail?.orderId;if(!orderId)return;setSupportRole("operations");setSupportSection("responses");setSupportFocusOrderId(orderId);setSupportOpen(true);};window.addEventListener("evolution:support-case-prepared",open);return()=>window.removeEventListener("evolution:support-case-prepared",open);},[]);
 
@@ -235,7 +230,7 @@ export default function App() {
     setTasksOpen(false);
     setRetentionOpen(false);
     setOpsOpen(false);
-    setActionsOpen(false);
+    setAutonomyOpen(false);
     a.postAssistantMessage(
       "Your store is disconnected — I no longer have any access to it. Connect this or a different store whenever you're ready and I'll take a fresh look.",
     );
@@ -252,6 +247,7 @@ export default function App() {
     saveJSON(VIEW_KEY, { view: v });
   };
   const openManager=(role:ManagerRole)=>{if(!entitlements?.[role]){setUpgradeRole(role);setUpgradeOpen(true);return;}setView(role);};
+  const selectManager=(role:ManagerRole)=>{setTasksOpen(false);setRecoveryOpen(false);setRetentionOpen(false);setOpsOpen(false);setSupportOpen(false);setDeliveryOpen(false);setBroadcastOpen(false);setAutonomyOpen(false);openManager(role);};
   useEffect(()=>{
     if(!entitlements||!Object.values(entitlements).some(Boolean))return;
     if((view==="marketing"||view==="customer-success"||view==="seo"||view==="product"||view==="operations")&&!entitlements[view]){
@@ -434,31 +430,6 @@ export default function App() {
 
         {authEmail && (
           <div className="header-right">
-            {store && entitlements?.marketing && (
-              <button type="button" className={`tasks-btn ${marketingView ? "active" : ""} ${!entitlements?.marketing?"locked":""}`} onClick={() => openManager("marketing")}>
-                Marketing Manager
-              </button>
-            )}
-            {store && entitlements?.["customer-success"] && (
-              <button type="button" className={`tasks-btn ${customerSuccessView ? "active" : ""} ${!entitlements?.["customer-success"]?"locked":""}`} onClick={() => openManager("customer-success")}>
-                Customer Success Manager
-              </button>
-            )}
-            {store && entitlements?.seo && (
-              <button type="button" className={`tasks-btn ${seoView ? "active" : ""} ${!entitlements?.seo?"locked":""}`} onClick={() => openManager("seo")}>
-                SEO Manager
-              </button>
-            )}
-            {store && entitlements?.product && (
-              <button type="button" className={`tasks-btn ${productView ? "active" : ""} ${!entitlements?.product?"locked":""}`} onClick={() => openManager("product")}>
-                Product Manager
-              </button>
-            )}
-            {store && entitlements?.operations && (
-              <button type="button" className={`tasks-btn ${operationsView ? "active" : ""} ${!entitlements?.operations?"locked":""}`} onClick={() => { setOpsOpen(false); openManager("operations"); }}>
-                Operations Manager
-              </button>
-            )}
             <button
               type="button"
               className={`tasks-btn sound-toggle ${a.settings.ttsEngine === "off" || a.settings.textOnly ? "muted" : ""}`}
@@ -470,23 +441,13 @@ export default function App() {
               <span>{a.settings.ttsEngine === "off" || a.settings.textOnly ? "Sound off" : "Sound on"}</span>
             </button>
             {store && (marketingView || customerSuccessView || operationsView) && (
-              <button type="button" className="tasks-btn" onClick={() => { setTasksOpen(false); setActionsOpen(false); setOpsOpen(false); setRecoveryOpen(false); setRetentionOpen(false); setDeliveryRole(marketingView?"marketing":operationsView?"operations":"customer-success");setDeliveryOpen((v) => !v); }}>
+              <button type="button" className="tasks-btn" onClick={() => { setTasksOpen(false); setAutonomyOpen(false); setOpsOpen(false); setRecoveryOpen(false); setRetentionOpen(false); setDeliveryRole(marketingView?"marketing":operationsView?"operations":"customer-success");setDeliveryOpen((v) => !v); }}>
                 Email setup
               </button>
             )}
             {store && (
-              <button
-                type="button"
-                className="tasks-btn"
-                onClick={() => {
-                  setTasksOpen(false);
-                  setRetentionOpen(false);
-                  setRecoveryOpen(false);
-                  setOpsOpen(false);
-                  setActionsOpen((v) => !v);
-                }}
-              >
-                Actions
+              <button type="button" className="tasks-btn" onClick={()=>{setTasksOpen(false);setRecoveryOpen(false);setRetentionOpen(false);setOpsOpen(false);setDeliveryOpen(false);setAutonomyOpen(value=>!value);}}>
+                Autopilot
               </button>
             )}
             <button
@@ -494,7 +455,7 @@ export default function App() {
               className="tasks-btn"
               onClick={() => {
                 setTasksOpen(false);
-                setActionsOpen(false);
+                setAutonomyOpen(false);
                 setRecoveryOpen(false);
                 setRetentionOpen(false);
                 setOpsOpen(false);
@@ -520,6 +481,7 @@ export default function App() {
       <main className={`layout ${voiceView ? "solo" : ""} ${managerView ? "manager-layout" : ""}`}>
         {/* ── 3D avatar stage ───────────────────────────────────────────── */}
         <section className={`stage card ${managerView ? "manager-stage" : ""}`}>
+          {managerView&&entitlements&&<ManagerRoleSwitcher activeRole={view as ManagerRole} entitlements={entitlements} onSelect={selectManager}/>}
           {marketingView ? (
             <MarketingManager
               active={marketingView}
@@ -529,7 +491,7 @@ export default function App() {
               onAsk={handleMarketingAsk}
               onOpenStore={() => {
                 setRecoveryOpen(false);
-                setActionsOpen(false);
+                setAutonomyOpen(false);
                 setRetentionOpen(false);
                 setOpsOpen(false);
                 setTasksOpen(true);
@@ -548,8 +510,7 @@ export default function App() {
               }}
               onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryRole("marketing"); setDeliveryOpen(true); }}
               onOpenBroadcast={(section) => { setRecoveryOpen(false); setRetentionOpen(false); setCampaignSection(section); setBroadcastOpen(true); }}
-              onOpenStrategy={()=>setMarketingSetupOpen(true)}
-              onOpenDecisions={()=>setMarketingDecisionsOpen(true)}
+              onOpenAutopilot={()=>setAutonomyOpen(true)}
             />
           ) : customerSuccessView ? (
             <CustomerSuccessManager
@@ -563,20 +524,18 @@ export default function App() {
               onOpenReviews={(section) => {setSupportOpen(false);setCustomerQueueOpen(false);setRetentionSection(section==="eligibility"?"review-eligibility":section==="results"?"review-results":"reviews");setRetentionOpen(true);}}
               onOpenRetention={(section) => {setSupportOpen(false);setCustomerQueueOpen(false);setRetentionSection(section==="detection"?"lapse":section==="outcomes"?"winback-results":"winback");setRetentionOpen(true);}}
               onOpenDelivery={() => {setDeliveryRole("customer-success");setDeliveryOpen(true);}}
-              onOpenRules={() => setCustomerSuccessSetupOpen(true)}
-              onOpenDecisions={() => setCustomerSuccessDecisionsOpen(true)}
             />
           ) : seoView ? (
             <SeoManager active={seoView} onAsk={handleMarketingAsk} onProposal={(action) => {
-              setActionsOpen(true);
+              setAutonomyOpen(true);
               window.dispatchEvent(new CustomEvent("evolution:shopify-action-created", { detail: { id:action.id, kind:action.kind } }));
-              a.postAssistantMessage(`Your SEO update is ready for review: ${action.summary}. Open Actions to compare the current listing with the suggested version before approving it.`);
+              a.postAssistantMessage(`Your SEO update is ready for approval: ${action.summary}. Open Autopilot to compare the current listing with the suggested version and execute it in one click.`);
             }}/>
           ) : productView && store ? (
              <ProductAgentManager active={productView} storeUrl={store.url} agentReply={lastAssistant?.content} agentVisual={<Suspense fallback={<div className="avatar-loading"/>}><AvatarScene avatarUrl={a.settings.avatarUrl} thinking={thinking} speaking={a.status === "speaking"} framing="stage" onAvatarFallback={() => a.setAvatarFellBack(true)} onReady={() => setAvatarReady(true)}/></Suspense>} onOpenStore={()=>setTasksOpen(true)} onAsk={handleMarketingAsk} onProposal={(action) => {
-               setActionsOpen(true);
+               setAutonomyOpen(true);
                window.dispatchEvent(new CustomEvent("evolution:shopify-action-created", { detail: { id:action.id, kind:action.kind } }));
-               a.postAssistantMessage(`Your Product Manager proposal is ready: ${action.summary}. Review the exact Shopify change in Actions before approving it.`);
+               a.postAssistantMessage(`Your Product Manager proposal is ready: ${action.summary}. Review and execute the exact Shopify change from Autopilot.`);
              }}/>
           ) : operationsView ? (
             <OperationsManager active={operationsView} onAsk={handleMarketingAsk} onOpenLiveOps={()=>setOpsOpen(true)} onOpenIssues={(orderId)=>{setSupportRole("operations");setSupportSection(orderId?"responses":"risks");setSupportFocusOrderId(orderId??null);setSupportOpen(true);}}/>
@@ -837,13 +796,9 @@ export default function App() {
       {authEmail && store && <OpsPanel open={opsOpen} onClose={() => setOpsOpen(false)} />}
       {authEmail && store && <SupportPanel role={supportRole} section={supportSection} open={supportOpen} focusOrderId={supportFocusOrderId} onClose={() => {setSupportOpen(false);setSupportFocusOrderId(null);}} onOpenDelivery={() => { setSupportOpen(false); setDeliveryRole(supportRole); setDeliveryOpen(true); }} />}
       {authEmail && store && <RetentionPanel open={customerQueueOpen} onClose={() => setCustomerQueueOpen(false)} storeName={store.url.replace(/^https?:\/\//, "").replace(/\.myshopify\.com.*$/, "").replace(/\/.*$/, "")} storeUrl={store.url} />}
-      {authEmail && store && <ActionCenter open={actionsOpen} onClose={() => setActionsOpen(false)} />}
+      {authEmail&&store&&<AutonomyPanel open={autonomyOpen} onClose={()=>setAutonomyOpen(false)} onOpenSupport={(role,orderId)=>{setAutonomyOpen(false);setSupportRole(role);setSupportSection("responses");setSupportFocusOrderId(orderId);setSupportOpen(true);}}/>}
       {authEmail && store && <EmailDeliveryPanel role={deliveryRole} open={deliveryOpen} onClose={() => setDeliveryOpen(false)} />}
       {authEmail && store && <BroadcastCampaignPanel section={campaignSection} open={broadcastOpen} onClose={() => setBroadcastOpen(false)} onOpenDelivery={() => { setBroadcastOpen(false); setDeliveryRole("marketing"); setDeliveryOpen(true); }} />}
-      {authEmail&&store&&<MarketingOperatorSetup open={marketingSetupOpen} onClose={()=>setMarketingSetupOpen(false)}/>}
-      {authEmail&&store&&<MarketingDecisionsInbox open={marketingDecisionsOpen} onClose={()=>setMarketingDecisionsOpen(false)} onOpenRules={()=>{setMarketingDecisionsOpen(false);setMarketingSetupOpen(true);}}/>}
-      {authEmail&&store&&<MarketingOperatorSetup scope="customer-success" open={customerSuccessSetupOpen} onClose={()=>setCustomerSuccessSetupOpen(false)}/>}
-      {authEmail&&store&&<MarketingDecisionsInbox scope="customer-success" open={customerSuccessDecisionsOpen} onClose={()=>setCustomerSuccessDecisionsOpen(false)} onOpenRules={()=>{setCustomerSuccessDecisionsOpen(false);setCustomerSuccessSetupOpen(true);}} onOpenSupport={(orderId)=>{setCustomerSuccessDecisionsOpen(false);setSupportRole("customer-success");setSupportSection("responses");setSupportFocusOrderId(orderId);setSupportOpen(true);}}/>}
       {authEmail && store && <LiveToasts />}
 
       {/* Paid standalone accounts must authorize their Shopify admin before

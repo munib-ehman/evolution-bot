@@ -904,7 +904,7 @@ export async function runAgentChat(
             return;
           }
           controller.enqueue(sse({ action: result.action }));
-          controller.enqueue(sse({ choices: [{ delta: { content: "The standalone SEO optimizer created an evidence-backed approval action. Review its sources, keywords, and before/after fields in Actions. Nothing has changed yet." } }] }));
+          controller.enqueue(sse({ choices: [{ delta: { content: "The standalone SEO optimizer prepared an evidence-backed update. Review its sources, keywords, and before/after fields in the Autopilot approval inbox. Nothing has changed yet." } }] }));
           return;
         }
         const persistentContext = await loadPersistentContext(env, user.id, turns);
@@ -1066,7 +1066,7 @@ export async function runAgentChat(
           }
           if (calls.length === 0 || lastRound) {
             if (seoProposalRequested && !proposalEmitted) {
-              controller.enqueue(sse({ choices: [{ delta: { content: "I couldn't create the SEO approval proposal, so there is no action to approve and nothing was changed. Please retry; if it fails again, check the Actions service configuration." } }] }));
+              controller.enqueue(sse({ choices: [{ delta: { content: "I couldn't prepare the SEO approval, so nothing was changed. Please retry; if it fails again, check the Autopilot service configuration." } }] }));
               return;
             }
             const text = (msg.content ?? "").replace(/<function=[\s\S]*?<\/function>/gi,"").replace(/<\/?function(?:=[^>]*)?>/gi,"").trim();
