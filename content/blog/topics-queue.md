@@ -16,9 +16,6 @@ Format:
 - Inventory planning for solo store owners: avoiding stockouts and dead stock
 - Email list building for ecommerce without annoying popups
 - Checkout friction: small fixes with outsized impact
-- Order and shipping update emails customers actually read
-- How one-person stores compete with brands 10x their size
-- The real cost of context switching for solo founders
 - What an AI COO actually does for an ecommerce store
 - AI vs VA vs agency: who should run your store's busywork
 
@@ -98,3 +95,6 @@ Format:
 - [2026-09-01] Forecasting demand without a data team — /blog/forecast-demand-small-ecommerce-store
 - [2026-09-01] Anomaly alerts: catching a broken checkout before it costs you a weekend — /blog/ecommerce-checkout-anomaly-alerts
 - [2026-09-01] Supplier coordination: emails that get factories to respond — /blog/supplier-coordination-email-templates
+- [2026-09-02] Order and shipping update emails customers actually read — /blog/order-shipping-update-emails-customers-read
+- [2026-09-02] How one-person stores compete with brands 10x their size — /blog/one-person-store-compete-larger-brands
+- [2026-09-02] The real cost of context switching for solo founders — /blog/context-switching-cost-solo-founders
