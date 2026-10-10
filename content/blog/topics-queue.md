@@ -16,11 +16,12 @@ Format:
 - Inventory planning for solo store owners: avoiding stockouts and dead stock
 - Email list building for ecommerce without annoying popups
 - Checkout friction: small fixes with outsized impact
-- What an AI COO actually does for an ecommerce store
-- AI vs VA vs agency: who should run your store's busywork
 
 ## Written
 
+- [2026-10-10] What an AI COO actually does for an ecommerce store — /blog/what-ai-coo-does-ecommerce-store
+- [2026-10-10] AI vs VA vs agency: who should run your store's busywork — /blog/ai-vs-va-vs-agency-ecommerce-operations
+- [2026-10-10] Ecommerce operations dashboard: what to check daily, weekly, and monthly — /blog/ecommerce-operations-dashboard-checklist
 - [2026-08-08] Sourcing products from suppliers: a checklist for small stores — /blog/sourcing-products-from-suppliers-checklist
 - [2026-07-17] How to reduce abandoned checkouts on Shopify without discounting — /blog/reduce-abandoned-checkouts-shopify
 - [2026-07-18] Abandoned cart email sequence that actually converts: timing, copy, examples — /blog/abandoned-cart-email-sequence-that-converts
