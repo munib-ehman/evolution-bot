@@ -19,6 +19,9 @@ Format:
 
 ## Written
 
+- [2026-10-11] Shopify chargeback response: an evidence checklist for small stores — /blog/shopify-chargeback-evidence-checklist
+- [2026-10-11] 13-week cash flow forecast for ecommerce stores — /blog/ecommerce-13-week-cash-flow-forecast
+- [2026-10-11] Shopify store access audit: users, apps, and collaborators — /blog/shopify-store-access-security-audit
 - [2026-10-10] What an AI COO actually does for an ecommerce store — /blog/what-ai-coo-does-ecommerce-store
 - [2026-10-10] AI vs VA vs agency: who should run your store's busywork — /blog/ai-vs-va-vs-agency-ecommerce-operations
 - [2026-10-10] Ecommerce operations dashboard: what to check daily, weekly, and monthly — /blog/ecommerce-operations-dashboard-checklist
