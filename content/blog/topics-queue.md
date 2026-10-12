@@ -19,6 +19,9 @@ Format:
 
 ## Written
 
+- [2026-10-12] Shopify shipping rates: free vs flat vs carrier-calculated — /blog/shopify-shipping-rates-free-flat-calculated
+- [2026-10-12] Shopify preorders for small stores: setup, payment, and fulfillment — /blog/shopify-preorders-small-store-guide
+- [2026-10-12] Purchase order workflow for ecommerce inventory: from draft to receiving — /blog/ecommerce-purchase-order-workflow
 - [2026-10-11] Shopify chargeback response: an evidence checklist for small stores — /blog/shopify-chargeback-evidence-checklist
 - [2026-10-11] 13-week cash flow forecast for ecommerce stores — /blog/ecommerce-13-week-cash-flow-forecast
 - [2026-10-11] Shopify store access audit: users, apps, and collaborators — /blog/shopify-store-access-security-audit
