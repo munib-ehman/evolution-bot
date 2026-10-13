@@ -19,6 +19,9 @@ Format:
 
 ## Written
 
+- [2026-10-13] Shopify inventory cycle counts: a practical accuracy system — /blog/shopify-inventory-cycle-counts
+- [2026-10-13] Shopify order fulfillment checklist: pick, pack, and ship — /blog/shopify-order-fulfillment-checklist
+- [2026-10-13] Shopify discount combinations: protect margin when offers stack — /blog/shopify-discount-combinations-margin
 - [2026-10-12] Shopify shipping rates: free vs flat vs carrier-calculated — /blog/shopify-shipping-rates-free-flat-calculated
 - [2026-10-12] Shopify preorders for small stores: setup, payment, and fulfillment — /blog/shopify-preorders-small-store-guide
 - [2026-10-12] Purchase order workflow for ecommerce inventory: from draft to receiving — /blog/ecommerce-purchase-order-workflow
