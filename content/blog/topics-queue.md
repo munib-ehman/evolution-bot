@@ -19,6 +19,9 @@ Format:
 
 ## Written
 
+- [2026-10-14] Shopify order editing: a safe workflow for changing live orders — /blog/shopify-order-editing-workflow
+- [2026-10-14] Shopify gift card operations: sales, refunds, and outstanding balances — /blog/shopify-gift-card-operations
+- [2026-10-14] Shopify payout reconciliation: match deposits, fees, and adjustments — /blog/shopify-payout-reconciliation
 - [2026-10-13] Shopify inventory cycle counts: a practical accuracy system — /blog/shopify-inventory-cycle-counts
 - [2026-10-13] Shopify order fulfillment checklist: pick, pack, and ship — /blog/shopify-order-fulfillment-checklist
 - [2026-10-13] Shopify discount combinations: protect margin when offers stack — /blog/shopify-discount-combinations-margin
