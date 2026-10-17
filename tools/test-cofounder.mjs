@@ -22,7 +22,7 @@ try{
  assert.deepEqual(Object.keys(ROLES),['CPO','CTO','CFO','CMO']);
  assert.deepEqual(Object.keys(BUSINESS_AREAS),['product','engineering','sales','marketing','finance']);
  const unified=cofounderPrompt('An email tool','No approved plan',null,{name:'Sam',style:'focused'});
- assert(unified.includes('one consistent personality'));assert(unified.includes('Sales:'));assert(unified.includes('Preferred name: Sam'));assert(unified.includes('Choose the relevant business area yourself'));assert(unified.includes('no connected repository execution'));
+ assert(unified.includes('one consistent personality'));assert(unified.includes('Sales:'));assert(unified.includes('not chatbot or marketing copy'));assert(unified.includes('do not pretend to be a human'));assert(unified.includes('Preferred name: Sam'));assert(unified.includes('Choose the relevant business area yourself'));assert(unified.includes('no connected repository execution'));
  const salesFocus=cofounderPrompt('An email tool','Approved plan','sales',{name:'',style:'thoughtful'});
  assert(salesFocus.includes('Current focus: Sales'));assert(salesFocus.includes('Stay the same co-founder'));assert(salesFocus.includes('one question at a time'));assert(salesFocus.includes('Never claim code ran'));
  const prompt=founderPrompt('CTO','A garden planner','Approved scope: save harvests');
