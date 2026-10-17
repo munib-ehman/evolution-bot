@@ -41,4 +41,4 @@ Idea → proposed MVP → founder approval → role conversations. Approved scop
 
 ## Checks
 
-`npm run build` type-checks both applications and builds the selected version. `npm run test:versions` verifies preserved v1 source against the tag, strict version selection, current co-founder routes and built output. Existing role regression tests remain available unchanged.
+`npm run build` type-checks both applications and builds the selected version. `npm run test:versions` verifies preserved v1 source against the tag, strict version selection, current co-founder routes and built output. `npm run test:cofounder` verifies the shared context, authenticated proxy, response delivery and failure/retry behavior without external credentials. Existing role regression tests remain available unchanged.
