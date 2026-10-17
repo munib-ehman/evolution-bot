@@ -3,13 +3,13 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Evolution — a free, open-source 3D conversational AI copilot for ecommerce founders. 100% client-side STT/TTS, static-site deployable, $0 to run.",
+  "description": "Evolution \u2014 a free, open-source 3D conversational AI copilot for ecommerce founders. 100% client-side STT/TTS, static-site deployable, $0 to run.",
   "license": "MIT",
   "scripts": {
-    "predev": "node tools/build-blog.mjs",
+    "predev": "node tools/build-version.mjs --dev",
     "dev": "vite",
     "blog": "node tools/build-blog.mjs",
-    "build": "node tools/build-blog.mjs && tsc -b && vite build",
+    "build": "node tools/build-version.mjs",
     "typecheck": "tsc -b --noEmit",
     "test:seo": "node tools/test-seo-manager.mjs",
     "test:customer-success": "node tools/test-customer-success.mjs",
@@ -18,7 +18,11 @@
     "test:role-isolation": "node tools/test-role-isolation.mjs",
     "test:marketing-agent": "node tools/test-marketing-agent.mjs",
     "test:customer-success-agent": "node tools/test-customer-success-agent.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "version:v1": "node tools/site-version.mjs ecommerce",
+    "version:v2": "node tools/site-version.mjs cofounder",
+    "test:versions": "node tools/test-site-versions.mjs",
+    "test:cofounder": "node tools/test-cofounder.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.5.2",

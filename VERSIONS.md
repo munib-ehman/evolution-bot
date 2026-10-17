@@ -1,0 +1,44 @@
+# Two versions, one safe switch
+
+- **v1 / ecommerce**: the original AI employees for Shopify. The original `index.html`, `app.html`, `src/App.tsx`, auth, tools, assets and public pages remain in place.
+- **v2 / cofounder**: AI co-founder marketing pages in `versions/cofounder/` and a separate workspace in `src/cofounder/`. It reuses the same avatar, butterfly, brand styles, authenticated AI proxy, message renderer and voice components.
+
+The default published experience is selected in **site-version.json**. It is a build setting, not a public query parameter; visitors cannot switch versions or access ecommerce tools through the co-founder UI.
+
+## Switch and publish
+
+```sh
+npm run version:v1    # ecommerce
+# OR
+npm run version:v2    # cofounder
+npm run build
+npm run test:versions
+```
+
+Commit the `site-version.json` change and push to the production branch (`main`). The existing Vercel integration builds and publishes the selected version. Verify the Vercel deployment status before declaring the switch live. Both source versions stay available, so switching back never discards v2 work. No database migration, reset, force push or credential rotation is involved.
+
+A temporary build override is also available: `EVOLUTION_SITE_VERSION=ecommerce npm run build`. Check that a Vercel environment override is not masking the committed selection if a deployed version differs.
+
+## Original restore point
+
+Exact pre-pivot commit: `b02c7440c80667f6ccf21ec44403b85ee52a6492`.
+Remote branch: `versions/v1-ecommerce`.
+Tag: `evolution-v1-ecommerce-2026-10-17`.
+
+These preserve the original site independently of later changes. For a literal historical restore rather than the normal one-setting switch, make a new branch from that tag and review/deploy it. Do not reset or force-push main.
+
+## What is isolated
+
+V2 overlays home/app at Vite’s HTML transform stage; it does not rewrite v1 source files. Its public pages and sitemap replace ecommerce-specific output at build time. V2 does not run the ecommerce blog generator, and generated legacy articles are excluded from the v2 output. The original articles and generator remain available for v1.
+
+V2 has its own browser-storage namespace, further separated by the signed-in email. V1 store records, entitlements, queues, payments, API routes, scheduled jobs and credentials are not migrated or deleted. Existing scheduled ecommerce backend jobs remain configured; they are not new co-founder work. Pause those separately if retiring the ecommerce service entirely.
+
+## Honest v2 capability boundary
+
+The hosted co-founder uses the existing server-only AI key and Supabase sign-in. No additional credentials are embedded or requested in chat. Without a working AI connection it displays an error, rather than answering from the ecommerce demo catalog. No new subscription or payment is enabled.
+
+Idea → proposed MVP → founder approval → role conversations. Approved scope and recent outputs are shared across roles. Plans, specs, code and launch copy are chat deliverables, downloadable as Markdown. This version does not execute repository code, deploy generated products or send outreach. It makes that boundary explicit on the homepage, FAQ and workspace. Conversation state is browser-local, not a new cloud project database.
+
+## Checks
+
+`npm run build` type-checks both applications and builds the selected version. `npm run test:versions` verifies preserved v1 source against the tag, strict version selection, current co-founder routes and built output. Existing role regression tests remain available unchanged.

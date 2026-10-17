@@ -1,0 +1,43 @@
+import {useEffect,useRef,useState} from 'react';
+import {ButterflyIcon} from '../components/icons';
+import {Composer} from '../components/Composer';
+import {MessageList} from '../components/MessageList';
+import {useAuthEmail} from '../components/AuthGate';
+import {authEnabled,signOut} from '../lib/auth';
+import {getAssistantReply} from '../llm/client';
+import {WebSpeechRecognizer,webSpeechSupported} from '../stt/webSpeech';
+import {createSpeaker,stopSpeaking} from '../tts';
+import {FounderAvatar} from './Avatar';
+import {ROLES,founderPrompt,type FounderRole} from './model';
+import type {Message} from '../types';
+type Workspace={draft?:string;idea:string;plan:string;approved:boolean;chats:Record<FounderRole,Message[]>};
+const fresh=():Workspace=>({idea:'',plan:'',approved:false,chats:{CPO:[],CTO:[],CFO:[],CMO:[]}});
+export default function FounderApp(){
+ const email=useAuthEmail(),key='evolution-cofounder-v2:'+ (email||'local');
+ const [work,setWork]=useState<Workspace>(()=>{try{const w=JSON.parse(localStorage.getItem(key)||'null');return w&&typeof w.idea==='string'&&typeof w.plan==='string'&&typeof w.approved==='boolean'&&Object.keys(ROLES).every(r=>Array.isArray(w.chats?.[r]))?w:fresh();}catch{return fresh();}});
+ const [role,setRole]=useState<FounderRole>('CPO'),[idea,setIdea]=useState(work.draft||work.idea),[busy,setBusy]=useState(false),[error,setError]=useState(''),[sound,setSound]=useState(false),[speaking,setSpeaking]=useState(false),[listening,setListening]=useState(false);
+ const controller=useRef<AbortController|null>(null),recognizer=useRef<WebSpeechRecognizer|null>(null),busyRef=useRef(false),planRef=useRef(false);
+ useEffect(()=>{try{localStorage.setItem(key,JSON.stringify(work));}catch{setError('Browser storage is full. Download your work to keep a copy.');}},[work,key]);
+ useEffect(()=>()=>{controller.current?.abort();recognizer.current?.abort();stopSpeaking();},[]);
+ function stop(){controller.current?.abort();recognizer.current?.abort();setListening(false);stopSpeaking();setSpeaking(false);}
+ async function ask(text:string,target=role,proposal=false,approvedContext=work.approved){
+  if(busyRef.current||!text.trim())return;busyRef.current=true;planRef.current=proposal;setBusy(true);setError('');stop();
+  const ac=new AbortController();controller.current=ac;
+  const user:Message={id:crypto.randomUUID(),role:'user',content:proposal?idea:text},aid=crypto.randomUUID();
+  const history=[...work.chats[target],{...user,content:text}];
+  setWork(w=>({...w,chats:{...w.chats,[target]:[...w.chats[target],user,{id:aid,role:'assistant',content:'',pending:true,markdown:true}]}}));
+  let streamed='';
+  try{
+   const context=JSON.stringify({approved:approvedContext,plan:work.plan,outputs:Object.fromEntries(Object.entries(work.chats).map(([r,m])=>[r,m.filter(x=>x.role==='assistant'&&!x.pending).slice(-1).map(x=>x.content.slice(-1800))]))});
+   const result=await getAssistantReply(history,[],{signal:ac.signal,requireProxy:true,systemPrompt:founderPrompt(target,proposal?idea:work.idea,context),onToken:t=>{streamed+=t;setWork(w=>({...w,chats:{...w.chats,[target]:w.chats[target].map(m=>m.id===aid?{...m,content:streamed}:m)}}));}});
+   if(ac.signal.aborted)return;
+   setWork(w=>({...w,...(proposal?{idea,plan:result,approved:false}:{}),chats:{...w.chats,[target]:w.chats[target].map(m=>m.id===aid?{...m,content:result,pending:false}:m)}}));
+   if(sound){const speaker=createSpeaker('browser');speaker.push(result);setSpeaking(true);await speaker.finish();setSpeaking(false);}
+  }catch(e){if(!ac.signal.aborted)setError(e instanceof Error&&/401|sign in/i.test(e.message)?'Please sign in again to continue.':e instanceof Error&&/429|very fast/i.test(e.message)?'Please wait a moment, then try again.':'AI could not connect. Your idea is still here. Please try again shortly.');setWork(w=>({...w,chats:{...w.chats,[target]:w.chats[target].filter(m=>m.id!==aid)}}));}
+  finally{busyRef.current=false;planRef.current=false;setBusy(false);}
+ }
+ function talk(){if(listening){recognizer.current?.abort();setListening(false);return;}const r=new WebSpeechRecognizer();recognizer.current=r;setListening(true);r.start({onFinal:text=>{setListening(false);void ask(text);},onError:msg=>{setError(msg);setListening(false);},onEnd:()=>setListening(false)});}
+ function download(){const text=`# Evolution workspace\n\n## Idea\n${work.idea}\n\n## ${work.approved?'Approved':'Proposed'} scope\n${work.plan}\n\n`+Object.entries(work.chats).map(([r,m])=>`## ${r}\n`+m.map(x=>`### ${x.role}\n${x.content}`).join('\n\n')).join('\n\n');const url=URL.createObjectURL(new Blob([text],{type:'text/markdown'}));const a=document.createElement('a');a.href=url;a.download='evolution-workspace.md';a.click();URL.revokeObjectURL(url);}
+ return <div className="founder-shell"><aside className="founder-sidebar"><a className="founder-brand" href="/"><ButterflyIcon size={30}/><span>Evolution</span></a><span className="founder-eyebrow">YOUR CO-FOUNDERS</span><nav aria-label="Co-founder roles">{Object.entries(ROLES).map(([r,info])=><button key={r} aria-current={r===role?'page':undefined} disabled={busy} onClick={()=>{stop();setRole(r as FounderRole);}}><strong>{r}</strong><span>{info.name}</span></button>)}</nav><div className="founder-sidebar-foot"><small>Early access</small><a href="/faq">Help</a>{authEnabled&&<button onClick={()=>void signOut()}>Sign out</button>}</div></aside><main className="founder-main"><header className="founder-top"><div><span className="founder-eyebrow">{ROLES[role].name.toUpperCase()}</span><h1>{work.idea?'Let’s move it forward.':'What are we building?'}</h1><p>{ROLES[role].purpose}</p></div><button className="founder-link" onClick={download}>Download work</button></header><section className="founder-stage"><div className="founder-conversation">{!work.idea&&!work.plan?<form className="founder-idea" onSubmit={e=>{e.preventDefault();setRole('CPO');void ask('Propose a small MVP for this idea: '+idea+'. Give 3 concrete features, what stays out, and one short assignment each for CPO, CTO, CFO, CMO. End by asking for approval. Do not begin execution.','CPO',true);}}><label htmlFor="founder-idea">Tell me your product idea.</label><textarea id="founder-idea" value={idea} onChange={e=>{setIdea(e.target.value);setWork(w=>({...w,draft:e.target.value}));}} minLength={10} maxLength={2000} placeholder="A simple tool that helps…" required/><button className="founder-primary" disabled={busy}>{busy?'Preparing your plan…':'Plan my MVP'}</button><p className="founder-note">Start with the idea. Decide on the plan. Then work with your team.</p></form>:<><details className="founder-scope"><summary>{work.approved?'Approved MVP plan':'Your proposed MVP'}</summary><p>{work.idea}</p><pre>{work.plan}</pre></details>{work.plan&&!work.approved&&<div className="founder-approval"><p>Review the plan in chat, then give your team the go-ahead.</p><button className="founder-primary" disabled={busy} onClick={()=>{setRole('CPO');setWork(w=>({...w,approved:true}));void ask('I approve the proposed MVP scope. Prepare the CPO product specification, priorities and acceptance criteria for this scope.','CPO',false,true);}}>Approve plan & start</button></div>}</>}
+ <MessageList autoScroll={false} messages={work.chats[role]} status={busy?'thinking':speaking?'speaking':'idle'}/>{error&&<p className="founder-error" role="alert">{error}</p>}{(work.idea||work.plan)&&<Composer onSend={text=>void ask(text)} disabled={busy} canTalk={webSpeechSupported()} active onVoice={talk}/>}<div className="founder-chat-controls">{webSpeechSupported()&&<button onClick={talk} disabled={busy}>{listening?'Stop listening':'Talk to your co-founder'}</button>}<button aria-pressed={sound} onClick={()=>{stopSpeaking();setSpeaking(false);setSound(!sound);}}>Voice replies {sound?'on':'off'}</button>{busy&&<button onClick={stop}>Stop</button>}</div><p className="founder-note">Plans, code and launch drafts stay here. Repository execution and sending are not connected yet. Saved in this browser.</p></div><div className="founder-person"><FounderAvatar thinking={busy} speaking={speaking}/><div className="founder-person-label"><strong>Your {role}</strong><span>{busy?'Thinking it through…':'Here to build with you.'}</span></div></div></section></main></div>;
+}

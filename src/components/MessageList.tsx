@@ -11,17 +11,19 @@ interface Props {
   messages: Message[];
   status: AssistantStatus;
   compact?: boolean;
+  /** Keep a form-first workspace from scrolling the whole page on mount. */
+  autoScroll?: boolean;
   /** Fired when the owner clicks "Queue this fix" under a report. */
   onEscalate?: (taskTool: string, note: string) => void;
 }
 
-export function MessageList({ messages, status, compact = false, onEscalate }: Props) {
+export function MessageList({ messages, status, compact = false, onEscalate, autoScroll = true }: Props) {
   const endRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to the newest message.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, status]);
+    if (autoScroll) endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, status, autoScroll]);
 
   return (
     <div className={`transcript ${compact ? "compact" : ""}`} role="log" aria-live="polite">
