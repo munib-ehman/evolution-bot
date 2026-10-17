@@ -7,6 +7,16 @@ try{
  for(const status of [200,404,503]){globalThis.fetch=async()=>new Response(status===200?'<html>static fallback</html>':'unavailable',{status});assert.equal(await checkAIConnection(),false);}
  globalThis.fetch=async()=>new Response(null,{status:204});assert.equal(await checkAIConnection(),true);
  globalThis.fetch=async()=>{throw new Error('network offline');};assert.equal(await checkAIConnection(),false);
+ const {progressSnapshot,recoverEvents,recoverConversation}=await server.ssrLoadModule('/src/cofounder/accountability.ts');
+ const saved={idea:'',draft:'An email tool',plan:'',approved:false,events:[]};
+ assert.equal(progressSnapshot(saved).idea,true);assert.equal(progressSnapshot(saved).plan,false);assert.equal(progressSnapshot(saved).output,false);
+ const event={id:'event1',kind:'reply',actor:'evo',state:'working',message:'reply1',at:1,title:'Preparing'};
+ assert.equal(recoverEvents([event])[0].state,'stopped');assert.equal(event.state,'working','recovery must not mutate the saved source');
+ const pending={id:'reply1',role:'assistant',content:'Partial',pending:true};assert.equal(recoverConversation([pending])[0].pending,false);assert(recoverConversation([pending])[0].content.includes('Interrupted'));assert.equal(pending.pending,true);
+ assert.equal(progressSnapshot({...saved,approved:true,events:[event]}).output,false);
+ assert.equal(progressSnapshot({...saved,approved:true,events:[{...event,state:'failed'}]}).output,false);
+ const completed=progressSnapshot({...saved,plan:'Reviewed scope',approved:true,events:[{...event,state:'saved'},{...event,id:'approval',kind:'approval',actor:'you',state:'saved'}]});
+ assert.equal(completed.output,true);assert.equal(completed.outputs.length,1);assert.equal(completed.decisions.length,1);
  const {getAssistantReply}=await server.ssrLoadModule('/src/llm/client.ts');
  const {ROLES,founderPrompt,BUSINESS_AREAS,cofounderPrompt}=await server.ssrLoadModule('/src/cofounder/model.ts');
  assert.deepEqual(Object.keys(ROLES),['CPO','CTO','CFO','CMO']);
