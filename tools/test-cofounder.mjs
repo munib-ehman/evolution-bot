@@ -3,6 +3,10 @@ import {createServer} from 'vite';
 const server=await createServer({server:{middlewareMode:true},appType:'custom',optimizeDeps:{noDiscovery:true,entries:[]}});
 const original=globalThis.fetch;
 try{
+ const {checkAIConnection}=await server.ssrLoadModule('/src/cofounder/connection.ts');
+ for(const status of [200,404,503]){globalThis.fetch=async()=>new Response(status===200?'<html>static fallback</html>':'unavailable',{status});assert.equal(await checkAIConnection(),false);}
+ globalThis.fetch=async()=>new Response(null,{status:204});assert.equal(await checkAIConnection(),true);
+ globalThis.fetch=async()=>{throw new Error('network offline');};assert.equal(await checkAIConnection(),false);
  const {getAssistantReply}=await server.ssrLoadModule('/src/llm/client.ts');
  const {ROLES,founderPrompt}=await server.ssrLoadModule('/src/cofounder/model.ts');
  assert.deepEqual(Object.keys(ROLES),['CPO','CTO','CFO','CMO']);
