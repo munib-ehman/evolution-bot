@@ -8,8 +8,13 @@ try{
  globalThis.fetch=async()=>new Response(null,{status:204});assert.equal(await checkAIConnection(),true);
  globalThis.fetch=async()=>{throw new Error('network offline');};assert.equal(await checkAIConnection(),false);
  const {getAssistantReply}=await server.ssrLoadModule('/src/llm/client.ts');
- const {ROLES,founderPrompt}=await server.ssrLoadModule('/src/cofounder/model.ts');
+ const {ROLES,founderPrompt,BUSINESS_AREAS,cofounderPrompt}=await server.ssrLoadModule('/src/cofounder/model.ts');
  assert.deepEqual(Object.keys(ROLES),['CPO','CTO','CFO','CMO']);
+ assert.deepEqual(Object.keys(BUSINESS_AREAS),['product','engineering','sales','marketing','finance']);
+ const unified=cofounderPrompt('An email tool','No approved plan',null,{name:'Sam',style:'focused'});
+ assert(unified.includes('one consistent personality'));assert(unified.includes('Sales:'));assert(unified.includes('Preferred name: Sam'));assert(unified.includes('Choose the relevant business area yourself'));assert(unified.includes('no connected repository execution'));
+ const salesFocus=cofounderPrompt('An email tool','Approved plan','sales',{name:'',style:'thoughtful'});
+ assert(salesFocus.includes('Current focus: Sales'));assert(salesFocus.includes('Stay the same co-founder'));assert(salesFocus.includes('one question at a time'));assert(salesFocus.includes('Never claim code ran'));
  const prompt=founderPrompt('CTO','A garden planner','Approved scope: save harvests');
  assert(prompt.includes('A garden planner'));assert(prompt.includes('unexecuted draft'));
  let calls=[];
@@ -22,5 +27,5 @@ try{
  let chunks='';globalThis.fetch=async()=>Response.json({choices:[{message:{content:'A concrete implementation draft.'}}]});
  const reply=await getAssistantReply([{role:'user',content:'Retry'}],[],{requireProxy:true,systemPrompt:prompt,onToken:t=>chunks+=t});
  assert.equal(reply,'A concrete implementation draft.');assert.equal(chunks,reply);
- console.log('PASS: four co-founder roles, shared idea/context, authenticated proxy path, no catalog or mock fallbacks, retry after unavailable service, real response delivery.');
+ console.log('PASS: one consistent co-founder, five business areas, optional founder preferences, honest tool limits, AI health detection, authenticated responses and retries; legacy role context preserved.');
 }finally{globalThis.fetch=original;await server.close();}

@@ -44,7 +44,7 @@ interface AvatarSceneProps {
    * "stage": face framed in the upper third, leaving the lower part of the
    * canvas clear for the voice captions + orb dock overlay.
    */
-  framing?: "portrait" | "stage";
+  framing?: "portrait" | "stage" | "companion";
   /** Notified if we had to fall back to the procedural avatar. */
   onAvatarFallback?: () => void;
   /** Fired once the avatar (real or fallback) is mounted and on screen. */
@@ -61,7 +61,7 @@ interface AvatarSceneProps {
  * canvases there is no side room, so it raises the face to the upper third
  * instead and the overlay stays centred below it.
  */
-function CameraRig({ framing }: { framing: "portrait" | "stage" }) {
+function CameraRig({ framing }: { framing: "portrait" | "stage" | "companion" }) {
   const controls = useRef<OrbitControlsImpl>(null);
   useFrame((state, dt) => {
     const stage = framing === "stage";
@@ -78,7 +78,15 @@ function CameraRig({ framing }: { framing: "portrait" | "stage" }) {
     let camZ: number;
     let targetY: number;
     const halfFovTan = Math.tan((30 * Math.PI) / 360);
-    if (stacked && stage) {
+    if (framing === "companion") {
+      // V2's dedicated portrait includes the crown and shoulders at any aspect.
+      // Existing ecommerce portrait/stage framing is unchanged.
+      const top = 0.78, bottom = -1.1;
+      camZ = Math.min(6, Math.max((top-bottom)/(2*halfFovTan),1.1/(2*halfFovTan*aspect)));
+      targetY = (top+bottom)/2;
+      camY = targetY + 0.12;
+      camX = 0;
+    } else if (stacked && stage) {
       // Phone canvas in voice view: a head-and-shoulders portrait cropped in a
       // fixed vertical window — headroom above the crown (~0.5) down to the
       // collarbone, so the frame always ends above the chest. The width guard

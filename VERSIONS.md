@@ -1,7 +1,7 @@
 # Two versions, one safe switch
 
 - **v1 / ecommerce**: the original AI employees for Shopify. The original `index.html`, `app.html`, `src/App.tsx`, auth, tools, assets and public pages remain in place.
-- **v2 / cofounder**: AI co-founder marketing pages in `versions/cofounder/` and a separate workspace in `src/cofounder/`. It reuses the same avatar, butterfly, brand styles, authenticated AI proxy, message renderer and voice components.
+- **v2 / cofounder**: AI co-founder marketing pages in `versions/cofounder/` and a separate workspace in `src/cofounder/`. The current design is one co-founder, Evo, with a shared conversation across product, engineering, sales, marketing and finance. It reuses the same avatar, butterfly, brand styles, authenticated AI proxy, message renderer and voice components.
 
 The default published experience is selected in **site-version.json**. It is a build setting, not a public query parameter; visitors cannot switch versions or access ecommerce tools through the co-founder UI.
 
@@ -37,7 +37,7 @@ V2 has its own browser-storage namespace, further separated by the signed-in ema
 
 The hosted co-founder uses the existing server-only AI key and Supabase sign-in. No additional credentials are embedded or requested in chat. Without a working AI connection it displays an error, rather than answering from the ecommerce demo catalog. No new subscription or payment is enabled.
 
-Idea → proposed MVP → founder approval → role conversations. Approved scope and recent outputs are shared across roles. Plans, specs, code and launch copy are chat deliverables, downloadable as Markdown. This version does not execute repository code, deploy generated products or send outreach. It makes that boundary explicit on the homepage, FAQ and workspace. Conversation state is browser-local, not a new cloud project database.
+Idea → proposed MVP → founder approval → one shared conversation. My business holds the plan, current/next steps, five focus areas and previous role history. Optional name and guidance preferences are saved locally and used as context; Evo does not invent personal knowledge. Legacy role chats are retained in the business details and download. Plans, specs, code and launch copy are chat deliverables, downloadable as Markdown. This version does not execute repository code, deploy generated products or send outreach. It makes that boundary explicit on the homepage, FAQ and workspace. Conversation state is browser-local, not a new cloud project database.
 
 ## Checks
 
