@@ -7,7 +7,7 @@ try{
  for(const status of [200,404,503]){globalThis.fetch=async()=>new Response(status===200?'<html>static fallback</html>':'unavailable',{status});assert.equal(await checkAIConnection(),false);}
  globalThis.fetch=async()=>new Response(null,{status:204});assert.equal(await checkAIConnection(),true);
  globalThis.fetch=async()=>{throw new Error('network offline');};assert.equal(await checkAIConnection(),false);
- const {progressSnapshot,recoverEvents,recoverConversation}=await server.ssrLoadModule('/src/cofounder/accountability.ts');
+ const {mvpJourney,progressSnapshot,recoverEvents,recoverConversation}=await server.ssrLoadModule('/src/cofounder/accountability.ts');
  const saved={idea:'',draft:'An email tool',plan:'',approved:false,events:[]};
  assert.equal(progressSnapshot(saved).idea,true);assert.equal(progressSnapshot(saved).plan,false);assert.equal(progressSnapshot(saved).output,false);
  const event={id:'event1',kind:'reply',actor:'evo',state:'working',message:'reply1',at:1,title:'Preparing'};
@@ -17,6 +17,20 @@ try{
  assert.equal(progressSnapshot({...saved,approved:true,events:[{...event,state:'failed'}]}).output,false);
  const completed=progressSnapshot({...saved,plan:'Reviewed scope',approved:true,events:[{...event,state:'saved'},{...event,id:'approval',kind:'approval',actor:'you',state:'saved'}]});
  assert.equal(completed.output,true);assert.equal(completed.outputs.length,1);assert.equal(completed.decisions.length,1);
+ // Milestones require contiguous evidence, not merely a saved conversation.
+ assert.equal(mvpJourney({...saved,draft:'   '}).count,0);
+ assert.equal(mvpJourney(saved).count,1);
+ assert.equal(mvpJourney({...saved,approved:true}).count,1);
+ const planned={...saved,plan:'Small approved scope'};
+ assert.equal(mvpJourney(planned).count,2);
+ assert.equal(mvpJourney({...planned,approved:true}).count,3);
+ const drafted={...planned,approved:true,events:[{...event,kind:'draft',state:'saved'}],conversation:[{...pending,pending:false,content:'Specification'}]};
+ assert.equal(mvpJourney(drafted).count,4);
+ assert.equal(mvpJourney(drafted).steps[4].done,false,'a saved draft cannot prove an MVP was built');
+ assert.equal(mvpJourney({...drafted,events:[{...event,state:'saved'}]}).count,3,'ordinary replies are not deliverables');
+ assert.equal(mvpJourney({...drafted,conversation:[]}).count,3,'missing output cannot complete a milestone');
+ assert.equal(mvpJourney({...drafted,conversation:[pending]}).count,3,'partial responses cannot complete a milestone');
+ assert.equal(mvpJourney({...drafted,events:[{...event,kind:'draft',state:'failed'}]}).count,3);
  const {getAssistantReply}=await server.ssrLoadModule('/src/llm/client.ts');
  const {ROLES,founderPrompt,BUSINESS_AREAS,cofounderPrompt}=await server.ssrLoadModule('/src/cofounder/model.ts');
  assert.deepEqual(Object.keys(ROLES),['CPO','CTO','CFO','CMO']);
