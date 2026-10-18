@@ -42,3 +42,8 @@ Idea → proposed MVP → founder approval → one shared conversation. The curr
 ## Checks
 
 `npm run build` type-checks both applications and builds the selected version. `npm run test:versions` verifies preserved v1 source against the tag, strict version selection, current co-founder routes and built output. `npm run test:cofounder` verifies the shared context, authenticated proxy, response delivery and failure/retry behavior without external credentials. Existing role regression tests remain available unchanged.
+
+
+### First-feedback workspace
+
+V2 now leads with product → early users → feedback, keeping the avatar and one next task visible while planning checkpoints stay in Build details. The landing page uses the same positioning: less time between the idea and real customer feedback. The workspace supports browser-local, founder-entered launch dates, early-user stages, feedback quotes and source links. Invitations do not count as people who tried the product. Feedback counts only for recorded trials. Launch-to-feedback time uses the earliest dated product feedback after the recorded launch; missing evidence displays “Not measured”. These are manual records, not connected analytics or verified testimonials. The Markdown export includes the records. No backend, sending, model connection, billing or autonomous execution was added in this design change.

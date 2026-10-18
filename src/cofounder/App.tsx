@@ -6,6 +6,8 @@ import {authEnabled,signOut} from '../lib/auth';
 import {getAssistantReply} from '../llm/client';
 import {WebSpeechRecognizer,webSpeechSupported} from '../stt/webSpeech';
 import {createSpeaker,stopSpeaking} from '../tts';
+import {CustomerEvidence} from './MarketEvidence';
+import {readMarket,marketSnapshot,type MarketEvidence} from './market';
 import {FounderAvatar} from './Avatar';
 import {EvoIcon} from './Icons';
 import {checkAIConnection} from './connection';
@@ -13,7 +15,7 @@ import {mvpJourney,progressSnapshot,recoverEvents,recoverConversation,type WorkE
 import {BUSINESS_AREAS,cofounderPrompt,type BusinessArea,type FounderProfile,type FounderRole} from './model';
 import type {Message} from '../types';
 
-type Workspace={events?:WorkEvent[];draft?:string;idea:string;plan:string;approved:boolean;chats:Record<FounderRole,Message[]>;conversation?:Message[];profile?:FounderProfile};
+type Workspace={market?:MarketEvidence;events?:WorkEvent[];draft?:string;idea:string;plan:string;approved:boolean;chats:Record<FounderRole,Message[]>;conversation?:Message[];profile?:FounderProfile};
 const fresh=():Workspace=>({idea:'',plan:'',approved:false,chats:{CPO:[],CTO:[],CFO:[],CMO:[]},conversation:[]});
 type Panel='business'|'you'|'connection'|'progress'|null;
 export default function FounderApp(){
@@ -30,6 +32,7 @@ export default function FounderApp(){
  const now=busy?'Thinking through your next step':hasPlan&&!work.approved?'Your plan needs a decision':work.approved?'Work within the approved scope':text.trim()?'Your idea is saved':'Start with what matters to you';
  const progress=progressSnapshot(work);
  const journey=mvpJourney(work);
+ const market=readMarket(work.market),customers=marketSnapshot(market);
  function nextTask(){if(busy)return;if(journey.count===0){setNoteOpen(true);return;}if(journey.count===2){setPanel('business');return;}if(journey.count===4){setPanel('progress');return;}if(aiReady!==true){setPanel('connection');return;}if(journey.count===1)void ask(work.idea||work.draft||text,true);else void ask('Prepare the first small product specification from our approved MVP scope. Include acceptance criteria for review.',false,false,true);}
  const next=hasPlan&&!work.approved?'Review it together':work.approved?'Prepare the first deliverable':'Shape a small first version';
  useEffect(()=>{try{localStorage.setItem(key,JSON.stringify(work));}catch{setError('Storage is full. Download your work to keep a copy.');}},[work,key]);
@@ -63,12 +66,12 @@ export default function FounderApp(){
  }
  function submit(e:FormEvent){e.preventDefault();void ask(text,!hasIdea&&!hasPlan);}
  function talk(){if(listening){recognizer.current?.abort();setListening(false);return;}if(aiReady!==true){setPanel('connection');return;}const r=new WebSpeechRecognizer();recognizer.current=r;setListening(true);r.start({onPartial:t=>setText(t),onFinal:t=>{setListening(false);updateText(t);void ask(t,!hasIdea&&!hasPlan);},onError:msg=>{setError(msg);setListening(false);},onEnd:()=>setListening(false)});}
- function download(){const content=`# Evolution — your business\n\n## Idea\n${work.idea||work.draft||'Not defined'}\n\n## ${work.approved?'Approved':'Proposed'} plan\n${work.plan}\n\n## Conversation\n`+messages.map(m=>`### ${m.role==='assistant'?'Evo':'You'}\n${m.content}`).join('\n\n')+'\n\n## Previous role conversations\n'+Object.entries(work.chats).map(([r,m])=>`### ${r}\n`+m.map(x=>`${x.role}: ${x.content}`).join('\n\n')).join('\n\n')+'\n\n## Activity\n'+(work.events||[]).map(e=>`${new Date(e.at).toISOString()} | ${e.actor} | ${e.state} | ${e.title}`).join('\n');const url=URL.createObjectURL(new Blob([content],{type:'text/markdown'})),a=document.createElement('a');a.href=url;a.download='my-business-evolution.md';a.click();URL.revokeObjectURL(url);}
+ function download(){const content=`# Evolution — your business\n\n## Idea\n${work.idea||work.draft||'Not defined'}\n\n## ${work.approved?'Approved':'Proposed'} plan\n${work.plan}\n\n## Conversation\n`+messages.map(m=>`### ${m.role==='assistant'?'Evo':'You'}\n${m.content}`).join('\n\n')+'\n\n## Previous role conversations\n'+Object.entries(work.chats).map(([r,m])=>`### ${r}\n`+m.map(x=>`${x.role}: ${x.content}`).join('\n\n')).join('\n\n')+'\n\n## Early users and feedback (founder-recorded)\n'+JSON.stringify(market,null,2)+'\n\n## Activity\n'+(work.events||[]).map(e=>`${new Date(e.at).toISOString()} | ${e.actor} | ${e.state} | ${e.title}`).join('\n');const url=URL.createObjectURL(new Blob([content],{type:'text/markdown'})),a=document.createElement('a');a.href=url;a.download='my-business-evolution.md';a.click();URL.revokeObjectURL(url);}
  return <div className="evo-app">
   <header className="evo-header"><a className="evo-brand" href="/"><span className="evo-brand-mark"><ButterflyIcon size={21}/></span><span>Evolution</span></a><div className="evo-header-actions"><button className={'evo-connection '+(aiReady?'is-ready':'')} onClick={()=>setPanel('connection')}><span/>{aiReady===null?'Connecting':aiReady?'Connected':'Offline'}</button><button className="evo-profile-button" aria-label="How we work together" onClick={()=>setPanel('you')}><EvoIcon name="person" size={17}/></button></div></header>
   <main className="evo-main evo-room">
    <section className="evo-presence evo-call" aria-label="Your co-founder Evo">
-    <div className="evo-call-name"><span>Evo</span><small>Co-founder</small></div>
+    <div className="evo-call-name"><span>Evo</span><small>Build. Launch. Learn.</small></div>
     <div className="evo-room-light" aria-hidden="true"/><div className="evo-room-frame" aria-hidden="true"/>
     <div className="evo-call-portrait"><FounderAvatar thinking={busy} speaking={speaking} framing="companion"/></div>
     <div className="evo-call-bottom"><span className="evo-call-state"><i className={listening||busy||speaking?'is-active':''}/>{listening?'Listening':speaking?'Speaking':busy?'Thinking':aiReady?'Ready':'Preview'}</span><div>{webSpeechSupported()&&<button className={'evo-talk '+(listening?'is-listening':'')} onClick={talk} disabled={busy} aria-label={listening?'Stop listening':'Talk to Evo'}><EvoIcon name="mic" size={17}/>{listening?'Listening':'Talk'}</button>}<button className="evo-call-sound" aria-label={sound?'Turn voice replies off':'Turn voice replies on'} aria-pressed={sound} onClick={()=>{stopSpeaking();setSpeaking(false);setSound(!sound);}}><EvoIcon name={sound?'sound':'quiet'} size={18}/></button></div></div>
@@ -78,11 +81,13 @@ export default function FounderApp(){
     <div className="evo-desk-content" role="tabpanel" id="evo-desk-content" aria-labelledby={view==='desk'?'desk-tab':'conversation-tab'}>
      {view==='desk'?<div className="evo-paper evo-task-paper">
       <div className="evo-paper-top"><span>{profile.name?profile.name+' & Evo':'You & Evo'}</span><button onClick={()=>setPanel('progress')}>View record<EvoIcon name="chevron" size={11}/></button></div>
-      <span className="evo-paper-label">YOUR FIRST MVP</span><h1>{work.idea||work.draft||'What would you like to build?'}</h1>
-      <div className="evo-scale-heading"><span>{journey.count} of 5 milestones</span><span>{busy?'Working':journey.count===0?'Not started':journey.count===4?'Draft ready':'In planning'}</span></div>
-      <ol className="evo-mvp-scale" aria-label="MVP milestones">{journey.steps.map((step,i)=><li key={step.label} className={step.done?'is-complete':step.current?'is-current':''} aria-current={step.current?'step':undefined}><span>{step.done?<EvoIcon name="check" size={13}/>:i+1}</span><small>{step.label}</small><span className="evo-sr-only">{step.done?'Complete':step.current?'Next':'Not started'}</span></li>)}</ol>
+      <span className="evo-paper-label">IDEA → REAL CUSTOMER FEEDBACK</span><h1>{work.idea||work.draft||'What would you like to build?'}</h1>
+      <div className="evo-scale-heading"><span>{customers.feedback?'Feedback recorded':customers.tried?'Learning from early users':customers.launched?'Ready for early users':'Preparing your first version'}</span><span>One step at a time</span></div>
+      <ol className="evo-mvp-scale evo-feedback-path" aria-label="Path to real customer feedback">{[{label:'Product',done:customers.launched},{label:'Early users',done:customers.tried>0},{label:'Feedback',done:customers.feedback>0}].map((step,i)=><li key={step.label} className={step.done?'is-complete':i===0||i===1&&customers.launched||i===2&&customers.tried>0?'is-current':''}><span>{step.done?<EvoIcon name="check" size={13}/>:i+1}</span><small>{step.label}</small><span className="evo-sr-only">{step.done?'Founder-recorded':'Awaiting evidence'}</span></li>)}</ol>
       <div className="evo-current-task"><div className="evo-task-meta"><span>{busy?'IN PROGRESS':'NEXT TASK'}</span><span>{journey.task.owner==='You'?(profile.name||'You'):'Evo'}</span></div><h2>{journey.task.title}</h2><p>{journey.task.detail}</p><button className="evo-task-action" onClick={nextTask} disabled={busy}>{busy?'Working…':aiReady!==true&&(journey.count===1||journey.count===3)?'Connect AI to continue':journey.task.action}<EvoIcon name="chevron" size={13}/></button></div>
-      <details className="evo-milestone-detail"><summary>What counts as progress?</summary><p>Idea saved → plan saved → your approval → draft saved. Build is complete only when there is a working, tested MVP. Coding and deployment are not connected yet.</p></details>
+      <details className="evo-milestone-detail"><summary>Build details · {journey.count} / 5</summary><ol className="evo-build-record">{journey.steps.map(step=><li key={step.label}><span>{step.label}</span><span>{step.done?'Saved':step.current?'Next':'Not started'}</span></li>)}</ol><p>Plans and drafts are saved work, not a built product. Coding, deployment and customer tracking are not connected. Product, early users and feedback above come from your own records.</p></details>
+      <CustomerEvidence data={market} onChange={change=>setWork(w=>({...w,market:change(readMarket(w.market))}))}/>
+
      </div>:<div className="evo-meeting-notes">{messages.length?<MessageList autoScroll={false} messages={messages} status={busy?'thinking':speaking?'speaking':'idle'}/>:<div className="evo-notes-empty"><strong>We’ll keep our conversation here.</strong><p>Your idea stays on our desk.</p></div>}</div>}
      {view==='conversation'&&hasPlan&&!work.approved&&<div className="evo-decision"><span>Ready to go ahead?</span><button disabled={busy||aiReady!==true} onClick={()=>void ask('I approve the proposed MVP scope. Prepare the first small product specification and the next concrete deliverable.',false,true)}>Approve plan<EvoIcon name="check" size={14}/></button></div>}
      {error&&<div className="evo-error" role="alert">{error}</div>}
