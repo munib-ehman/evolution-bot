@@ -56,3 +56,6 @@ The launch-studio refinement keeps the first-feedback USP on the main canvas. An
 
 
 The balanced workspace keeps four compact milestones (approved plan, recorded MVP launch, ten product trials, first feedback) above one next action and the full inline conversation. The founder’s own idea replaces the marketing headline. User progress is an explicit actual/10 count; invitations do not count, and the users milestone completes at ten recorded trials. Product and customer details remain behind the milestone controls and Details. The target is shared with the customer evidence view.
+
+
+The project title is now an editable proposed outcome derived locally from the initial idea rather than a verbatim copy of the message. This is a presentation suggestion, not an AI-generated or approved plan. Original text remains in the saved draft/idea. Current work explicitly distinguishes not started, ready, working and awaiting review, using actual request state and stored evidence. Offline previews show “No task running” with a connection explanation; setup is not labeled as product execution. The approved milestones and inline chat remain unchanged.
