@@ -31,8 +31,8 @@ try{
  assert.equal(mvpJourney({...drafted,conversation:[]}).count,3,'missing output cannot complete a milestone');
  assert.equal(mvpJourney({...drafted,conversation:[pending]}).count,3,'partial responses cannot complete a milestone');
  assert.equal(mvpJourney({...drafted,events:[{...event,kind:'draft',state:'failed'}]}).count,3);
- const {readMarket,marketSnapshot,feedbackDuration,safeWebLink}=await server.ssrLoadModule('/src/cofounder/market.ts');
- assert.deepEqual(readMarket(null),{url:'',launchedAt:undefined,users:[]});
+ const {readMarket,marketSnapshot,feedbackDuration,safeWebLink,businessMilestones,validUserTarget}=await server.ssrLoadModule('/src/cofounder/market.ts');
+ assert.deepEqual(readMarket(null),{url:'',launchedAt:undefined,users:[],userGoal:undefined,totalUsers:undefined});
  assert.equal(safeWebLink('javascript:alert(1)'),null);
  const launch=Date.now()-86400000;
  const user={id:'person',name:'Customer',status:'invited',feedback:'I need export',source:'https://example.com/feedback',feedbackAt:launch+7200000};
@@ -46,6 +46,27 @@ try{
  assert.equal(marketSnapshot({...heard,launchedAt:Date.now()+86400000}).launched,false);
  assert.equal(marketSnapshot({...heard,users:[{...user,status:'tried',feedbackAt:launch-1}]}).elapsed,null,'feedback before launch cannot measure launch-to-feedback time');
  assert.equal(feedbackDuration(null),'Not measured');
+ // Goals can grow without resetting evidence or treating invitations as product usage.
+ const larger={...heard,userGoal:10000,totalUsers:{count:2500,asOf:Date.now()-60000,source:'Product analytics'}};
+ const largerSnapshot=marketSnapshot(larger);
+ assert.equal(largerSnapshot.tried,2500,'aggregate totals include named trials rather than adding them twice');
+ assert.equal(largerSnapshot.feedback,1,'aggregate counts must not fabricate feedback');
+ assert.equal(largerSnapshot.userGoal,10000);
+ assert.equal(readMarket(JSON.parse(JSON.stringify(larger))).userGoal,10000);
+ assert.equal(readMarket(larger).users.length,1);
+ assert.equal(marketSnapshot({...larger,totalUsers:{...larger.totalUsers,asOf:Date.now()+60000}}).tried,1,'future-dated user totals are not evidence');
+ assert.equal(marketSnapshot({...larger,totalUsers:{...larger.totalUsers,source:''}}).tried,1,'aggregate records need a source');
+ assert.equal(validUserTarget(0),false);assert.equal(validUserTarget(-1),false);assert.equal(validUserTarget(1.5),false);assert.equal(validUserTarget(1000000),true);
+ const existingBusiness={planned:false,approved:false,launched:true,tried:2500,feedback:20,userGoal:10000};
+ const existingProgress=businessMilestones(existingBusiness);
+ assert.equal(existingProgress.current,2,'existing products must not restart at Plan');
+ assert.equal(existingProgress.stages[0].done,false,'missing plan history must not be invented');
+ assert.equal(existingProgress.stages[0].note,'Not recorded');
+ assert.equal(existingProgress.stages[2].done,false);
+ assert.equal(businessMilestones({...existingBusiness,userGoal:1000}).current,-1,'recorded goal can be reached');
+ assert.equal(businessMilestones({...existingBusiness,userGoal:100000}).current,2,'raising a goal preserves the current business stage');
+ assert.equal(businessMilestones({...existingBusiness,launched:false}).current,2,'existing user evidence is useful even when launch date is missing');
+ assert.equal(businessMilestones({...existingBusiness,userGoal:1000,feedback:0}).current,3);
  const {suggestedOutcome,currentWorkspaceTask}=await server.ssrLoadModule('/src/cofounder/workspaceView.ts');
  assert.equal(suggestedOutcome('i want an ai native email marketing tool for founders.'),'Launch an AI-native email marketing tool for founders');
  assert.equal(suggestedOutcome('I want to build a garden planner.'),'Launch a garden planner');
@@ -59,6 +80,9 @@ try{
  assert.equal(currentWorkspaceTask({...state,busy:true,activeKind:'plan'}).title,'Preparing the MVP plan');
  assert.equal(currentWorkspaceTask({...state,busy:true}).target,'stop');
  assert.equal(currentWorkspaceTask({...state,launched:true,feedback:1}).target,'people');
+ assert.equal(currentWorkspaceTask({...state,step:0,tried:2500,userGoal:10000}).target,'people','existing usage takes precedence over missing historical planning data');
+ assert.equal(currentWorkspaceTask({...state,tried:2500,userGoal:1000,feedback:20}).state,'Goal reached');
+ assert.notEqual(currentWorkspaceTask({...state,tried:2500,userGoal:10000,feedback:20}).state,'Goal reached');
  const {getAssistantReply}=await server.ssrLoadModule('/src/llm/client.ts');
  const {ROLES,founderPrompt,BUSINESS_AREAS,cofounderPrompt}=await server.ssrLoadModule('/src/cofounder/model.ts');
  assert.deepEqual(Object.keys(ROLES),['CPO','CTO','CFO','CMO']);

@@ -59,3 +59,8 @@ The balanced workspace keeps four compact milestones (approved plan, recorded MV
 
 
 The project title is now an editable proposed outcome derived locally from the initial idea rather than a verbatim copy of the message. This is a presentation suggestion, not an AI-generated or approved plan. Original text remains in the saved draft/idea. Current work explicitly distinguishes not started, ready, working and awaiting review, using actual request state and stored evidence. Offline previews show “No task running” with a connection explanation; setup is not labeled as product execution. The approved milestones and inline chat remain unchanged.
+
+
+### Progress beyond early access
+
+The user target is editable rather than capped at ten or one hundred; ten is only the initial default for workspaces without a saved goal. The Users milestone opens goal/current-count settings. Existing businesses can record a cumulative product-trial total with a source and date, without entering every individual. Totals include named trials rather than summing them twice; invitations remain excluded. Stored launch, user and feedback evidence determines the relevant current stage even when historical planning data is absent. Missing history is labeled “Not recorded”, not marked complete. Reaching a target offers setting the next goal, and raising a goal preserves records without automatically approving work. This remains browser-local, manually recorded data; no backend analytics integration was added.

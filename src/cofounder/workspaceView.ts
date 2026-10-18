@@ -6,11 +6,15 @@ export function suggestedOutcome(idea:string){
  product=product.replace(/\bai[ -]native\b/gi,'AI-native').replace(/\bai\b/gi,'AI').replace(/^(A|An|The)\b/,v=>v.toLowerCase());
  return 'Launch '+product;
 }
+import {DEFAULT_USER_TARGET} from './market';
 export type TaskAction='idea'|'start'|'plan'|'record'|'people'|'connection'|'stop'|'none';
-export function currentWorkspaceTask({step,connected,busy,activeKind,launched,tried,feedback}:{step:number;connected:boolean|null;busy:boolean;activeKind?:string;launched:boolean;tried:number;feedback:number}):{state:string;title:string;action:string;target:TaskAction}{
+export function currentWorkspaceTask({step,connected,busy,activeKind,launched,tried,feedback,userGoal=DEFAULT_USER_TARGET}:{step:number;connected:boolean|null;busy:boolean;activeKind?:string;launched:boolean;tried:number;feedback:number;userGoal?:number}):{state:string;title:string;action:string;target:TaskAction}{
  if(busy)return {state:'In progress',title:activeKind==='plan'?'Preparing the MVP plan':activeKind==='draft'?'Preparing the first draft':'Working on your message',action:'Stop',target:'stop'};
+ if(launched||tried>0||feedback>0){
+  if(tried>=userGoal&&feedback>0)return {state:'Goal reached',title:'Choose your next milestone',action:'Set goal',target:'people'};
+  return feedback?{state:'For review',title:'Customer feedback is ready',action:'Review',target:'people'}:tried?{state:'Ready',title:'Hear from the people who tried it',action:'View users',target:'people'}:{state:'Ready',title:'Find your first product testers',action:'View users',target:'people'};
+ }
  if(step===0)return {state:'Not started',title:'Tell Evo what you want to build',action:'Add idea',target:'idea'};
- if(launched)return feedback?{state:'For review',title:'Customer feedback is ready',action:'Review',target:'people'}:tried?{state:'Ready',title:'Hear from the people who tried it',action:'View users',target:'people'}:{state:'Ready',title:'Find your first product testers',action:'View users',target:'people'};
  if(step===2)return {state:'Your decision',title:'Review the MVP scope',action:'Review',target:'plan'};
  if(step===4)return {state:'For review',title:'Your first draft is ready',action:'Review',target:'record'};
  if(connected===null)return {state:'Checking',title:'Checking the AI connection',action:'',target:'none'};
