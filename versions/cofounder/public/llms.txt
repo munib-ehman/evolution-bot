@@ -1,0 +1,12 @@
+# Evolution
+
+AI co-founder for solo founders focused on building, launching and reaching real customer feedback sooner. One consistent co-founder across product, engineering, sales, marketing and finance.
+
+Early access: plans, implementation code drafts and launch drafts. No automatic repository execution, purchases or outreach sending.
+
+- Home: https://www.runevolution.io/
+- FAQ: https://www.runevolution.io/faq
+- Early access: https://www.runevolution.io/pricing
+- Contact: https://www.runevolution.io/contact
+
+Early-user and feedback records are manually entered by the founder and stored in the browser. Launch-to-first-feedback timing uses recorded dates; it is not connected product analytics.

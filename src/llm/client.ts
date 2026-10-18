@@ -20,6 +20,9 @@ import { mockReply } from "./mock";
 export { isMockMode };
 
 interface ChatOptions {
+  /** Cofounder conversations use the same authenticated proxy, without catalog or mock fallbacks. */
+  systemPrompt?: string;
+  requireProxy?: boolean;
   signal?: AbortSignal;
   /**
    * Fired for each streamed text fragment as it arrives, so the caller can
@@ -53,9 +56,9 @@ export async function getAssistantReply(
   const lastUser = [...history].reverse().find((m) => m.role === "user");
   const query = lastUser?.content ?? "";
 
-  const systemContent = options.extraContext
+  const systemContent = options.systemPrompt ?? (options.extraContext
     ? SYSTEM_PROMPT + options.extraContext
-    : SYSTEM_PROMPT + buildProductContext(formatProducts(retrieveRelevant(query, products, 5)));
+    : SYSTEM_PROMPT + buildProductContext(formatProducts(retrieveRelevant(query, products, 5))));
 
   const apiMessages = [
     { role: "system" as const, content: systemContent },
@@ -66,15 +69,16 @@ export async function getAssistantReply(
   // Preferred path: our /api/chat proxy (key stays server-side). Falls back
   // to a direct provider call if VITE_LLM_* vars are configured, then to the
   // built-in mock brain so the product always answers.
-  if (chatProxyUsable !== false) {
+  if (options.requireProxy || chatProxyUsable !== false) {
     try {
       return await proxyReply(apiMessages, options);
     } catch (err) {
-      if (options.signal?.aborted) throw err;
+      if (options.signal?.aborted || options.requireProxy) throw err;
       console.warn("[llm] /api/chat failed, falling back:", err);
     }
   }
 
+  if (options.requireProxy) throw new Error("AI chat is not available yet. Your idea is saved here; please try again later.");
   if (!isMockMode) return directReply(apiMessages, options);
 
   // Mock mode: tiny artificial delay so the "thinking" state is visible.

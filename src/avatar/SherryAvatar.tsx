@@ -81,6 +81,7 @@ interface SherryAvatarProps {
   thinking?: boolean;
   /** True while the assistant is talking — she looks at the viewer, not the cursor. */
   speaking?: boolean;
+  attentive?: boolean;
   onReady?: () => void;
 }
 
@@ -90,7 +91,7 @@ interface TransBone {
   restQuat: Quaternion;
 }
 
-export function SherryAvatar({ url, thinking = false, speaking = false, onReady }: SherryAvatarProps) {
+export function SherryAvatar({ url, thinking = false, speaking = false, attentive = false, onReady }: SherryAvatarProps) {
   const { scene } = useGLTF(url);
   const { gl } = useThree();
   const group = useRef<Group>(null);
@@ -232,7 +233,7 @@ export function SherryAvatar({ url, thinking = false, speaking = false, onReady 
     const k = 1 - Math.exp(-3.5 * d);
     px.current += (pt.current.x - px.current) * k;
     py.current += (pt.current.y - py.current) * k;
-    const engaged = speaking || thinking ? 1 : 0;
+    const engaged = speaking || thinking || attentive ? 1 : 0;
     attention.current += (engaged - attention.current) * (1 - Math.exp(-4 * d));
     const at = attention.current;
 

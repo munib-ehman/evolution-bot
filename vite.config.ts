@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { devApi } from "./dev-api";
+import { versionPlugin } from "./tools/version-plugin";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 
@@ -42,7 +43,7 @@ export default defineConfig({
   // Relative base so the built static site works on GitHub Pages project subpaths
   // (e.g. https://user.github.io/shop-avatar/) as well as Netlify / Cloudflare root.
   base: "./",
-  plugins: [react(), cleanUrls(), devApi()],
+  plugins: [versionPlugin(), react(), cleanUrls(), devApi()],
   build: {
     rollupOptions: {
       // Two HTML entries: the public marketing site at / and the
