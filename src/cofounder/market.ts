@@ -1,3 +1,4 @@
+export const EARLY_USER_TARGET=10;
 export type EarlyUser={id:string;name:string;status:'invited'|'tried';feedback:string;source:string;feedbackAt?:number};
 export type MarketEvidence={users:EarlyUser[];url:string;launchedAt?:number};
 export function readMarket(value:unknown):MarketEvidence{
