@@ -18,6 +18,6 @@ export function currentWorkspaceTask({step,connected,busy,activeKind,launched,tr
  if(step===2)return {state:'Your decision',title:'Review the MVP scope',action:'Review',target:'plan'};
  if(step===4)return {state:'For review',title:'Your first draft is ready',action:'Review',target:'record'};
  if(connected===null)return {state:'Checking',title:'Checking the AI connection',action:'',target:'none'};
- if(!connected)return {state:'Not started',title:'No task running',action:'See why',target:'connection'};
+ if(!connected)return {state:'Not started',title:'No task running',action:'',target:'connection'};
  return {state:'Ready',title:step===1?'Prepare the MVP plan':'Prepare the first draft',action:'Start',target:'start'};
 }
