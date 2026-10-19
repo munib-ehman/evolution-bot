@@ -19,6 +19,9 @@ Format:
 
 ## Written
 
+- [2026-10-19] Shopify order cancellation workflow: refunds, restocking, and fulfillment holds — /blog/shopify-order-cancellation-workflow
+- [2026-10-19] Shopify inventory transfer workflow: move stock between locations accurately — /blog/shopify-inventory-transfer-workflow
+- [2026-10-19] Shopify cost per item and COGS: keep profit reports trustworthy — /blog/shopify-cost-per-item-cogs-profit-reports
 - [2026-10-14] Shopify order editing: a safe workflow for changing live orders — /blog/shopify-order-editing-workflow
 - [2026-10-14] Shopify gift card operations: sales, refunds, and outstanding balances — /blog/shopify-gift-card-operations
 - [2026-10-14] Shopify payout reconciliation: match deposits, fees, and adjustments — /blog/shopify-payout-reconciliation
