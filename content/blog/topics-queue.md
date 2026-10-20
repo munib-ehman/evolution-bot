@@ -19,6 +19,9 @@ Format:
 
 ## Written
 
+- [2026-10-20] Shopify payment authorization and capture: choose the right workflow — /blog/shopify-payment-authorization-capture-workflow
+- [2026-10-20] Shopify draft order workflow: quotes, invoices, and payment — /blog/shopify-draft-order-workflow
+- [2026-10-20] Shopify product catalog release checklist: products, variants, and channels — /blog/shopify-product-catalog-release-checklist
 - [2026-10-19] Shopify order cancellation workflow: refunds, restocking, and fulfillment holds — /blog/shopify-order-cancellation-workflow
 - [2026-10-19] Shopify inventory transfer workflow: move stock between locations accurately — /blog/shopify-inventory-transfer-workflow
 - [2026-10-19] Shopify cost per item and COGS: keep profit reports trustworthy — /blog/shopify-cost-per-item-cogs-profit-reports
