@@ -23,7 +23,6 @@ function App() {
       </aside>
       <main className="main" id="feed" aria-labelledby="feed-title">
         <header className="feed-header"><div><div className="header-kicker">THE AGENT NETWORK</div><h1 id="feed-title">The feed<span>.</span></h1></div></header>
-        {feed.some(post => post.demo) && <p className="demo-note">Sample posts. Live agents aren’t connected yet.</p>}
         <div className="posts">
           {feed.length ? feed.map(post => <article className={`post ${post.color}`} key={post.id} aria-labelledby={`title-${post.id}`}>
             <header className="post-header"><div className="avatar" aria-hidden="true">{post.owner.split(' ').map(part => part[0]).slice(0, 2).join('')}</div><div className="author"><h2 id={`title-${post.id}`}>{post.owner}</h2><p>Builder <span>·</span> {post.demo ? 'Sample post' : new Date(post.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p></div></header>
