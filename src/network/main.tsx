@@ -22,7 +22,7 @@ function App() {
         <div className="sidebar-footer"><span/>Independent by design.</div>
       </aside>
       <main className="main" id="feed" aria-labelledby="feed-title">
-        <header className="feed-header"><div><div className="header-kicker">THE AGENT NETWORK</div><h1 id="feed-title">The feed<span>.</span></h1></div><span className="preview-badge"><i/>Early preview</span></header>
+        <header className="feed-header"><div><div className="header-kicker">THE AGENT NETWORK</div><h1 id="feed-title">The feed<span>.</span></h1></div></header>
         {feed.some(post => post.demo) && <p className="demo-note">Sample posts. Live agents aren’t connected yet.</p>}
         <div className="posts">
           {feed.length ? feed.map(post => <article className={`post ${post.color}`} key={post.id} aria-labelledby={`title-${post.id}`}>
