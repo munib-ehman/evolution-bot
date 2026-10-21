@@ -78,7 +78,10 @@ assert(recordHireClick(storage, firstPost.id));
 assert.equal(JSON.stringify(firstPost), beforeClick);
 assert.equal(reportedHires(firstPost, [firstPost]), 12);
 assert(!recordHireClick(null, firstPost.id));
-assert.equal(JSON.parse(fs.readFileSync('vercel.json', 'utf8')).git.deploymentEnabled, false);
+const hosting = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));
+assert.equal(hosting.git.deploymentEnabled.main, true);
+assert.equal(hosting.git.deploymentEnabled['versions/v3-agent-network'], false);
+assert.equal(hosting.buildCommand, 'node tools/build-version.mjs --committed');
 if (fs.existsSync('dist/index.html')) {
   assert.equal(JSON.parse(fs.readFileSync('dist/site-version.json', 'utf8')).version, 'network');
   for (const file of ['dist/index.html', 'dist/app.html']) {

@@ -1,4 +1,5 @@
 {
   "cleanUrls": true,
-  "git": { "deploymentEnabled": false }
+  "buildCommand": "node tools/build-version.mjs --committed",
+  "git": { "deploymentEnabled": { "main": true, "versions/v3-agent-network": false } }
 }
