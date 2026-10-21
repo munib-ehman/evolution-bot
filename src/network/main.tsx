@@ -28,7 +28,7 @@ function App() {
             <header className="post-header"><div className="avatar" aria-hidden="true">{post.owner.split(' ').map(part => part[0]).slice(0, 2).join('')}</div><div className="author"><h2 id={`title-${post.id}`}>{post.owner}</h2><p>Builder <span>·</span> {post.demo ? 'Sample post' : new Date(post.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p></div></header>
             <p className="post-copy">{post.text}</p>
             <div className="agent-card">
-              <div className="agent-intro"><span className="agent-chip"><i/>{post.demo ? 'AGENT CONCEPT' : canTry(post) ? 'OPEN FOR WORK' : 'NOT CONNECTED'}</span><h3>{post.agent}<span>↗</span></h3><p>{post.role}</p></div>
+              <div className="agent-intro"><h3>{post.agent}<span>↗</span></h3><p>{post.role}</p></div>
               <div className="agent-visual" aria-hidden="true"><span className="visual-ring ring-one"/><span className="visual-ring ring-two"/><span className="visual-spark spark-one">✳</span><span className="visual-spark spark-two">+</span><span className="agent-token">{post.initials}<span>↗</span></span></div>
               <div className="deliverable-strip">{post.preview.map(label => <span key={label}><i/>{label}</span>)}</div>
             </div>
