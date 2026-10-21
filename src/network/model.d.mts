@@ -21,6 +21,7 @@ export interface AgentPost {
   checkoutUrl?: string;
   sellerReportedHires?: number;
   autonomyClaimed?: boolean;
+  logoData?: string | null;
 }
 export interface NetworkDraft {
   agent: string;
@@ -34,7 +35,9 @@ export interface NetworkDraft {
   sellerReportedHires: number;
   checkoutUrl: string;
   autonomyClaimed: boolean;
+  logoData: string | null;
 }
+export function safeLogo(value: unknown): string | null;
 export function validateDraft(input: Record<string, unknown>): NetworkDraft;
 export function localPost(input: Record<string, unknown>, previous: AgentPost[], now?: string, id?: string): AgentPost;
 export function canHire(post: AgentPost): boolean;

@@ -19,7 +19,7 @@ export async function readFeed(): Promise<AgentPost[]> {
   if (error) throw new Error('The shared feed is unavailable. Apply the v3 database migration and check access settings.');
   return (data || []).map(row => {
     const agent = row.agent;
-    return { id: row.id, agentId: agent.id, agent: agent.name, initials: agent.name.slice(0, 2), color: agent.color, owner: agent.builder_name, audience: agent.audience, role: agent.deliverable, text: row.task, sample: row.result, input: row.task, output: row.result, preview: [], price: Number(agent.price), currency: agent.currency, sellerReportedHires: agent.seller_reported_hires, checkoutUrl: agent.checkout_url, autonomyClaimed: agent.autonomy_claimed, publishedAt: row.created_at, demo: false, autonomyTested: false, tryUrl: null };
+    return { id: row.id, agentId: agent.id, agent: agent.name, initials: agent.name.slice(0, 2), color: agent.color, owner: agent.builder_name, audience: agent.audience, role: agent.deliverable, text: row.task, sample: row.result, input: row.task, output: row.result, preview: [], price: Number(agent.price), currency: agent.currency, sellerReportedHires: agent.seller_reported_hires, checkoutUrl: agent.checkout_url, autonomyClaimed: agent.autonomy_claimed, logoData: agent.logo_data, publishedAt: row.created_at, demo: false, autonomyTested: false, tryUrl: null };
   });
 }
 
@@ -28,7 +28,7 @@ export async function publishPost(input: Record<string, unknown>): Promise<Agent
   if (!supabase) {
     const previous = readLocalPosts();
     const next = localPost(draft as unknown as Record<string, unknown>, previous);
-    const rows = sortedPosts([next, ...previous.map(row => row.agentId === next.agentId ? { ...row, sellerReportedHires: next.sellerReportedHires, price: next.price, currency: next.currency, checkoutUrl: next.checkoutUrl, role: next.role, owner: next.owner, audience: next.audience } : row)]).slice(0, 100);
+    const rows = sortedPosts([next, ...previous.map(row => row.agentId === next.agentId ? { ...row, sellerReportedHires: next.sellerReportedHires, price: next.price, currency: next.currency, checkoutUrl: next.checkoutUrl, role: next.role, owner: next.owner, audience: next.audience, logoData: next.logoData } : row)]).slice(0, 100);
     try { localStorage.setItem(localKey, JSON.stringify(rows)); } catch { throw new Error('Browser storage is unavailable. Your post was not saved.'); }
     return rows;
   }
@@ -44,5 +44,5 @@ export async function ownAgents(userId: string | null): Promise<AgentPost[]> {
   if (!userId) return [];
   const { data, error } = await supabase.from('network_agents').select('*').eq('seller_id', userId).order('name');
   if (error) throw new Error('Could not load your agents.');
-  return (data || []).map(agent => ({ id: agent.id, agentId: agent.id, agent: agent.name, initials: agent.name.slice(0, 2), color: agent.color, owner: agent.builder_name, audience: agent.audience, role: agent.deliverable, text: '', sample: '', input: '', output: '', preview: [], price: Number(agent.price), currency: agent.currency, sellerReportedHires: agent.seller_reported_hires, checkoutUrl: agent.checkout_url, autonomyClaimed: agent.autonomy_claimed, publishedAt: agent.created_at, demo: false, autonomyTested: false, tryUrl: null }));
+  return (data || []).map(agent => ({ id: agent.id, agentId: agent.id, agent: agent.name, initials: agent.name.slice(0, 2), color: agent.color, owner: agent.builder_name, audience: agent.audience, role: agent.deliverable, text: '', sample: '', input: '', output: '', preview: [], price: Number(agent.price), currency: agent.currency, sellerReportedHires: agent.seller_reported_hires, checkoutUrl: agent.checkout_url, autonomyClaimed: agent.autonomy_claimed, logoData: agent.logo_data, publishedAt: agent.created_at, demo: false, autonomyTested: false, tryUrl: null }));
 }

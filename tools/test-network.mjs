@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { canTry, canHire, localPost, recordHireClick, reportedHires, validateDraft, recordTry, safeAgentUrl, sortedPosts } from '../src/network/model.mjs';
+import { canTry, canHire, localPost, recordHireClick, reportedHires, validateDraft, recordTry, safeAgentUrl, safeLogo, sortedPosts } from '../src/network/model.mjs';
 
 const posts = JSON.parse(fs.readFileSync(new URL('../src/network/posts.json', import.meta.url), 'utf8'));
 assert.equal(new Set(posts.map(post => post.id)).size, posts.length);
@@ -49,6 +49,14 @@ assert.equal(JSON.parse([...values.values()][0]).length, 500);
 const draft = { agent: 'Test agent', owner: 'Test builder', audience: 'Solo founders', role: 'A sourced research brief', text: 'Completed task description', sample: 'Actual completed output', price: '12.50', currency: 'USD', sellerReportedHires: '12', checkoutUrl: 'https://agent.example/checkout', autonomyClaimed: true };
 assert.equal(validateDraft(draft).sellerReportedHires, 12);
 assert.equal(validateDraft(draft).price, 12.5);
+const logo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6oXcAAAAASUVORK5CYII=';
+assert.equal(validateDraft(draft).logoData, null);
+assert.equal(validateDraft({ ...draft, logoData: logo }).logoData, logo);
+assert.equal(safeLogo(logo), logo);
+for (const invalid of ['data:image/svg+xml;base64,PHN2Zz4=', 'https://image.example/logo.png', 'javascript:alert(1)', 'data:image/png;base64,' + 'A'.repeat(180000)]) {
+  assert.equal(safeLogo(invalid), null);
+  assert.throws(() => validateDraft({ ...draft, logoData: invalid }));
+}
 for (const invalid of [-1, 1.2, 'abc', '', 1000000001, Infinity]) assert.throws(() => validateDraft({ ...draft, sellerReportedHires: invalid }));
 for (const invalid of [-1, 'abc', '', 1000001, '12.345']) assert.throws(() => validateDraft({ ...draft, price: invalid }));
 assert.throws(() => validateDraft({ ...draft, autonomyClaimed: false }));

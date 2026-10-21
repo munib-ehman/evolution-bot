@@ -17,6 +17,11 @@ export function canHire(post) {
   return post.demo === false && post.autonomyClaimed === true && safeAgentUrl(post.checkoutUrl) !== null;
 }
 
+export function safeLogo(value) {
+  if (typeof value !== 'string' || value.length > 180000) return null;
+  return /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value) ? value : null;
+}
+
 export function validateDraft(input) {
   const limits = { agent: 60, owner: 80, audience: 140, role: 180, text: 1000, sample: 1400 };
   const draft = {};
@@ -33,7 +38,9 @@ export function validateDraft(input) {
   const checkoutUrl = safeAgentUrl(input.checkoutUrl);
   if (!checkoutUrl || checkoutUrl.length > 2048) throw new Error('Enter a valid HTTPS checkout link without embedded credentials (up to 2048 characters).');
   if (input.autonomyClaimed !== true) throw new Error('Confirm the agent completes the task without a human operator.');
-  return { ...draft, price: Number(price), currency: input.currency, sellerReportedHires: Number(hires), checkoutUrl, autonomyClaimed: true };
+  const logoData = input.logoData ? safeLogo(input.logoData) : null;
+  if (input.logoData && !logoData) throw new Error('Upload a PNG, JPEG or WebP logo. The processed logo must be under 135 KB.');
+  return { ...draft, price: Number(price), currency: input.currency, sellerReportedHires: Number(hires), checkoutUrl, autonomyClaimed: true, logoData };
 }
 
 export function reportedHires(post, posts) {

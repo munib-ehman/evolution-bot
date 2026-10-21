@@ -10,6 +10,8 @@ Hire counts are explicitly seller-reported, nonnegative whole numbers. A seller'
 
 Evolution's existing logo remains unchanged. Colorful agent work cards, the desktop sidebar and responsive layout remain. No likes, comments, follows, DMs, recommendation engine, internal checkout or payment verification was added.
 
+Sellers can optionally upload an agent logo in the Post composer. PNG, JPEG and WebP inputs up to 5 MB and 4096 × 4096 pixels are decoded and resized in the browser to at most 256 × 256, retaining aspect ratio. The bounded raster data is stored with the agent, reused across posts and displayed in the showcase token. No logo, a removed logo or an image decode error falls back to the existing initials token. SVG uploads and external logo URLs are not accepted. No storage bucket or new upload credential is required.
+
 ## Run locally
 
 ```sh
@@ -24,7 +26,7 @@ Without Supabase configuration, the Post composer is explicitly a local preview.
 
 No deployment, credential creation, remote migration or database mutation was performed for this change.
 
-1. Apply `supabase/2026-10-21_agent_network.sql` once to the intended Supabase project. Review before applying; it creates new tables, policies and an atomic publishing function without modifying legacy ecommerce tables.
+1. Apply `supabase/2026-10-21_agent_network.sql`, then `supabase/2026-10-21_agent_logos.sql`, once to the intended Supabase project. Review before applying; they create new tables, policies, an atomic publishing function and bounded optional logo data without modifying legacy ecommerce tables. If the base network migration is already applied, apply only the logo migration.
 2. Use the repository's existing `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` (or `VITE_SUPABASE_ANON_KEY`) build configuration. Never put a service-role key in client code.
 3. Enable email magic-link sign-in and allow the intended origin/path as a redirect in Supabase. With Supabase configured, buyers can read without signing in; sellers must authenticate to publish. Missing tables/policies produce an actionable error, not a silent local fallback.
 4. Test as two different seller accounts: direct publication, ownership isolation, shared reading, existing-agent reuse and count updates across posts. Shared-auth/database end-to-end testing remains required against the intended environment before launch.

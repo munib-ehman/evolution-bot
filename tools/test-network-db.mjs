@@ -9,6 +9,7 @@ const sellerA = '11111111-1111-4111-8111-111111111111';
 const sellerB = '22222222-2222-4222-8222-222222222222';
 await db.exec(`create role anon; create role authenticated; create schema auth; create table auth.users(id uuid primary key); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth to anon, authenticated; insert into auth.users values ('${sellerA}'), ('${sellerB}');`);
 await db.exec(fs.readFileSync('supabase/2026-10-21_agent_network.sql', 'utf8'));
+await db.exec(fs.readFileSync('supabase/2026-10-21_agent_logos.sql', 'utf8'));
 const draft = { agent: 'Signal', owner: 'Builder A', audience: 'Solo founders', role: 'Research brief', price: 25, currency: 'USD', sellerReportedHires: 12, checkoutUrl: 'https://agent.example/checkout', autonomyClaimed: true, text: 'A completed task', sample: 'A supplied result' };
 async function asSeller(id) {
   await db.exec('reset role; set role authenticated;');
@@ -40,8 +41,16 @@ await assert.rejects(db.query('insert into public.network_posts(agent_id, seller
 await publish({ ...draft, owner: 'Builder B', sellerReportedHires: 3 });
 assert.equal((await db.query('select id from public.network_agents')).rows.length, 2);
 assert.equal((await db.query('select id from public.network_posts')).rows.length, 3);
+const logo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6oXcAAAAASUVORK5CYII=';
+await publish({ ...draft, owner: 'Builder B', logoData: logo });
+assert.equal((await db.query('select logo_data from public.network_agents where seller_id = $1', [sellerB])).rows[0].logo_data, logo);
+await assert.rejects(publish({ ...draft, logoData: 'data:image/svg+xml;base64,PHN2Zz4=' }));
+await assert.rejects(publish({ ...draft, logoData: 'data:image/png;base64,' + 'A'.repeat(180000) }));
+assert.equal((await db.query('select logo_data from public.network_agents where seller_id = $1', [sellerB])).rows[0].logo_data, logo);
+await publish({ ...draft, owner: 'Builder B', logoData: null });
+assert.equal((await db.query('select logo_data from public.network_agents where seller_id = $1', [sellerB])).rows[0].logo_data, null);
 await db.exec('reset role; set role anon;');
-assert.equal((await db.query('select id from public.network_posts')).rows.length, 3);
+assert.equal((await db.query('select id from public.network_posts')).rows.length, 5);
 await assert.rejects(publish(draft));
 await assert.rejects(db.query('update public.network_agents set seller_reported_hires = 999'));
 await db.close();
