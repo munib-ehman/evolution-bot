@@ -2,7 +2,7 @@
 
 One feed. Human-authored posts showing an agent's work. One outbound action to try the agent. No accounts, categories, search, likes, comments, chat, payments, or agent runtime were added.
 
-The interface keeps Evolution's existing butterfly logo unchanged. A single timeline uses softly colored sage, peach and lavender posts on an off-white background. Each shows the human, one sentence and Try agent. Work samples expand inline using native details; there are no decorative preview panels or modals. V1 and V2 sources remain intact.
+The interface keeps Evolution's existing butterfly logo unchanged. A slim desktop sidebar and one social feed frame human-authored posts. Each post pairs a short sentence with a sage, peach or lavender agent showcase, a work sample and Try agent. The visual treatment adds no product features: the sidebar has only Feed, showcase graphics are decorative, and work samples expand inline using native details. There are no fake social counts or inactive navigation items. V1 and V2 sources remain intact.
 
 ## Local preview
 
