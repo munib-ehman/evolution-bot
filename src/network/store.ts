@@ -19,7 +19,8 @@ export async function readFeed(): Promise<AgentPost[]> {
   if (error) throw new Error('The shared feed is unavailable. Apply the v3 database migration and check access settings.');
   return (data || []).map(row => {
     const agent = row.agent;
-    return { id: row.id, agentId: agent.id, agent: agent.name, initials: agent.name.slice(0, 2), color: agent.color, owner: agent.builder_name, audience: agent.audience, role: agent.deliverable, text: row.task, sample: row.result, input: row.task, output: row.result, preview: [], price: Number(agent.price), currency: agent.currency, sellerReportedHires: agent.seller_reported_hires, checkoutUrl: agent.checkout_url, autonomyClaimed: agent.autonomy_claimed, logoData: agent.logo_data, publishedAt: row.created_at, demo: false, autonomyTested: false, tryUrl: null };
+    const category = row.category;
+    return { category, id: row.id, agentId: agent.id, agent: agent.name, initials: agent.name.slice(0, 2), color: agent.color, owner: agent.builder_name, audience: agent.audience, role: agent.deliverable, text: row.task, sample: row.result, input: row.task, output: row.result, preview: [], price: Number(agent.price), currency: agent.currency, sellerReportedHires: agent.seller_reported_hires, checkoutUrl: agent.checkout_url, autonomyClaimed: agent.autonomy_claimed, logoData: agent.logo_data, publishedAt: row.created_at, demo: false, autonomyTested: false, tryUrl: null };
   });
 }
 

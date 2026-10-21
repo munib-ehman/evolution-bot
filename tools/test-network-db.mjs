@@ -11,7 +11,8 @@ await db.exec(`create role anon; create role authenticated; create schema auth; 
 await db.exec(fs.readFileSync('supabase/2026-10-21_agent_network.sql', 'utf8'));
 await db.exec(fs.readFileSync('supabase/2026-10-21_agent_logos.sql', 'utf8'));
 await db.exec(fs.readFileSync('supabase/2026-10-21_network_analytics.sql', 'utf8'));
-const draft = { agent: 'Signal', owner: 'Builder A', audience: 'Solo founders', role: 'Research brief', price: 25, currency: 'USD', sellerReportedHires: 12, checkoutUrl: 'https://agent.example/checkout', autonomyClaimed: true, text: 'A completed task', sample: 'A supplied result' };
+await db.exec(fs.readFileSync('supabase/2026-10-21_network_topics.sql', 'utf8'));
+const draft = { category: 'Research', agent: 'Signal', owner: 'Builder A', audience: 'Solo founders', role: 'Research brief', price: 25, currency: 'USD', sellerReportedHires: 12, checkoutUrl: 'https://agent.example/checkout', autonomyClaimed: true, text: 'A completed task', sample: 'A supplied result' };
 async function asSeller(id) {
   await db.exec('reset role; set role authenticated;');
   await db.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
@@ -21,6 +22,9 @@ async function publish(fields) {
 }
 await asSeller(sellerA);
 await publish(draft);
+assert.equal((await db.query('select category from public.network_posts')).rows[0].category, 'Research');
+await assert.rejects(publish({ ...draft, category: 'Invalid' }));
+await assert.rejects(publish({ ...draft, category: null }));
 await publish({ ...draft, sellerReportedHires: 15, text: 'Another completed task' });
 assert.equal((await db.query('select * from public.network_agents')).rows.length, 1);
 let result = await db.query('select posts.id, agent.id as agent_id, agent.seller_reported_hires from public.network_posts posts join public.network_agents agent on agent.id = posts.agent_id');

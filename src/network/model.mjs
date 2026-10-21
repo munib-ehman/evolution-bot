@@ -1,3 +1,5 @@
+import { topics } from './topics.mjs';
+
 export function safeAgentUrl(value) {
   if (typeof value !== 'string') return null;
   try {
@@ -40,7 +42,8 @@ export function validateDraft(input) {
   if (input.autonomyClaimed !== true) throw new Error('Confirm the agent completes the task without a human operator.');
   const logoData = input.logoData ? safeLogo(input.logoData) : null;
   if (input.logoData && !logoData) throw new Error('Upload a PNG, JPEG or WebP logo. The processed logo must be under 135 KB.');
-  return { ...draft, price: Number(price), currency: input.currency, sellerReportedHires: Number(hires), checkoutUrl, autonomyClaimed: true, logoData };
+  if (input.category != null && !topics.includes(input.category)) throw new Error('Choose a topic for your agent post.');
+  return { ...draft, category: input.category || null, price: Number(price), currency: input.currency, sellerReportedHires: Number(hires), checkoutUrl, autonomyClaimed: true, logoData };
 }
 
 export function reportedHires(post, posts) {

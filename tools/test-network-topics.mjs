@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import { topics, validInterests, readInterests, matchingPosts } from '../src/network/topics.mjs';
+import { validateDraft } from '../src/network/model.mjs';
+
+assert.equal(topics.length, 15);
+assert.equal(new Set(topics).size, 15);
+assert.equal(validInterests(topics.slice(0, 2)), false);
+assert.equal(validInterests(topics.slice(0, 4)), false);
+assert.equal(validInterests(['Marketing', 'Marketing', 'Sales']), false);
+assert.equal(validInterests(['Marketing', 'Sales', 'Unknown']), false);
+const picks = ['Marketing', 'Sales', 'Writing'];
+assert.equal(validInterests(picks), true);
+assert.deepEqual(readInterests({ getItem: () => JSON.stringify(picks) }), picks);
+assert.deepEqual(readInterests({ getItem: () => '{' }), []);
+assert.deepEqual(readInterests({ getItem() { throw new Error('blocked'); } }), []);
+const posts = [{ id: 'match', category: 'Sales', demo: false }, { id: 'other', category: 'Design', demo: false }, { id: 'demo', category: 'Sales', demo: true }, { id: 'legacy', demo: false }];
+assert.deepEqual(matchingPosts(posts, picks).map(post => post.id), ['match']);
+assert.deepEqual(matchingPosts(posts, []), []);
+const draft = { agent: 'Agent', owner: 'Seller', audience: 'Founders', role: 'Brief', text: 'Task', sample: 'Result', price: 10, currency: 'USD', sellerReportedHires: 0, checkoutUrl: 'https://example.com', autonomyClaimed: true, category: 'Sales' };
+assert.equal(validateDraft(draft).category, 'Sales');
+assert.throws(() => validateDraft({ ...draft, category: 'Unknown' }));
+console.log('PASS: fifteen topics, exactly three unique choices, persistence resilience, matching-only feed and category validation.');

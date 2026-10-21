@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
-import seedPosts from './posts.json';
+import { topics, readInterests, matchingPosts, validInterests } from './topics.mjs';
 import { supabase, sendMagicLink } from '../lib/auth';
 import { canHire, reportedHires, recordHireClick, safeAgentUrl, safeLogo, sortedPosts, type AgentPost } from './model.mjs';
 import { ownAgents, publishPost, readFeed } from './store';
@@ -22,6 +22,11 @@ function AgentLogo({ post }: { post: AgentPost }) {
 
 function App() {
   const [published, setPublished] = useState<AgentPost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [interests, setInterests] = useState(() => readInterests(window.localStorage));
+  const [picks, setPicks] = useState(interests);
+  const [choosing, setChoosing] = useState(!validInterests(interests));
+  const [preferenceError, setPreferenceError] = useState('');
   const [userId, setUserId] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentPost[]>([]);
   const [selectedId, setSelectedId] = useState('');
@@ -40,13 +45,13 @@ function App() {
   const validationRecorded = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const form = useRef<HTMLFormElement>(null);
-  const feed = sortedPosts([...published, ...seedPosts]);
+  const feed = sortedPosts(matchingPosts(published, interests));
   const selected = agents.find(agent => agent.agentId === selectedId);
-  useEffect(() => setAnalyticsPosts([...published, ...seedPosts]), [published]);
+  useEffect(() => setAnalyticsPosts(published.filter(post => !post.demo)), [published]);
 
   useEffect(() => {
     let active = true;
-    readFeed().then(rows => { if (active) setPublished(rows); }).catch(reason => { if (active) setFeedError(reason.message); });
+    readFeed().then(rows => { if (active) setPublished(rows); }).catch(reason => { if (active) setFeedError(reason.message); }).finally(() => { if (active) setLoading(false); });
     if (!supabase) return () => { active = false; };
     supabase.auth.getSession().then(({ data }) => { if (active) { setUserId(data.session?.user.id ?? null); setAnalyticsActor(data.session?.user.id ?? null); } });
     const { data } = supabase.auth.onAuthStateChange((event, session) => { setUserId(session?.user.id ?? null); setAnalyticsActor(session?.user.id ?? null); if (event === 'SIGNED_IN' && session?.user) track('login_success'); });
@@ -54,12 +59,12 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (analyticsAllowed !== true) return;
+    if (analyticsAllowed !== true || choosing) return;
     track('feed_view'); void flushEvents();
     const online = () => { void flushEvents(); };
     window.addEventListener('online', online);
     return () => window.removeEventListener('online', online);
-  }, [analyticsAllowed]);
+  }, [analyticsAllowed, choosing]);
 
   useEffect(() => {
     if (analyticsAllowed !== true || !('IntersectionObserver' in window)) return;
@@ -79,7 +84,7 @@ function App() {
     const observe = () => { observer.disconnect(); timers.forEach(timer => clearTimeout(timer)); timers.clear(); if (document.visibilityState === 'visible') elements.filter(element => !seen.has(element)).forEach(element => observer.observe(element)); };
     observe(); document.addEventListener('visibilitychange', observe);
     return () => { observer.disconnect(); timers.forEach(timer => clearTimeout(timer)); document.removeEventListener('visibilitychange', observe); };
-  }, [analyticsAllowed, published]);
+  }, [analyticsAllowed, published, interests, choosing]);
 
   function chooseAnalytics(allow: boolean) { setConsent(allow); setAnalyticsAllowed(allow); }
   function formChanged() { if (!formStarted.current) { formStarted.current = true; track('form_start', null, postingFlow.current); } }
@@ -138,6 +143,13 @@ function App() {
     try { recordHireClick(window.localStorage, post.id); } catch {}
   }
 
+  function continueToFeed() {
+    if (!validInterests(picks)) return;
+    try { localStorage.setItem('evolution:network:interests:v1', JSON.stringify(picks)); setPreferenceError(''); }
+    catch { setPreferenceError('Your choices apply for this visit. Browser storage is unavailable.'); }
+    setInterests([...picks]); setChoosing(false); window.scrollTo(0, 0);
+  }
+
   return <>
     <a className="skip" href="#feed">Skip to feed</a>
     <div className="shell">
@@ -146,13 +158,23 @@ function App() {
         <div className="sidebar-note"><span className="eyebrow">A NEW KIND OF NETWORK</span><p>People build.<br/><em>Agents work.</em></p><div className="network-art" aria-hidden="true"><span className="network-ring"/><span className="network-node node-one">Si</span><span className="network-node node-two">Sc</span><span className="network-node node-three">Ec</span><span className="network-center"><img src="/favicon.svg" width="36" height="36" alt=""/></span></div></div>
         <div className="sidebar-footer"><span/>Independent by design.</div>
       </aside>
-      <main className="main" id="feed" aria-labelledby="feed-title">
+      {choosing ? <main className="main interests-page" id="feed" aria-labelledby="interests-title">
+        <div className="header-kicker">YOUR AGENTS. YOUR WORLD.</div>
+        <h1 id="interests-title">What’s your<br/>next move<span>?</span></h1>
+        <p className="interests-intro">Pick 3 topics. Find agents for the work you care about.</p>
+        <div className="topic-grid" aria-label="Choose three topics">{topics.map((topic, index) => <button key={topic} className={`topic-choice tone-${index % 3}`} aria-pressed={picks.includes(topic)} disabled={picks.length === 3 && !picks.includes(topic)} onClick={() => setPicks(previous => previous.includes(topic) ? previous.filter(value => value !== topic) : previous.length < 3 ? [...previous, topic] : previous)}><span className="topic-symbol" aria-hidden="true">{['✦', '↗', '◈', '✳', '⌘'][index % 5]}</span>{topic}<span className="topic-check" aria-hidden="true">{picks.includes(topic) ? '✓' : '+'}</span></button>)}</div>
+        <div className="interest-actions"><span role="status" aria-live="polite">{picks.length} of 3 selected</span><button className="post-button" disabled={!validInterests(picks)} onClick={continueToFeed}>Find my agents<Arrow/></button></div>
+      </main> : <main className="main" id="feed" aria-labelledby="feed-title">
         <header className="feed-header"><div><div className="header-kicker">THE AGENT NETWORK</div><h1 id="feed-title">The feed<span>.</span></h1></div><button className="post-button" onClick={openComposer}><span aria-hidden="true">＋</span>Post</button></header>
         {feedError && <p className="form-error" role="alert">{feedError}</p>}
+        <div className="feed-interests"><span>{interests.join(' · ')}</span><button onClick={() => { setPicks([...interests]); setChoosing(true); }}>Change topics</button></div>
+        {preferenceError && <p role="status">{preferenceError}</p>}
         {notice && !dialog.current?.open && <p className="publish-notice" role="status">{notice}</p>}
         <div className="posts">
+          {loading && <p role="status">Loading your feed…</p>}
+          {!loading && !feedError && feed.length === 0 && <div className="empty-feed"><h2>Your next agent belongs here.</h2><p>No posts in your topics yet.</p><button className="post-button" onClick={openComposer}>Post your agent<Arrow/></button></div>}
           {feed.map(post => <article className={`post ${post.color}`} key={post.id} data-post-id={post.id} aria-labelledby={`title-${post.id}`}>
-            <header className="post-header"><div className="avatar" aria-hidden="true">{post.initials}</div><div className="author"><h2 id={`title-${post.id}`}>{post.agent}</h2><p>Built by {post.owner}{post.demo && <span> · Sample post</span>}</p></div><div className="hire-count" title="Entered by the seller. Not independently verified."><strong>{reportedHires(post, feed).toLocaleString()} hires</strong><span>seller-reported</span></div></header>
+            <header className="post-header"><div className="avatar" aria-hidden="true">{post.initials}</div><div className="author"><h2 id={`title-${post.id}`}>{post.agent}</h2><p>Built by {post.owner} · {post.category}</p></div><div className="hire-count" title="Entered by the seller. Not independently verified."><strong>{reportedHires(post, published).toLocaleString()} hires</strong><span>seller-reported</span></div></header>
             <p className="post-copy">{post.text}</p>
             <div className={`agent-card ${post.demo ? '' : 'has-result'}`}>
               <div className="agent-intro"><h3>{post.agent}<span>↗</span></h3><p>{post.role}</p></div>
@@ -164,7 +186,7 @@ function App() {
           </article>)}
         </div>
         <footer className="feed-end"><span/>You’re all caught up<span/><button className="analytics-link" onClick={() => { setAnalyticsVersion(value => value + 1); analyticsDialog.current?.showModal(); }}>Analytics & privacy</button></footer>
-      </main>
+      </main>}
     </div>
     <dialog ref={dialog} className="composer" aria-labelledby="composer-title" onClose={() => track('form_close', null, postingFlow.current)} onClick={event => { if (event.target === dialog.current && !busy) dialog.current.close(); }}>
       <header className="composer-header"><h2 id="composer-title">Post your agent<span>.</span></h2><button className="close-composer" aria-label="Close post form" disabled={busy} onClick={() => dialog.current?.close()}>×</button></header>
@@ -172,6 +194,7 @@ function App() {
         {!supabase && <p className="composer-note">Local preview · posts are saved on this browser, not shared.</p>}
         {agents.length > 0 && <label>Agent<select value={selectedId} onChange={event => selectAgent(event.target.value)}><option value="">New agent</option>{agents.map(agent => <option value={agent.agentId} key={agent.agentId}>{agent.agent}</option>)}</select></label>}
         <fieldset disabled={busy}>
+          <label>Topic<select name="category" required defaultValue=""><option value="" disabled>Choose a topic</option>{topics.map(topic => <option key={topic}>{topic}</option>)}</select></label>
           <div className="form-row"><label>Agent name<input name="agent" defaultValue={selected?.agent} required maxLength={60}/></label><label>Built by<input name="owner" defaultValue={selected?.owner} required maxLength={80} autoComplete="name"/></label></div>
           <div className="logo-upload"><label>Agent logo <small>Optional</small><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="Upload agent logo" onClick={() => track('logo_picker_open', null, postingFlow.current)} onChange={event => { void uploadLogo(event.target.files?.[0]); event.target.value = ''; }}/><small>PNG, JPEG or WebP · up to 5 MB. No logo? We’ll use initials.</small></label>{logoData && <div className="logo-preview"><img src={logoData} alt="Agent logo preview"/><button type="button" onClick={() => { uploadVersion.current++; setLogoData(null); setUploading(false); track('logo_removed', null, postingFlow.current); }}>Remove</button></div>}</div>
           {uploading && <p className="composer-note" role="status">Preparing logo…</p>}

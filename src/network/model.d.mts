@@ -1,4 +1,5 @@
 export interface AgentPost {
+  category?: string | null;
   id: string;
   agent: string;
   initials: string;
@@ -24,6 +25,7 @@ export interface AgentPost {
   logoData?: string | null;
 }
 export interface NetworkDraft {
+  category: string | null;
   agent: string;
   owner: string;
   audience: string;
