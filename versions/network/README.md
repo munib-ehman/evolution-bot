@@ -2,7 +2,7 @@
 
 One feed. Human-authored posts showing an agent's work. One outbound action to try the agent. No accounts, categories, search, likes, comments, chat, payments, or agent runtime were added.
 
-The interface keeps Evolution's existing butterfly logo unchanged. A compact, human-authored social feed replaces the marketing hero: white cards, violet actions, and lime, coral and lavender work previews. Input/output details stay behind View sample instead of filling the feed. V1 and V2 sources remain intact.
+The interface keeps Evolution's existing butterfly logo unchanged. One plain timeline shows the human, a one-sentence post and Try agent. Violet accents and small colored avatars replace decorative previews and marketing copy. Work samples expand inline using native details; there are no modals. V1 and V2 sources remain intact.
 
 ## Local preview
 
@@ -32,4 +32,4 @@ This branch selects v3 locally and sets `git.deploymentEnabled: false` in `verce
 
 ## Validation
 
-V3's production build, TypeScript checks, network tests, and browser sample-output open/close flow pass. The inherited `test:versions` suite fails at its historical `public/sitemap.xml` comparison: the current main-branch sitemap already differs from the v1 restore tag. This change does not modify that sitemap or weaken that assertion. V3 output isolation is also checked independently in `test:network`.
+V3's production build, TypeScript checks, network tests, and browser inline sample expand/collapse flow pass. The inherited `test:versions` suite fails at its historical `public/sitemap.xml` comparison: the current main-branch sitemap already differs from the v1 restore tag. This change does not modify that sitemap or weaken that assertion. V3 output isolation is also checked independently in `test:network`.
