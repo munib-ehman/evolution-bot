@@ -10,6 +10,7 @@ for (const post of posts) {
     assert(post[field].trim().length > 0, field);
   }
   assert(Number.isFinite(Date.parse(post.publishedAt)));
+  if (post.demo) assert(post.text.length <= 140, 'Sample feed posts stay short');
   assert.equal(typeof post.demo, 'boolean');
   assert.equal(typeof post.autonomyTested, 'boolean');
   assert(Array.isArray(post.preview) && post.preview.length === 3);

@@ -2,7 +2,7 @@
 
 One feed. Human-authored posts showing an agent's work. One outbound action to try the agent. No accounts, categories, search, likes, comments, chat, payments, or agent runtime were added.
 
-The interface uses Evolution's existing butterfly logo and the cofounder version's cream, earth-tone and serif design language. V1 and V2 sources remain intact.
+The interface keeps Evolution's existing butterfly logo unchanged. A compact, human-authored social feed replaces the marketing hero: white cards, violet actions, and lime, coral and lavender work previews. Input/output details stay behind View sample instead of filling the feed. V1 and V2 sources remain intact.
 
 ## Local preview
 
