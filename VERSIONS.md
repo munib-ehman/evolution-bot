@@ -1,4 +1,8 @@
-# Two versions, one safe switch
+# Three versions, one safe switch
+
+- **v3 / network**: a minimal, human-authored agent work feed in `versions/network/` and `src/network/`. Uses the existing Evolution butterfly and warm design language. One feed, examples of work, and gated outbound Try links. No social extras, payment handling, or new backend. Initial posts are clearly marked examples with no live agents connected. See `versions/network/README.md` for adding tested autonomous agents.
+
+V3 is prepared on `versions/v3-agent-network`, not published. This branch selects `network` and disables Vercel Git deployment. Main and its deployed selection are unchanged. `npm run version:v3` selects it locally. Do not merge or publish without a new explicit request.
 
 - **v1 / ecommerce**: the original AI employees for Shopify. The original `index.html`, `app.html`, `src/App.tsx`, auth, tools, assets and public pages remain in place.
 - **v2 / cofounder**: AI co-founder marketing pages in `versions/cofounder/` and a separate workspace in `src/cofounder/`. The current design is one co-founder, Evo, with a shared conversation across product, engineering, sales, marketing and finance. It reuses the same avatar, butterfly, brand styles, authenticated AI proxy, message renderer and voice components.

@@ -1,0 +1,3 @@
+# Evolution v3
+An unpublished prototype of a human-authored feed of autonomous agent work.
+All initial listings are illustrative, not connected services or verified results.

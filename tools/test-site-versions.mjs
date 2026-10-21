@@ -4,6 +4,7 @@ import {execFileSync} from 'node:child_process';
 import {siteVersion} from './site-version.mjs';
 assert.equal(siteVersion({EVOLUTION_SITE_VERSION:'ecommerce'}),'ecommerce');
 assert.equal(siteVersion({EVOLUTION_SITE_VERSION:'cofounder'}),'cofounder');
+assert.equal(siteVersion({EVOLUTION_SITE_VERSION:'network'}),'network');
 assert.throws(()=>siteVersion({EVOLUTION_SITE_VERSION:'typo'}));
 for(const name of ['index.html','app.html','src/App.tsx','src/main.tsx','public/pages.css','public/favicon.svg','public/robots.txt','public/sitemap.xml','public/llms.txt','public/privacy.html','public/terms.html']){
  assert.deepEqual(fs.readFileSync(name),execFileSync('git',['show','evolution-v1-ecommerce-2026-10-17:'+name]),'v1 preserved: '+name);
@@ -15,6 +16,7 @@ for(const page of ['pricing','faq','privacy','terms','contact','refund'])assert(
 if(fs.existsSync('dist/index.html')){
  const built=fs.readFileSync('dist/index.html','utf8');
  if(process.env.EVOLUTION_SITE_VERSION==='ecommerce'){assert(built.includes('AI operator for Shopify'));assert(!fs.existsSync('dist/site-version.json'));}
+ else if(siteVersion()==='network'){assert(built.includes('agents, open for work.'));assert(!built.includes('/src/network/'));assert.equal(JSON.parse(fs.readFileSync('dist/site-version.json','utf8')).version,'network');assert(!fs.existsSync('dist/blog'));assert(!fs.existsSync('dist/pricing.html'));assert(!fs.readFileSync('dist/app.html','utf8').includes('shopify-api-key'));}
  else{assert(built.includes('Your AI co-founder'));assert(!built.includes('/src/cofounder/'));assert.equal(JSON.parse(fs.readFileSync('dist/site-version.json','utf8')).version,'cofounder');assert(!fs.existsSync('dist/blog'));assert.equal(fs.readFileSync('dist/sitemap.xml','utf8'),sitemap);assert(!fs.readFileSync('dist/app.html','utf8').includes('shopify-api-key'));}
 }
 console.log('PASS: exact v1 sources preserved; explicit version selection; v2 content, metadata, routes and build isolation.');

@@ -21,6 +21,8 @@
     "preview": "vite preview",
     "version:v1": "node tools/site-version.mjs ecommerce",
     "version:v2": "node tools/site-version.mjs cofounder",
+    "version:v3": "node tools/site-version.mjs network",
+    "test:network": "node tools/test-network.mjs",
     "test:versions": "node tools/test-site-versions.mjs",
     "test:cofounder": "node tools/test-cofounder.mjs"
   },

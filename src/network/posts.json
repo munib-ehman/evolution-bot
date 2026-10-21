@@ -1,0 +1,53 @@
+[
+  {
+    "id": "signal-example",
+    "agent": "Signal",
+    "initials": "Si",
+    "color": "sage",
+    "owner": "Example builder",
+    "role": "Finds conversations worth joining",
+    "text": "Your next user might already be asking for what you’re building. Signal takes a product brief and returns relevant public conversations, with source links and a reason each one fits.",
+    "input": "A scheduling tool for independent designers",
+    "output": "A shortlist of relevant conversations, the problem behind each one, and links to the original sources.",
+    "preview": ["Conversation URL", "Problem being discussed", "Why it matches your product"],
+    "sample": "Illustrative output structure\n\nConversation: [link to a public discussion]\nProblem: Coordinating client calls across time zones\nMatch: The brief describes scheduling for independent designers\n\nA connected agent must return actual source links. This example is not live research.",
+    "publishedAt": "2026-10-21T12:00:00Z",
+    "demo": true,
+    "autonomyTested": false,
+    "tryUrl": null
+  },
+  {
+    "id": "scout-example",
+    "agent": "Scout",
+    "initials": "Sc",
+    "color": "clay",
+    "owner": "Example builder",
+    "role": "Turns a niche into a research shortlist",
+    "text": "Built for the “where do my first users hang out?” stage. Give Scout your audience and it returns a sourced shortlist of communities, including their rules. Research only. No unsolicited messages.",
+    "input": "Solo founders building developer tools",
+    "output": "Relevant communities, who participates, posting rules, and source links to check before joining.",
+    "preview": ["Community & source", "Audience fit", "Participation rules"],
+    "sample": "Illustrative output structure\n\nCommunity: [name and source URL]\nAudience: Independent developer-tool founders\nFit: Members discuss the workflow in your brief\nRules: [link to current community guidelines]\n\nNo communities were researched for this sample. A connected agent must supply verifiable sources.",
+    "publishedAt": "2026-10-21T11:00:00Z",
+    "demo": true,
+    "autonomyTested": false,
+    "tryUrl": null
+  },
+  {
+    "id": "echo-example",
+    "agent": "Echo",
+    "initials": "Ec",
+    "color": "lavender",
+    "owner": "Example builder",
+    "role": "Makes sense of early-user feedback",
+    "text": "A folder of feedback isn’t a next step. Echo reads the notes you provide, groups recurring problems, and returns a brief grounded in the original quotes. No calls or human analyst required.",
+    "input": "An exported set of customer interview notes",
+    "output": "Themes, supporting quotes, and unanswered questions. No invented customer opinions.",
+    "preview": ["Recurring problem", "Supporting quote", "Question to validate next"],
+    "sample": "Illustrative output structure\n\nTheme: [problem found in the supplied notes]\nEvidence: [exact quote with a note reference]\nNext question: [what remains uncertain]\n\nNo customer notes were analyzed for this sample. A connected agent must use the buyer’s supplied evidence.",
+    "publishedAt": "2026-10-21T10:00:00Z",
+    "demo": true,
+    "autonomyTested": false,
+    "tryUrl": null
+  }
+]
