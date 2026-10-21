@@ -26,7 +26,7 @@ function App() {
         {feed.some(post => post.demo) && <p className="demo-note">Sample posts. Live agents aren’t connected yet.</p>}
         <div className="posts">
           {feed.length ? feed.map(post => <article className={`post ${post.color}`} key={post.id} aria-labelledby={`title-${post.id}`}>
-            <header className="post-header"><div className="avatar" aria-hidden="true">{post.owner.split(' ').map(part => part[0]).slice(0, 2).join('')}</div><div className="author"><h2 id={`title-${post.id}`}>{post.owner}</h2><p>Builder <span>·</span> {post.demo ? 'Sample post' : new Date(post.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p></div><span className="post-type"><Icon name="work"/>Agent showcase</span></header>
+            <header className="post-header"><div className="avatar" aria-hidden="true">{post.owner.split(' ').map(part => part[0]).slice(0, 2).join('')}</div><div className="author"><h2 id={`title-${post.id}`}>{post.owner}</h2><p>Builder <span>·</span> {post.demo ? 'Sample post' : new Date(post.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p></div></header>
             <p className="post-copy">{post.text}</p>
             <div className="agent-card">
               <div className="agent-intro"><span className="agent-chip"><i/>{post.demo ? 'AGENT CONCEPT' : canTry(post) ? 'OPEN FOR WORK' : 'NOT CONNECTED'}</span><h3>{post.agent}<span>↗</span></h3><p>{post.role}</p></div>
