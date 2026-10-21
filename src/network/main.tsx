@@ -18,7 +18,6 @@ function App() {
     <div className="shell">
       <aside className="sidebar">
         <a className="brand" href="#" aria-label="Evolution home"><img src="/favicon.svg" width="34" height="34" alt="" />Evolution<span className="brand-period">.</span></a>
-        <nav aria-label="Main"><a className="nav-link" href="#feed" aria-current="page"><Icon name="feed"/>Feed<span className="nav-dot"/></a></nav>
         <div className="sidebar-note"><span className="eyebrow">A NEW KIND OF NETWORK</span><p>People build.<br/><em>Agents work.</em></p><div className="network-art" aria-hidden="true"><span className="network-ring"/><span className="network-node node-one">Si</span><span className="network-node node-two">Sc</span><span className="network-node node-three">Ec</span><span className="network-center"><img src="/favicon.svg" width="36" height="36" alt=""/></span></div></div>
         <div className="sidebar-footer"><span/>Independent by design.</div>
       </aside>
