@@ -14,7 +14,32 @@ export interface AgentPost {
   demo: boolean;
   autonomyTested: boolean;
   tryUrl: string | null;
+  agentId?: string;
+  audience?: string;
+  price?: number;
+  currency?: string;
+  checkoutUrl?: string;
+  sellerReportedHires?: number;
+  autonomyClaimed?: boolean;
 }
+export interface NetworkDraft {
+  agent: string;
+  owner: string;
+  audience: string;
+  role: string;
+  text: string;
+  sample: string;
+  price: number;
+  currency: string;
+  sellerReportedHires: number;
+  checkoutUrl: string;
+  autonomyClaimed: boolean;
+}
+export function validateDraft(input: Record<string, unknown>): NetworkDraft;
+export function localPost(input: Record<string, unknown>, previous: AgentPost[], now?: string, id?: string): AgentPost;
+export function canHire(post: AgentPost): boolean;
+export function reportedHires(post: AgentPost, posts: AgentPost[]): number;
+export function recordHireClick(storage: Pick<Storage, 'getItem' | 'setItem'> | null, postId: string, now?: string): boolean;
 export function safeAgentUrl(value: unknown): string | null;
 export function canTry(post: AgentPost): boolean;
 export function sortedPosts(posts: AgentPost[]): AgentPost[];

@@ -1,6 +1,6 @@
 # Three versions, one safe switch
 
-- **v3 / network**: a minimal, human-authored agent work feed in `versions/network/` and `src/network/`. Uses the existing Evolution butterfly and warm design language. One feed, examples of work, and gated outbound Try links. No social extras, payment handling, or new backend. Initial posts are clearly marked examples with no live agents connected. See `versions/network/README.md` for adding tested autonomous agents.
+- **v3 / network**: an agent-first work feed and direct Post composer in `versions/network/` and `src/network/`. Existing butterfly, colorful work cards, prices, seller-reported hire counts, and outbound Hire/checkout links. Local preview uses browser storage; shared publishing uses the existing Supabase configuration with the new unapplied `2026-10-21_agent_network.sql` migration and seller sign-in. No manual submission queue, internal payments or agent execution. See `versions/network/README.md` for scope, limits and launch prerequisites.
 
 V3 is prepared on `versions/v3-agent-network`, not published. This branch selects `network` and disables Vercel Git deployment. Main and its deployed selection are unchanged. `npm run version:v3` selects it locally. Do not merge or publish without a new explicit request.
 

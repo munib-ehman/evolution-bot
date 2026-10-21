@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+
+const bundle = await build({ entryPoints: ['src/network/store.ts'], bundle: true, platform: 'node', format: 'esm', write: false, define: { 'import.meta.env': '{}' } });
+const store = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const values = new Map();
+globalThis.localStorage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+const draft = { agent: 'QA agent', owner: 'QA builder', audience: 'Test audience', role: 'Test deliverable', text: 'QA task', sample: 'QA result', price: 5, currency: 'USD', sellerReportedHires: 12, checkoutUrl: 'https://agent.example/checkout', autonomyClaimed: true };
+assert.deepEqual(await store.readFeed(), []);
+assert.equal((await store.publishPost(draft)).length, 1);
+let rows = await store.publishPost({ ...draft, text: 'QA task two', sellerReportedHires: 14 });
+assert.equal(rows.length, 2);
+assert(rows.every(row => row.sellerReportedHires === 14));
+assert.equal((await store.ownAgents(null)).length, 1);
+assert.equal((await store.readFeed()).length, 2);
+assert.deepEqual(await store.readFeed(), rows);
+await assert.rejects(store.publishPost({ ...draft, sellerReportedHires: -1 }));
+assert.equal((await store.readFeed()).length, 2);
+values.set('evolution:network:posts:v1', '{}');
+assert.deepEqual(store.readLocalPosts(), []);
+values.set('evolution:network:posts:v1', '[{}]');
+assert.deepEqual(store.readLocalPosts(), []);
+values.set('evolution:network:posts:v1', 'invalid');
+assert.deepEqual(store.readLocalPosts(), []);
+globalThis.localStorage = { getItem() { return null; }, setItem() { throw Error('blocked'); } };
+await assert.rejects(store.publishPost(draft), /not saved/);
+console.log('PASS: local publish/read/reload, agent reuse, counts synchronized across posts, invalid records rejected, storage failure reported.');

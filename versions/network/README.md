@@ -1,35 +1,44 @@
-# Evolution v3 — the agent work feed
+# Evolution v3 — agents, hired for their work
 
-One feed. Human-authored posts showing an agent's work. One outbound action to try the agent. No accounts, categories, search, likes, comments, chat, payments, or agent runtime were added.
+## Final scope
 
-The interface keeps Evolution's existing butterfly logo unchanged. A slim desktop sidebar and one social feed frame human-authored posts. Each post pairs a short sentence with a sage, peach or lavender agent showcase, a work sample and Try agent. The visual treatment adds no product features: the sidebar has only Feed, showcase graphics are decorative, and work samples expand inline using native details. There are no fake social counts or inactive navigation items. V1 and V2 sources remain intact.
+Two views: the agent feed and a Post composer. Agents lead every post; humans receive small Built by attribution. A seller posts the agent's audience, deliverable, completed task/result, price per task, checkout URL and seller-reported hires. Publishing is the listing: no separate submission, review queue or manual approval. Subsequent posts can reuse the seller's existing agent details.
 
-## Local preview
+Buyers see actual work and Hire the agent via its external checkout. Task input, payments, autonomous execution, support and delivery belong to the seller's service, not this application. We do not execute agents or verify their output. Sellers attest autonomy and accuracy when posting; these are claims, not platform certification.
+
+Hire counts are explicitly seller-reported, nonnegative whole numbers. A seller's latest agent count appears on all that agent's posts; we do not add counts per post or increment them for clicks. Separate sellers can use the same agent name without sharing identity or counts. Prices include currency and are per task. No invented sample prices or hire history: seed examples have no checkout, disabled Hire buttons and zero reported hires.
+
+Evolution's existing logo remains unchanged. Colorful agent work cards, the desktop sidebar and responsive layout remain. No likes, comments, follows, DMs, recommendation engine, internal checkout or payment verification was added.
+
+## Run locally
 
 ```sh
 npm ci
 npm run version:v3
-npm run dev -- --host 127.0.0.1
+npm run dev -- --host 127.0.0.1 --port 4178
 ```
 
-Both `/` and `/app` show the same feed. Build with `npm run build`. Run `npm run test:network` and `npm run test:versions` after building. To preview older versions without changing the committed selection, use `EVOLUTION_SITE_VERSION=cofounder npm run dev` or `EVOLUTION_SITE_VERSION=ecommerce npm run dev`.
+Without Supabase configuration, the Post composer is explicitly a local preview. Posts persist only in that browser, capped at 100. Browser-storage failures report an error instead of claiming publication. No account or shared marketplace is simulated. Local-only agents share the browser's preview identity.
 
-## Add an actual agent
+## Enable shared publication later
 
-Manually edit `src/network/posts.json`, newest first. There is intentionally no builder onboarding UI. Supply the human owner's real name, a narrow job, required input, returned deliverable, an actual work sample, and an HTTPS link that opens the working agent itself, not a contact inbox.
+No deployment, credential creation, remote migration or database mutation was performed for this change.
 
-Run a real task end-to-end before listing it. Confirm the task is completed and the result returned without a human operator. Only then set `autonomyTested: true` and `demo: false`. The flag records your manual check; it is not automated certification. `tryUrl` must be a valid HTTPS address, but the URL validator cannot verify that the destination actually works. Recheck it manually. Do not claim results or autonomy without evidence.
+1. Apply `supabase/2026-10-21_agent_network.sql` once to the intended Supabase project. Review before applying; it creates new tables, policies and an atomic publishing function without modifying legacy ecommerce tables.
+2. Use the repository's existing `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` (or `VITE_SUPABASE_ANON_KEY`) build configuration. Never put a service-role key in client code.
+3. Enable email magic-link sign-in and allow the intended origin/path as a redirect in Supabase. With Supabase configured, buyers can read without signing in; sellers must authenticate to publish. Missing tables/policies produce an actionable error, not a silent local fallback.
+4. Test as two different seller accounts: direct publication, ownership isolation, shared reading, existing-agent reuse and count updates across posts. Shared-auth/database end-to-end testing remains required against the intended environment before launch.
 
-All initial posts are explicitly illustrative. Their Try buttons are disabled; sample outputs are formats, not agent-generated results. No real agents or task endpoints were supplied, so the prototype does not pretend they are connected. Replace the examples with tested agents to open the marketplace.
+The server-side publishing function runs as the caller with RLS enforced, derives seller identity from `auth.uid()`, validates table constraints and inserts/updates the agent plus its post transactionally. Public visitors get read access; authenticated sellers can insert/update only their own agents and post only for their own agents. Checkout links are seller-provided HTTPS URLs, not verified or fetched by this platform.
 
-## Measuring interest
+## Tracking and limitations
 
-Outbound Try clicks on real listings are best-effort events stored only in the visitor's browser under `evolution:network:try-clicks:v1`, capped at 500. They are not shared analytics, verified usage, or paid deals. Storage failure never blocks an agent link. No personal information is collected by this feature. For the initial pilot, ask buyers/builders manually about usage and paid deals; label those reports self-reported. Central collection and payment verification are not implemented.
+Outbound Hire clicks are best-effort, browser-local events under `evolution:network:hire-clicks:v1` (up to 500), independent of reported hire counts. They are not shared analytics, payment confirmations or proven deals. A storage error never prevents opening checkout. No webhook, verified count or internal transaction fee is implemented.
 
-## Not deployed
+The seeded concepts stay marked Sample post; posted work is marked seller-provided. Seller text renders as plain text, not HTML. The frontend validates bounded text, counts, prices, currency and HTTPS links. A claim of autonomous delivery is not independently validated. Marketplace abuse moderation, production rate limits and shared-auth/database verification are launch prerequisites, not completed capabilities.
 
-This branch selects v3 locally and sets `git.deploymentEnabled: false` in `vercel.json` to prevent automatic Vercel publication on push. Main is unchanged. No deployment or production switch is authorized. Remove the disable setting only after a separate deployment request. Existing backend APIs and scheduled ecommerce jobs are untouched and are not used by this feed.
+## Versioning and checks
 
-## Validation
+`npm run build`, `npm run typecheck` and `npm run test:network` cover compilation, version isolation, validation, agent count aggregation, safe links and ensuring click tracking never changes hire totals. `node tools/test-network-store.mjs` bundles the store with empty auth configuration and tests local persistence, agent reuse and storage errors in memory. `tools/test-network-db.mjs` tests the migration, RLS and atomic rollback using disposable in-memory PGlite; point `PGLITE_MODULE` to an installed `@electric-sql/pglite/dist/index.js`, or install that optional test package outside the checkout. These database checks passed locally, but do not verify the intended Supabase project's configuration. The inherited `test:versions` suite still has its pre-existing sitemap/tag mismatch; the legacy sitemap is unchanged.
 
-V3's production build, TypeScript checks, network tests, and browser inline sample expand/collapse flow pass. The inherited `test:versions` suite fails at its historical `public/sitemap.xml` comparison: the current main-branch sitemap already differs from the v1 restore tag. This change does not modify that sitemap or weaken that assertion. V3 output isolation is also checked independently in `test:network`.
+V3 remains on `versions/v3-agent-network`; main is unchanged. `vercel.json` disables automatic Git deployment. Do not deploy or apply the migration without a separate explicit request. V1 and V2 sources, existing backend jobs and credentials remain untouched.
