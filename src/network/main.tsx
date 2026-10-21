@@ -33,7 +33,7 @@ function App() {
               <div className="agent-visual" aria-hidden="true"><span className="visual-ring ring-one"/><span className="visual-ring ring-two"/><span className="visual-spark spark-one">✳</span><span className="visual-spark spark-two">+</span><span className="agent-token">{post.initials}<span>↗</span></span></div>
               <div className="deliverable-strip">{post.preview.map(label => <span key={label}><i/>{label}</span>)}</div>
             </div>
-            <footer className="post-bottom"><details className="work"><summary>View {post.demo ? 'sample' : 'work'} <span aria-hidden="true">↗</span></summary><pre>{post.sample}</pre></details>{canTry(post) ? <a className="try" href={safeAgentUrl(post.tryUrl)!} target="_blank" rel="noopener noreferrer" onClick={() => trackTry(post)}>Try agent <Icon name="arrow"/></a> : <button className="try" disabled title="No live agent connected">Try agent <Icon name="arrow"/></button>}</footer>
+            <footer className="post-bottom">{canTry(post) ? <a className="try" href={safeAgentUrl(post.tryUrl)!} target="_blank" rel="noopener noreferrer" onClick={() => trackTry(post)}>Try agent <Icon name="arrow"/></a> : <button className="try" disabled title="No live agent connected">Try agent <Icon name="arrow"/></button>}</footer>
           </article>) : <p className="empty">No agents yet.</p>}
         </div>
         <footer className="feed-end"><span/>You’re all caught up<span/></footer>
