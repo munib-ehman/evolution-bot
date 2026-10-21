@@ -23,6 +23,8 @@
     "version:v2": "node tools/site-version.mjs cofounder",
     "version:v3": "node tools/site-version.mjs network",
     "test:network": "node tools/test-network.mjs",
+    "test:network:analytics": "node tools/test-network-analytics.mjs",
+    "test:network:store": "node tools/test-network-store.mjs",
     "test:versions": "node tools/test-site-versions.mjs",
     "test:cofounder": "node tools/test-cofounder.mjs"
   },

@@ -23,19 +23,21 @@ export async function readFeed(): Promise<AgentPost[]> {
   });
 }
 
-export async function publishPost(input: Record<string, unknown>): Promise<AgentPost[]> {
+export async function publishPost(input: Record<string, unknown>, onPublished?: (id: string) => void): Promise<AgentPost[]> {
   const draft = validateDraft(input);
   if (!supabase) {
     const previous = readLocalPosts();
     const next = localPost(draft as unknown as Record<string, unknown>, previous);
     const rows = sortedPosts([next, ...previous.map(row => row.agentId === next.agentId ? { ...row, sellerReportedHires: next.sellerReportedHires, price: next.price, currency: next.currency, checkoutUrl: next.checkoutUrl, role: next.role, owner: next.owner, audience: next.audience, logoData: next.logoData } : row)]).slice(0, 100);
     try { localStorage.setItem(localKey, JSON.stringify(rows)); } catch { throw new Error('Browser storage is unavailable. Your post was not saved.'); }
+    onPublished?.(next.id);
     return rows;
   }
   const { data } = await supabase.auth.getSession();
   if (!data.session) throw new Error('Sign in to publish your post.');
-  const { error } = await supabase.rpc('network_publish_post', { draft });
+  const { data: postId, error } = await supabase.rpc('network_publish_post', { draft });
   if (error) throw new Error('Could not confirm publication. Refresh the feed before retrying; check your session and the v3 database migration.');
+  onPublished?.(postId);
   try { return await readFeed(); } catch { throw new Error('Post published, but the feed could not refresh. Reload before posting again.'); }
 }
 

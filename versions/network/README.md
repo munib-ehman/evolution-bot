@@ -35,7 +35,7 @@ The server-side publishing function runs as the caller with RLS enforced, derive
 
 ## Tracking and limitations
 
-Outbound Hire clicks are best-effort, browser-local events under `evolution:network:hire-clicks:v1` (up to 500), independent of reported hire counts. They are not shared analytics, payment confirmations or proven deals. A storage error never prevents opening checkout. No webhook, verified count or internal transaction fee is implemented.
+Opt-in journey analytics covers feed/post views, main button clicks, form progress, authentication, publication outcomes and outbound Hire attribution. **Analytics & privacy** opens the private reporting view. Without Supabase, analytics is browser-local; with the separate `2026-10-21_network_analytics.sql` migration, it uses an events table with server-derived account/agent/seller attribution, private seller access and an explicit product-owner allowlist. No analytics migration or owner grant was applied remotely. See `ANALYTICS.md` for event definitions, setup, consent, limits and optimization guidance. Seller-reported hire counts remain independent of clicks. Checkout arrival, payment and task execution remain unknown without seller-service integration; no webhook, verified count or internal transaction fee is implemented.
 
 The seeded concepts stay marked Sample post; posted work is marked seller-provided. Seller text renders as plain text, not HTML. The frontend validates bounded text, counts, prices, currency and HTTPS links. A claim of autonomous delivery is not independently validated. Marketplace abuse moderation, production rate limits and shared-auth/database verification are launch prerequisites, not completed capabilities.
 

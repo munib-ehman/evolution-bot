@@ -5,6 +5,8 @@ import { supabase, sendMagicLink } from '../lib/auth';
 import { canHire, reportedHires, recordHireClick, safeAgentUrl, safeLogo, sortedPosts, type AgentPost } from './model.mjs';
 import { ownAgents, publishPost, readFeed } from './store';
 import { prepareLogo } from './logo';
+import { consent, setConsent, setAnalyticsActor, setAnalyticsPosts, track, flushEvents } from './analytics';
+import { AnalyticsPanel } from './AnalyticsPanel';
 import './network.css';
 
 function Arrow() {
@@ -30,27 +32,68 @@ function App() {
   const [logoData, setLogoData] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const uploadVersion = useRef(0);
+  const [analyticsAllowed, setAnalyticsAllowed] = useState(consent());
+  const [analyticsVersion, setAnalyticsVersion] = useState(0);
+  const analyticsDialog = useRef<HTMLDialogElement>(null);
+  const postingFlow = useRef<string | null>(null);
+  const formStarted = useRef(false);
+  const validationRecorded = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const form = useRef<HTMLFormElement>(null);
   const feed = sortedPosts([...published, ...seedPosts]);
   const selected = agents.find(agent => agent.agentId === selectedId);
+  useEffect(() => setAnalyticsPosts([...published, ...seedPosts]), [published]);
 
   useEffect(() => {
     let active = true;
     readFeed().then(rows => { if (active) setPublished(rows); }).catch(reason => { if (active) setFeedError(reason.message); });
     if (!supabase) return () => { active = false; };
-    supabase.auth.getSession().then(({ data }) => { if (active) setUserId(data.session?.user.id ?? null); });
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => setUserId(session?.user.id ?? null));
+    supabase.auth.getSession().then(({ data }) => { if (active) { setUserId(data.session?.user.id ?? null); setAnalyticsActor(data.session?.user.id ?? null); } });
+    const { data } = supabase.auth.onAuthStateChange((event, session) => { setUserId(session?.user.id ?? null); setAnalyticsActor(session?.user.id ?? null); if (event === 'SIGNED_IN' && session?.user) track('login_success'); });
     return () => { active = false; data.subscription.unsubscribe(); };
   }, []);
 
+  useEffect(() => {
+    if (analyticsAllowed !== true) return;
+    track('feed_view'); void flushEvents();
+    const online = () => { void flushEvents(); };
+    window.addEventListener('online', online);
+    return () => window.removeEventListener('online', online);
+  }, [analyticsAllowed]);
+
+  useEffect(() => {
+    if (analyticsAllowed !== true || !('IntersectionObserver' in window)) return;
+    const timers = new Map<Element, ReturnType<typeof setTimeout>>();
+    const seen = new Set<Element>();
+    const elements = [...document.querySelectorAll('[data-post-id]')];
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.intersectionRatio >= .25 && document.visibilityState === 'visible' && !timers.has(entry.target)) {
+          timers.set(entry.target, setTimeout(() => {
+            if (document.visibilityState === 'visible') { track('post_view', (entry.target as HTMLElement).dataset.postId || null); seen.add(entry.target); }
+            observer.unobserve(entry.target); timers.delete(entry.target);
+          }, 1000));
+        } else if (entry.intersectionRatio < .25) { clearTimeout(timers.get(entry.target)); timers.delete(entry.target); }
+      }
+    }, { threshold: [.25] });
+    const observe = () => { observer.disconnect(); timers.forEach(timer => clearTimeout(timer)); timers.clear(); if (document.visibilityState === 'visible') elements.filter(element => !seen.has(element)).forEach(element => observer.observe(element)); };
+    observe(); document.addEventListener('visibilitychange', observe);
+    return () => { observer.disconnect(); timers.forEach(timer => clearTimeout(timer)); document.removeEventListener('visibilitychange', observe); };
+  }, [analyticsAllowed, published]);
+
+  function chooseAnalytics(allow: boolean) { setConsent(allow); setAnalyticsAllowed(allow); }
+  function formChanged() { if (!formStarted.current) { formStarted.current = true; track('form_start', null, postingFlow.current); } }
+  function invalidForm() { if (!validationRecorded.current) { validationRecorded.current = true; track('form_validation_error', null, postingFlow.current); } }
+
   async function openComposer() {
+    postingFlow.current = crypto.randomUUID(); formStarted.current = false; track('post_open', null, postingFlow.current);
     setError(''); setNotice(''); setSelectedId(''); setLogoData(null); setUploading(false); uploadVersion.current++;
     dialog.current?.showModal();
     try { setAgents(await ownAgents(userId)); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load agents.'); }
   }
 
   function selectAgent(id: string) {
+    if (id) track('agent_reuse', null, postingFlow.current);
     uploadVersion.current++;
     setSelectedId(id); setLogoData(safeLogo(agents.find(agent => agent.agentId === id)?.logoData)); setUploading(false); setError('');
   }
@@ -59,16 +102,17 @@ function App() {
     if (!file) return;
     const version = ++uploadVersion.current;
     setUploading(true); setError('');
-    try { const logo = await prepareLogo(file); if (version === uploadVersion.current) setLogoData(logo); }
+    try { const logo = await prepareLogo(file); if (version === uploadVersion.current) { setLogoData(logo); track('logo_added', null, postingFlow.current); } }
     catch (reason) { if (version === uploadVersion.current) setError(reason instanceof Error ? reason.message : 'Could not process the logo.'); }
     finally { if (version === uploadVersion.current) setUploading(false); }
   }
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(''); setNotice('');
+    track('login_request', null, postingFlow.current);
     const email = String(new FormData(event.currentTarget).get('email') || '');
-    try { await sendMagicLink(email); setNotice('Check your email for a sign-in link. Return here to post.'); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not send sign-in link.'); }
+    try { await sendMagicLink(email); track('login_sent', null, postingFlow.current); setNotice('Check your email for a sign-in link. Return here to post.'); }
+    catch (reason) { track('login_error', null, postingFlow.current); setError(reason instanceof Error ? reason.message : 'Could not send sign-in link.'); }
     finally { setBusy(false); }
   }
 
@@ -78,16 +122,19 @@ function App() {
     setError(''); setNotice(''); setBusy(true);
     const fields = new FormData(event.currentTarget);
     const draft = Object.fromEntries(fields.entries());
+    track('publish_attempt', null, postingFlow.current);
+    let confirmed = false;
     try {
-      const rows = await publishPost({ ...draft, logoData, autonomyClaimed: fields.get('autonomyClaimed') === 'on' });
+      const rows = await publishPost({ ...draft, logoData, autonomyClaimed: fields.get('autonomyClaimed') === 'on' }, id => { confirmed = true; track('publish_success', id, postingFlow.current); });
       setPublished(rows); setFeedError(''); dialog.current?.close(); form.current?.reset();
       setNotice(supabase ? 'Post published.' : 'Post saved in this browser only.');
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not publish the post.'); }
+    } catch (reason) { track(confirmed ? 'feed_error' : 'publish_error', null, postingFlow.current); setError(reason instanceof Error ? reason.message : 'Could not publish the post.'); }
     finally { setBusy(false); }
   }
 
   function trackHire(post: AgentPost) {
     if (!canHire(post)) return;
+    track('checkout_click', post.id);
     try { recordHireClick(window.localStorage, post.id); } catch {}
   }
 
@@ -104,7 +151,7 @@ function App() {
         {feedError && <p className="form-error" role="alert">{feedError}</p>}
         {notice && !dialog.current?.open && <p className="publish-notice" role="status">{notice}</p>}
         <div className="posts">
-          {feed.map(post => <article className={`post ${post.color}`} key={post.id} aria-labelledby={`title-${post.id}`}>
+          {feed.map(post => <article className={`post ${post.color}`} key={post.id} data-post-id={post.id} aria-labelledby={`title-${post.id}`}>
             <header className="post-header"><div className="avatar" aria-hidden="true">{post.initials}</div><div className="author"><h2 id={`title-${post.id}`}>{post.agent}</h2><p>Built by {post.owner}{post.demo && <span> · Sample post</span>}</p></div><div className="hire-count" title="Entered by the seller. Not independently verified."><strong>{reportedHires(post, feed).toLocaleString()} hires</strong><span>seller-reported</span></div></header>
             <p className="post-copy">{post.text}</p>
             <div className={`agent-card ${post.demo ? '' : 'has-result'}`}>
@@ -116,17 +163,17 @@ function App() {
             <footer className="post-bottom"><span className="price">{typeof post.price === 'number' ? new Intl.NumberFormat('en-US', { style: 'currency', currency: post.currency || 'USD', maximumFractionDigits: 2 }).format(post.price) : 'Price not set'}{typeof post.price === 'number' && <small> / task</small>}</span>{canHire(post) ? <a className="try" href={safeAgentUrl(post.checkoutUrl)!} target="_blank" rel="noopener noreferrer" onClick={() => trackHire(post)}>Hire {post.agent}<Arrow/></a> : <button className="try" disabled title="No checkout connected">Hire {post.agent}<Arrow/></button>}</footer>
           </article>)}
         </div>
-        <footer className="feed-end"><span/>You’re all caught up<span/></footer>
+        <footer className="feed-end"><span/>You’re all caught up<span/><button className="analytics-link" onClick={() => { setAnalyticsVersion(value => value + 1); analyticsDialog.current?.showModal(); }}>Analytics & privacy</button></footer>
       </main>
     </div>
-    <dialog ref={dialog} className="composer" aria-labelledby="composer-title" onClick={event => { if (event.target === dialog.current && !busy) dialog.current.close(); }}>
+    <dialog ref={dialog} className="composer" aria-labelledby="composer-title" onClose={() => track('form_close', null, postingFlow.current)} onClick={event => { if (event.target === dialog.current && !busy) dialog.current.close(); }}>
       <header className="composer-header"><h2 id="composer-title">Post your agent<span>.</span></h2><button className="close-composer" aria-label="Close post form" disabled={busy} onClick={() => dialog.current?.close()}>×</button></header>
-      {supabase && !userId ? <form onSubmit={login}><p className="composer-note">Sign in to post. No submission or approval queue.</p><label>Email<input name="email" type="email" autoComplete="email" required maxLength={254}/></label><button className="post-button" disabled={busy}>{busy ? 'Sending…' : 'Email sign-in link'}</button>{notice && <p role="status">{notice}</p>}</form> : <form ref={form} onSubmit={publish} key={selectedId || 'new'}>
+      {supabase && !userId ? <form onSubmit={login}><p className="composer-note">Sign in to post. No submission or approval queue.</p><label>Email<input name="email" type="email" autoComplete="email" required maxLength={254}/></label><button className="post-button" disabled={busy} onClick={() => track('login_click', null, postingFlow.current)}>{busy ? 'Sending…' : 'Email sign-in link'}</button>{notice && <p role="status">{notice}</p>}</form> : <form ref={form} onSubmit={publish} onChange={formChanged} onInvalid={invalidForm} key={selectedId || 'new'}>
         {!supabase && <p className="composer-note">Local preview · posts are saved on this browser, not shared.</p>}
         {agents.length > 0 && <label>Agent<select value={selectedId} onChange={event => selectAgent(event.target.value)}><option value="">New agent</option>{agents.map(agent => <option value={agent.agentId} key={agent.agentId}>{agent.agent}</option>)}</select></label>}
         <fieldset disabled={busy}>
           <div className="form-row"><label>Agent name<input name="agent" defaultValue={selected?.agent} required maxLength={60}/></label><label>Built by<input name="owner" defaultValue={selected?.owner} required maxLength={80} autoComplete="name"/></label></div>
-          <div className="logo-upload"><label>Agent logo <small>Optional</small><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="Upload agent logo" onChange={event => { void uploadLogo(event.target.files?.[0]); event.target.value = ''; }}/><small>PNG, JPEG or WebP · up to 5 MB. No logo? We’ll use initials.</small></label>{logoData && <div className="logo-preview"><img src={logoData} alt="Agent logo preview"/><button type="button" onClick={() => { uploadVersion.current++; setLogoData(null); setUploading(false); }}>Remove</button></div>}</div>
+          <div className="logo-upload"><label>Agent logo <small>Optional</small><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="Upload agent logo" onClick={() => track('logo_picker_open', null, postingFlow.current)} onChange={event => { void uploadLogo(event.target.files?.[0]); event.target.value = ''; }}/><small>PNG, JPEG or WebP · up to 5 MB. No logo? We’ll use initials.</small></label>{logoData && <div className="logo-preview"><img src={logoData} alt="Agent logo preview"/><button type="button" onClick={() => { uploadVersion.current++; setLogoData(null); setUploading(false); track('logo_removed', null, postingFlow.current); }}>Remove</button></div>}</div>
           {uploading && <p className="composer-note" role="status">Preparing logo…</p>}
           <label>Who does it help?<input name="audience" defaultValue={selected?.audience} required maxLength={140} placeholder="Solo founders looking for early users"/></label>
           <label>What does it deliver?<input name="role" defaultValue={selected?.role} required maxLength={180} placeholder="A sourced list of relevant conversations"/></label>
@@ -135,11 +182,13 @@ function App() {
           <div className="form-row price-row"><label>Price per task<input name="price" type="number" min="0" max="1000000" step="0.01" required defaultValue={selected?.price}/></label><label>Currency<select name="currency" defaultValue={selected?.currency || 'USD'}>{['USD', 'EUR', 'GBP', 'PKR'].map(currency => <option key={currency}>{currency}</option>)}</select></label><label>Hires<input name="sellerReportedHires" type="number" min="0" max="1000000000" step="1" required defaultValue={selected?.sellerReportedHires ?? 0}/><small>Shown as seller-reported.</small></label></div>
           <label>Checkout link<input name="checkoutUrl" type="url" pattern="https://.*" maxLength={2048} defaultValue={selected?.checkoutUrl} required placeholder="https://your-agent.com/checkout"/><small>Payment, task input and autonomous delivery happen on your service.</small></label>
           <label className="autonomy-check"><input name="autonomyClaimed" type="checkbox" required defaultChecked={selected?.autonomyClaimed}/><span>My agent completes this task without a human operator. The work and hire count are accurate to my knowledge.</span></label>
-          <button className="post-button publish-button" disabled={busy || uploading}>{busy ? 'Publishing…' : uploading ? 'Preparing logo…' : supabase ? 'Publish post' : 'Publish in local preview'}<Arrow/></button>
+          <button className="post-button publish-button" disabled={busy || uploading} onClick={() => { validationRecorded.current = false; track('publish_click', null, postingFlow.current); }}>{busy ? 'Publishing…' : uploading ? 'Preparing logo…' : supabase ? 'Publish post' : 'Publish in local preview'}<Arrow/></button>
         </fieldset>
       </form>}
       {error && <p className="form-error" role="alert">{error}</p>}
     </dialog>
+    <dialog ref={analyticsDialog} className="composer analytics-dialog" aria-labelledby="analytics-title"><header className="composer-header"><h2 id="analytics-title">Analytics<span>.</span></h2><button className="close-composer" aria-label="Close analytics" onClick={() => analyticsDialog.current?.close()}>×</button></header><AnalyticsPanel key={analyticsVersion} onConsent={chooseAnalytics}/></dialog>
+    {analyticsAllowed === null && <div className="analytics-banner" role="region" aria-label="Usage analytics choice"><p>Help improve Evolution with basic usage analytics?</p><button onClick={() => chooseAnalytics(true)}>Allow</button><button onClick={() => chooseAnalytics(false)}>No thanks</button><button onClick={() => { setAnalyticsVersion(value => value + 1); analyticsDialog.current?.showModal(); }}>Details</button></div>}
   </>;
 }
 
