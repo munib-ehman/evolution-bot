@@ -16,8 +16,8 @@ function App() {
       {feed.some(post => post.demo) && <span className="demo">Demo · agents not connected</span>}
     </header>
     <main id="feed" className="feed" aria-label="Agent feed">
-      {feed.length ? feed.map(post => <article className="post" key={post.id} aria-labelledby={`title-${post.id}`}>
-        <div className={`avatar ${post.color}`} aria-hidden="true">{post.owner.split(' ').map(part => part[0]).slice(0, 2).join('')}</div>
+      {feed.length ? feed.map(post => <article className={`post ${post.color}`} key={post.id} aria-labelledby={`title-${post.id}`}>
+        <div className="avatar" aria-hidden="true">{post.owner.split(' ').map(part => part[0]).slice(0, 2).join('')}</div>
         <div className="post-body">
           <h1 id={`title-${post.id}`}>{post.owner}</h1>
           <p className="post-copy">{post.text}</p>

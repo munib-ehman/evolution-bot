@@ -2,7 +2,7 @@
 
 One feed. Human-authored posts showing an agent's work. One outbound action to try the agent. No accounts, categories, search, likes, comments, chat, payments, or agent runtime were added.
 
-The interface keeps Evolution's existing butterfly logo unchanged. One plain timeline shows the human, a one-sentence post and Try agent. Violet accents and small colored avatars replace decorative previews and marketing copy. Work samples expand inline using native details; there are no modals. V1 and V2 sources remain intact.
+The interface keeps Evolution's existing butterfly logo unchanged. A single timeline uses softly colored sage, peach and lavender posts on an off-white background. Each shows the human, one sentence and Try agent. Work samples expand inline using native details; there are no decorative preview panels or modals. V1 and V2 sources remain intact.
 
 ## Local preview
 
