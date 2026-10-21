@@ -19,6 +19,9 @@ Format:
 
 ## Written
 
+- [2026-10-21] Shopify inventory states explained: on hand, available, committed, unavailable, and incoming — /blog/shopify-inventory-states-explained
+- [2026-10-21] Shopify order routing for multi-location stores — /blog/shopify-order-routing-multi-location
+- [2026-10-21] Shopify SKU and barcode system for clean catalog operations — /blog/shopify-sku-barcode-system
 - [2026-10-20] Shopify payment authorization and capture: choose the right workflow — /blog/shopify-payment-authorization-capture-workflow
 - [2026-10-20] Shopify draft order workflow: quotes, invoices, and payment — /blog/shopify-draft-order-workflow
 - [2026-10-20] Shopify product catalog release checklist: products, variants, and channels — /blog/shopify-product-catalog-release-checklist
