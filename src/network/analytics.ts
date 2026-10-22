@@ -1,6 +1,6 @@
 import { supabase } from '../lib/auth';
 
-export const eventNames = ['feed_view', 'post_view', 'post_open', 'form_start', 'form_close', 'agent_reuse', 'logo_picker_open', 'logo_added', 'logo_removed', 'login_click', 'login_request', 'login_sent', 'login_success', 'login_error', 'publish_click', 'form_validation_error', 'publish_attempt', 'publish_success', 'publish_error', 'feed_error', 'checkout_click'] as const;
+export const eventNames = ['feed_view', 'post_view', 'post_open', 'form_start', 'form_close', 'agent_reuse', 'logo_picker_open', 'logo_added', 'logo_removed', 'login_click', 'login_request', 'login_sent', 'login_success', 'login_error', 'publish_click', 'form_validation_error', 'publish_attempt', 'publish_success', 'publish_error', 'feed_error', 'checkout_click', 'response_click'] as const;
 export type EventName = typeof eventNames[number];
 export interface Activity {
   id: string;

@@ -3,12 +3,13 @@ import { createRoot } from 'react-dom/client';
 import { topics, readInterests, matchingPosts, validInterests } from './topics.mjs';
 import { supabase, sendMagicLink } from '../lib/auth';
 import { canHire, reportedHires, recordHireClick, safeAgentUrl, safeLogo, sortedPosts, type AgentPost } from './model.mjs';
-import { ownAgents, publishPost, readFeed } from './store';
+import { ownAgents, publishPost, publishRequest, readFeed } from './store';
 import { prepareLogo } from './logo';
 import { consent, setConsent, setAnalyticsActor, setAnalyticsPosts, track, flushEvents } from './analytics';
 import { AnalyticsPanel } from './AnalyticsPanel';
 import './network.css';
 import './responsive.css';
+import './dark.css';
 
 function Arrow() {
   return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 18 12-12M6 6h12v12"/></svg>;
@@ -22,6 +23,19 @@ function AgentLogo({ post }: { post: AgentPost }) {
 }
 
 function App() {
+  const [dark, setDark] = useState(() => {
+    try { const saved = localStorage.getItem('evolution:theme:v1'); if (saved) return saved === 'dark'; } catch {}
+    return true;
+  });
+  const [postKind, setPostKind] = useState<'agent' | 'request'>('agent');
+  const [requestsReady, setRequestsReady] = useState(!supabase);
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    void supabase.from('network_posts').select('kind').limit(0).then(({ error }) => { if (active) setRequestsReady(!error); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; }, [dark]);
   const [published, setPublished] = useState<AgentPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [interests, setInterests] = useState(() => readInterests(window.localStorage));
@@ -131,7 +145,8 @@ function App() {
     track('publish_attempt', null, postingFlow.current);
     let confirmed = false;
     try {
-      const rows = await publishPost({ ...draft, logoData, autonomyClaimed: fields.get('autonomyClaimed') === 'on' }, id => { confirmed = true; track('publish_success', id, postingFlow.current); });
+      const save = postKind === 'request' ? publishRequest : publishPost;
+      const rows = await save({ ...draft, logoData, autonomyClaimed: fields.get('autonomyClaimed') === 'on' }, id => { confirmed = true; track('publish_success', id, postingFlow.current); });
       setPublished(rows); setFeedError(''); dialog.current?.close(); form.current?.reset();
       setNotice(supabase ? 'Post published.' : 'Post saved in this browser only.');
     } catch (reason) { track(confirmed ? 'feed_error' : 'publish_error', null, postingFlow.current); setError(reason instanceof Error ? reason.message : 'Could not publish the post.'); }
@@ -155,6 +170,7 @@ function App() {
     <a className="skip" href="#feed">Skip to feed</a>
     <div className="shell">
       <aside className="sidebar">
+        <button className="theme-toggle" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={dark} onClick={() => { setDark(!dark); try { localStorage.setItem('evolution:theme:v1', dark ? 'light' : 'dark'); } catch {} }}>{dark ? '☀ Light' : '☾ Dark'}</button>
         <a className="brand" href="#" aria-label="Evolution home"><img src="/favicon.svg" width="34" height="34" alt=""/>Evolution<span className="brand-period">.</span></a>
         <div className="sidebar-note"><span className="eyebrow">A NEW KIND OF NETWORK</span><p>People build.<br/><em>Agents work.</em></p><div className="network-art" aria-hidden="true"><span className="network-ring"/><span className="network-node node-one">Si</span><span className="network-node node-two">Sc</span><span className="network-node node-three">Ec</span><span className="network-center"><img src="/favicon.svg" width="36" height="36" alt=""/></span></div></div>
         <div className="sidebar-footer"><span/>Independent by design.</div>
@@ -174,7 +190,11 @@ function App() {
         <div className="posts">
           {loading && <p role="status">Loading your feed…</p>}
           {!loading && !feedError && feed.length === 0 && <div className="empty-feed"><h2>Your next agent belongs here.</h2><p>No posts in your topics yet.</p><button className="post-button" onClick={openComposer}>Post your agent<Arrow/></button></div>}
-          {feed.map(post => <article className={`post ${post.color}`} key={post.id} data-post-id={post.id} aria-labelledby={`title-${post.id}`}>
+          {feed.map(post => post.kind === 'request' ? <article className="post lavender request-post" key={post.id} data-post-id={post.id} aria-labelledby={`title-${post.id}`}>
+            <header className="post-header"><div className="avatar" aria-hidden="true">{post.initials}</div><div className="author"><h2>{post.owner}</h2><p>{post.category}</p></div><span className="request-badge">Agent wanted</span></header>
+            <h3 className="request-title" id={`title-${post.id}`}>{post.agent}</h3><p className="post-copy">{post.text}</p>
+            <footer className="post-bottom"><a className="try" href={safeAgentUrl(post.responseUrl)!} target="_blank" rel="noopener noreferrer" onClick={() => track('response_click', post.id)}>Respond<Arrow/></a></footer>
+          </article> : <article className={`post ${post.color}`} key={post.id} data-post-id={post.id} aria-labelledby={`title-${post.id}`}>
             <header className="post-header"><div className="avatar" aria-hidden="true">{post.initials}</div><div className="author"><h2 id={`title-${post.id}`}>{post.agent}</h2><p>Built by {post.owner} · {post.category}</p></div><div className="hire-count" title="Entered by the seller. Not independently verified."><strong>{reportedHires(post, published).toLocaleString()} hires</strong><span>seller-reported</span></div></header>
             <p className="post-copy">{post.text}</p>
             <div className={`agent-card ${post.demo ? '' : 'has-result'}`}>
@@ -190,12 +210,20 @@ function App() {
       </main>}
     </div>
     <dialog ref={dialog} className="composer" aria-labelledby="composer-title" onClose={() => track('form_close', null, postingFlow.current)} onClick={event => { if (event.target === dialog.current && !busy) dialog.current.close(); }}>
-      <header className="composer-header"><h2 id="composer-title">Post your agent<span>.</span></h2><button className="close-composer" aria-label="Close post form" disabled={busy} onClick={() => dialog.current?.close()}>×</button></header>
-      {supabase && !userId ? <form onSubmit={login}><p className="composer-note">Sign in to post. No submission or approval queue.</p><label>Email<input name="email" type="email" autoComplete="email" required maxLength={254}/></label><button className="post-button" disabled={busy} onClick={() => track('login_click', null, postingFlow.current)}>{busy ? 'Sending…' : 'Email sign-in link'}</button>{notice && <p role="status">{notice}</p>}</form> : <form ref={form} onSubmit={publish} onChange={formChanged} onInvalid={invalidForm} key={selectedId || 'new'}>
+      <header className="composer-header"><h2 id="composer-title">{postKind === 'request' ? 'Request an agent' : 'Post your agent'}<span>.</span></h2><button className="close-composer" aria-label="Close post form" disabled={busy} onClick={() => dialog.current?.close()}>×</button></header>
+      <div className="post-kind" aria-label="Post type"><button type="button" disabled={busy} aria-pressed={postKind === 'agent'} onClick={() => { setPostKind('agent'); setError(''); }}>Showcase</button><button type="button" disabled={busy || !requestsReady} title={requestsReady ? undefined : 'Request posts need the database update.'} aria-pressed={postKind === 'request'} onClick={() => { setPostKind('request'); setError(''); }}>Request an agent</button></div>
+      {!requestsReady && <p className="composer-note">Agent requests are awaiting a database update. Showcase posts are available.</p>}
+      {supabase && !userId ? <form onSubmit={login}><p className="composer-note">Sign in to post. No submission or approval queue.</p><label>Email<input name="email" type="email" autoComplete="email" required maxLength={254}/></label><button className="post-button" disabled={busy} onClick={() => track('login_click', null, postingFlow.current)}>{busy ? 'Sending…' : 'Email sign-in link'}</button>{notice && <p role="status">{notice}</p>}</form> : <form ref={form} onSubmit={publish} onChange={formChanged} onInvalid={invalidForm} key={postKind + (selectedId || 'new')}>
         {!supabase && <p className="composer-note">Local preview · posts are saved on this browser, not shared.</p>}
-        {agents.length > 0 && <label>Agent<select value={selectedId} onChange={event => selectAgent(event.target.value)}><option value="">New agent</option>{agents.map(agent => <option value={agent.agentId} key={agent.agentId}>{agent.agent}</option>)}</select></label>}
+        {postKind === 'agent' && agents.length > 0 && <label>Agent<select value={selectedId} onChange={event => selectAgent(event.target.value)}><option value="">New agent</option>{agents.map(agent => <option value={agent.agentId} key={agent.agentId}>{agent.agent}</option>)}</select></label>}
         <fieldset disabled={busy}>
           <label>Topic<select name="category" required defaultValue=""><option value="" disabled>Choose a topic</option>{topics.map(topic => <option key={topic}>{topic}</option>)}</select></label>
+          {postKind === 'request' ? <>
+            <label>Your name<input name="owner" required maxLength={80} autoComplete="name"/></label>
+            <label>What agent do you need?<input name="title" required maxLength={100} placeholder="An agent to find relevant leads"/></label>
+            <label>What should it do?<textarea name="text" required maxLength={1000} rows={4} placeholder="Describe the task and the result you need."/></label>
+            <label>Where can builders respond?<input name="responseUrl" type="url" pattern="https://.*" maxLength={2048} required placeholder="https://your-contact-page.com"/><small>Public link to your contact page or profile. Replies happen there.</small></label>
+          </> : <>
           <div className="form-row"><label>Agent name<input name="agent" defaultValue={selected?.agent} required maxLength={60}/></label><label>Built by<input name="owner" defaultValue={selected?.owner} required maxLength={80} autoComplete="name"/></label></div>
           <div className="logo-upload"><label>Agent logo <small>Optional</small><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="Upload agent logo" onClick={() => track('logo_picker_open', null, postingFlow.current)} onChange={event => { void uploadLogo(event.target.files?.[0]); event.target.value = ''; }}/><small>PNG, JPEG or WebP · up to 5 MB. No logo? We’ll use initials.</small></label>{logoData && <div className="logo-preview"><img src={logoData} alt="Agent logo preview"/><button type="button" onClick={() => { uploadVersion.current++; setLogoData(null); setUploading(false); track('logo_removed', null, postingFlow.current); }}>Remove</button></div>}</div>
           {uploading && <p className="composer-note" role="status">Preparing logo…</p>}
@@ -206,6 +234,7 @@ function App() {
           <div className="form-row price-row"><label>Price per task<input name="price" type="number" min="0" max="1000000" step="0.01" required defaultValue={selected?.price}/></label><label>Currency<select name="currency" defaultValue={selected?.currency || 'USD'}>{['USD', 'EUR', 'GBP', 'PKR'].map(currency => <option key={currency}>{currency}</option>)}</select></label><label>Hires<input name="sellerReportedHires" type="number" min="0" max="1000000000" step="1" required defaultValue={selected?.sellerReportedHires ?? 0}/><small>Shown as seller-reported.</small></label></div>
           <label>Checkout link<input name="checkoutUrl" type="url" pattern="https://.*" maxLength={2048} defaultValue={selected?.checkoutUrl} required placeholder="https://your-agent.com/checkout"/><small>Payment, task input and autonomous delivery happen on your service.</small></label>
           <label className="autonomy-check"><input name="autonomyClaimed" type="checkbox" required defaultChecked={selected?.autonomyClaimed}/><span>My agent completes this task without a human operator. The work and hire count are accurate to my knowledge.</span></label>
+          </>}
           <button className="post-button publish-button" disabled={busy || uploading} onClick={() => { validationRecorded.current = false; track('publish_click', null, postingFlow.current); }}>{busy ? 'Publishing…' : uploading ? 'Preparing logo…' : supabase ? 'Publish post' : 'Publish in local preview'}<Arrow/></button>
         </fieldset>
       </form>}

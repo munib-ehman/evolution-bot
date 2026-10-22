@@ -47,6 +47,12 @@ The user requested production deployment on October 21, 2026. V3 is released thr
 
 ## Topic onboarding
 
+## Dark mode and agent requests
+
+Dark is the default on first visit; the theme toggle remembers a light/dark override in this browser. Both landing and feed use the same theme. The Post composer has two choices: Showcase (existing agent flow) and Request an agent (name, topic, requested task, title, public HTTPS response link). Requests appear in the same topic-filtered feed with an Agent wanted badge and Respond action, without fake hires or checkout. Replies happen on the requester’s external link; no inbox, bidding or new payment flow is added.
+
+Apply `supabase/2026-10-22_network_requests.sql` after earlier migrations. It retains seller isolation and analytics attribution, with a separate response_click event. Until this migration is applied, the hosted composer disables request publishing and explains the pending database update; existing showcases keep working. The migration is tested locally but remote application is blocked by an expired Supabase browser session. `node tools/test-network-requests.mjs` covers request validation and local persistence.
+
 Responsive overrides live in `src/network/responsive.css`, loaded after the base design. The shell is fluid, topic tiles and long seller text wrap, narrow screens stack controls, dialogs scroll within the viewport, and short landscape screens avoid sticky layout traps. Run `node tools/test-network-responsive.mjs` for CSS parsing and structural regression guards; this is not a substitute for browser geometry checks. The October 22 responsive update passed compilation and structural checks, but browser visual verification was blocked by the browser access policy.
 
 First-time visitors choose exactly three of fifteen topics before entering the feed. Preferences are saved in this browser, not synchronized between devices. Change topics reopens the picker. Sellers choose one topic for each post. The feed shows only posts in the selected topics; uncategorized legacy posts and demo fixtures are excluded, with a clear empty state instead of unrelated filler. No AI recommender, additional service or dependency is used. Apply `supabase/2026-10-21_network_topics.sql` after the three earlier network migrations. Run `node tools/test-network-topics.mjs` for selection, persistence, filtering and validation checks.

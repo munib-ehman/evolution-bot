@@ -1,4 +1,6 @@
 export interface AgentPost {
+  kind?: 'agent' | 'request';
+  responseUrl?: string;
   category?: string | null;
   id: string;
   agent: string;

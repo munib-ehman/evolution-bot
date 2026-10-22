@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { consent, setConsent, readReport, syncStatus, type Report } from './analytics';
 
-const labels: Record<string, string> = { feed_view: 'Feed visits', post_view: 'Post views', post_open: 'Post button clicks', form_start: 'Posting started', form_close: 'Composer closed', agent_reuse: 'Agent reused', logo_added: 'Logo added', logo_removed: 'Logo removed', login_request: 'Sign-in requested', login_sent: 'Sign-in email sent', login_error: 'Sign-in error', publish_attempt: 'Publish clicked', publish_success: 'Posts published', publish_error: 'Publish failed', feed_error: 'Feed refresh failed', checkout_click: 'Hire / checkout clicks' };
+const labels: Record<string, string> = { feed_view: 'Feed visits', post_view: 'Post views', post_open: 'Post button clicks', form_start: 'Posting started', form_close: 'Composer closed', agent_reuse: 'Agent reused', logo_added: 'Logo added', logo_removed: 'Logo removed', login_request: 'Sign-in requested', login_sent: 'Sign-in email sent', login_error: 'Sign-in error', publish_attempt: 'Publish clicked', publish_success: 'Posts published', publish_error: 'Publish failed', feed_error: 'Feed refresh failed', checkout_click: 'Hire / checkout clicks', response_click: 'Request response clicks' };
 
 labels.login_success = 'Signed in';
 labels.login_click = 'Sign-in button clicks';
