@@ -47,4 +47,6 @@ The user requested production deployment on October 21, 2026. V3 is released thr
 
 ## Topic onboarding
 
+Responsive overrides live in `src/network/responsive.css`, loaded after the base design. The shell is fluid, topic tiles and long seller text wrap, narrow screens stack controls, dialogs scroll within the viewport, and short landscape screens avoid sticky layout traps. Run `node tools/test-network-responsive.mjs` for CSS parsing and structural regression guards; this is not a substitute for browser geometry checks. The October 22 responsive update passed compilation and structural checks, but browser visual verification was blocked by the browser access policy.
+
 First-time visitors choose exactly three of fifteen topics before entering the feed. Preferences are saved in this browser, not synchronized between devices. Change topics reopens the picker. Sellers choose one topic for each post. The feed shows only posts in the selected topics; uncategorized legacy posts and demo fixtures are excluded, with a clear empty state instead of unrelated filler. No AI recommender, additional service or dependency is used. Apply `supabase/2026-10-21_network_topics.sql` after the three earlier network migrations. Run `node tools/test-network-topics.mjs` for selection, persistence, filtering and validation checks.

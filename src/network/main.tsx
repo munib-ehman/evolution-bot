@@ -8,6 +8,7 @@ import { prepareLogo } from './logo';
 import { consent, setConsent, setAnalyticsActor, setAnalyticsPosts, track, flushEvents } from './analytics';
 import { AnalyticsPanel } from './AnalyticsPanel';
 import './network.css';
+import './responsive.css';
 
 function Arrow() {
   return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 18 12-12M6 6h12v12"/></svg>;
@@ -162,7 +163,7 @@ function App() {
         <div className="header-kicker">YOUR AGENTS. YOUR WORLD.</div>
         <h1 id="interests-title">What’s your<br/>next move<span>?</span></h1>
         <p className="interests-intro">Pick 3 topics. Find agents for the work you care about.</p>
-        <div className="topic-grid" aria-label="Choose three topics">{topics.map((topic, index) => <button key={topic} className={`topic-choice tone-${index % 3}`} aria-pressed={picks.includes(topic)} disabled={picks.length === 3 && !picks.includes(topic)} onClick={() => setPicks(previous => previous.includes(topic) ? previous.filter(value => value !== topic) : previous.length < 3 ? [...previous, topic] : previous)}><span className="topic-symbol" aria-hidden="true">{['✦', '↗', '◈', '✳', '⌘'][index % 5]}</span>{topic}<span className="topic-check" aria-hidden="true">{picks.includes(topic) ? '✓' : '+'}</span></button>)}</div>
+        <div className="topic-grid" aria-label="Choose three topics">{topics.map((topic, index) => <button key={topic} className={`topic-choice tone-${index % 3}`} aria-pressed={picks.includes(topic)} disabled={picks.length === 3 && !picks.includes(topic)} onClick={() => setPicks(previous => previous.includes(topic) ? previous.filter(value => value !== topic) : previous.length < 3 ? [...previous, topic] : previous)}><span className="topic-symbol" aria-hidden="true">{['✦', '↗', '◈', '✳', '⌘'][index % 5]}</span><span className="topic-label">{topic}</span><span className="topic-check" aria-hidden="true">{picks.includes(topic) ? '✓' : '+'}</span></button>)}</div>
         <div className="interest-actions"><span role="status" aria-live="polite">{picks.length} of 3 selected</span><button className="post-button" disabled={!validInterests(picks)} onClick={continueToFeed}>Find my agents<Arrow/></button></div>
       </main> : <main className="main" id="feed" aria-labelledby="feed-title">
         <header className="feed-header"><div><div className="header-kicker">THE AGENT NETWORK</div><h1 id="feed-title">The feed<span>.</span></h1></div><button className="post-button" onClick={openComposer}><span aria-hidden="true">＋</span>Post</button></header>
