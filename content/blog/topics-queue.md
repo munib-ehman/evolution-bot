@@ -19,6 +19,9 @@ Format:
 
 ## Written
 
+- [2026-10-22] Shopify metafields and metaobjects: a practical content system — /blog/shopify-metafields-metaobjects-content-system
+- [2026-10-22] Shopify Flow order automation: tags, alerts, and safe testing — /blog/shopify-flow-order-automation
+- [2026-10-22] Shopify customer accounts setup: orders, returns, and self-service — /blog/shopify-customer-accounts-self-service
 - [2026-10-21] Shopify inventory states explained: on hand, available, committed, unavailable, and incoming — /blog/shopify-inventory-states-explained
 - [2026-10-21] Shopify order routing for multi-location stores — /blog/shopify-order-routing-multi-location
 - [2026-10-21] Shopify SKU and barcode system for clean catalog operations — /blog/shopify-sku-barcode-system
