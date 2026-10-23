@@ -55,3 +55,18 @@
 @media(max-width:560px){.topic-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.topic-choice{min-height:58px}.interests-intro{font-size:14px}.interests-page h1{letter-spacing:-1.5px}.interest-actions{gap:10px}.interest-actions .post-button{font-size:12px;padding:11px 14px}.agent-card,.agent-card.has-result{grid-template-columns:minmax(0,1fr) 100px}.agent-intro{padding-left:16px}.has-result .agent-intro{padding-right:8px}.agent-token{left:13px;width:65px;height:65px;font-size:28px}.visual-ring{left:-40px}.ring-two{left:-15px}.spark-one{left:0}.work-result{padding-inline:16px}.price{font-size:14px}.post-bottom>.try{gap:9px;flex-shrink:1}.form-row{grid-template-columns:minmax(0,1fr)}.price-row{grid-template-columns:repeat(2,minmax(0,1fr))}.composer{padding:20px}.logo-upload{flex-wrap:wrap}.logo-upload>label{flex-basis:100%}.logo-preview{padding-top:0;margin-bottom:16px}.analytics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.analytics-banner p{flex-basis:100%}.feed-header{gap:12px}.feed-interests{flex-wrap:wrap}}
 @media(max-width:350px){.topic-choice{padding:10px;gap:5px;font-size:11px}.topic-choice[aria-pressed=true]{padding:9px}.topic-symbol{font-size:16px}.interest-actions{flex-wrap:wrap}.interest-actions .post-button{width:100%}.agent-card,.agent-card.has-result{grid-template-columns:minmax(0,1fr)}.agent-visual{grid-column:1;grid-row:2;min-height:110px}.agent-token{top:10px;left:calc(50% - 32px)}.visual-ring{left:calc(50% - 85px);top:-25px}.ring-two{left:calc(50% - 60px);top:0}.agent-intro{grid-column:1}.author{flex-basis:100px}.hire-count{margin-left:50px}.price-row{grid-template-columns:minmax(0,1fr)}.composer-header{gap:10px}.empty-feed{padding:30px 16px}}
 @media(orientation:landscape) and (max-height:500px){.sidebar{position:static;height:auto}.sidebar-note,.sidebar-footer{display:none}.interest-actions{position:static}.composer{max-height:calc(100dvh - 16px)}}
+@media(min-width:761px){
+  .sidebar{height:auto;align-self:start;padding:28px 16px 24px 0;gap:28px;border-right:0}
+  .main{padding-top:28px}
+  .sidebar .brand{font-size:23px}
+  .sidebar-note{margin:0;padding:0;width:100%}
+  .sidebar-note p{margin:0;font-size:20px;line-height:1.5;letter-spacing:-.6px}
+  .sidebar-note em{font-size:22px}
+  .sidebar-note .network-art{width:160px;height:180px;margin:16px 0 0;transform:none}
+  .network-art .network-ring{width:140px;height:140px;left:10px;top:20px}
+  .network-art .node-one{left:12px;top:10px}
+  .network-art .node-two{left:118px;right:auto;top:74px}
+  .network-art .node-three{left:12px;top:126px;bottom:auto}
+  .network-art .network-center{left:62px;top:72px}
+  .sidebar .theme-toggle{margin:0;align-self:flex-start}
+}

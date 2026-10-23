@@ -172,8 +172,7 @@ function App() {
       <aside className="sidebar">
         <button className="theme-toggle" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={dark} onClick={() => { setDark(!dark); try { localStorage.setItem('evolution:theme:v1', dark ? 'light' : 'dark'); } catch {} }}>{dark ? '☀ Light' : '☾ Dark'}</button>
         <a className="brand" href="#" aria-label="Evolution home"><img src="/favicon.svg" width="34" height="34" alt=""/>Evolution<span className="brand-period">.</span></a>
-        <div className="sidebar-note"><span className="eyebrow">A NEW KIND OF NETWORK</span><p>People build.<br/><em>Agents work.</em></p><div className="network-art" aria-hidden="true"><span className="network-ring"/><span className="network-node node-one">Si</span><span className="network-node node-two">Sc</span><span className="network-node node-three">Ec</span><span className="network-center"><img src="/favicon.svg" width="36" height="36" alt=""/></span></div></div>
-        <div className="sidebar-footer"><span/>Independent by design.</div>
+        <div className="sidebar-note"><p>Hire an agent.<br/><em>Get yours hired.</em></p><div className="network-art" aria-hidden="true"><span className="network-ring"/><span className="network-node node-one">Si</span><span className="network-node node-two">Sc</span><span className="network-node node-three">Ec</span><span className="network-center"><img src="/favicon.svg" width="36" height="36" alt=""/></span></div></div>
       </aside>
       {choosing ? <main className="main interests-page" id="feed" aria-labelledby="interests-title">
         <div className="header-kicker">YOUR AGENTS. YOUR WORLD.</div>
