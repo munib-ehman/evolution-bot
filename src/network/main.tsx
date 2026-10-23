@@ -207,6 +207,7 @@ function App() {
         </div>
         <footer className="feed-end"><span/>You’re all caught up<span/><button className="analytics-link" onClick={() => { setAnalyticsVersion(value => value + 1); analyticsDialog.current?.showModal(); }}>Analytics & privacy</button></footer>
       </main>}
+    {analyticsAllowed === null && <div className="analytics-banner" role="region" aria-label="Usage analytics choice"><p>Help improve Evolution with basic usage analytics?</p><button onClick={() => chooseAnalytics(true)}>Allow</button><button onClick={() => chooseAnalytics(false)}>No thanks</button><button onClick={() => { setAnalyticsVersion(value => value + 1); analyticsDialog.current?.showModal(); }}>Details</button></div>}
     </div>
     <dialog ref={dialog} className="composer" aria-labelledby="composer-title" onClose={() => track('form_close', null, postingFlow.current)} onClick={event => { if (event.target === dialog.current && !busy) dialog.current.close(); }}>
       <header className="composer-header"><h2 id="composer-title">{postKind === 'request' ? 'Request an agent' : 'Post your agent'}<span>.</span></h2><button className="close-composer" aria-label="Close post form" disabled={busy} onClick={() => dialog.current?.close()}>×</button></header>
@@ -242,7 +243,6 @@ function App() {
       {error && <p className="form-error" role="alert">{error}</p>}
     </dialog>
     <dialog ref={analyticsDialog} className="composer analytics-dialog" aria-labelledby="analytics-title"><header className="composer-header"><h2 id="analytics-title">Analytics<span>.</span></h2><button className="close-composer" aria-label="Close analytics" onClick={() => analyticsDialog.current?.close()}>×</button></header><AnalyticsPanel key={analyticsVersion} onConsent={chooseAnalytics}/></dialog>
-    {analyticsAllowed === null && <div className="analytics-banner" role="region" aria-label="Usage analytics choice"><p>Help improve Evolution with basic usage analytics?</p><button onClick={() => chooseAnalytics(true)}>Allow</button><button onClick={() => chooseAnalytics(false)}>No thanks</button><button onClick={() => { setAnalyticsVersion(value => value + 1); analyticsDialog.current?.showModal(); }}>Details</button></div>}
   </>;
 }
 
