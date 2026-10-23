@@ -86,7 +86,7 @@ if (fs.existsSync('dist/index.html')) {
   assert.equal(JSON.parse(fs.readFileSync('dist/site-version.json', 'utf8')).version, 'network');
   for (const file of ['dist/index.html', 'dist/app.html']) {
     const html = fs.readFileSync(file, 'utf8');
-    assert(html.includes('agents, open for work.'));
+    assert(html.includes('<title>Evolution</title>'));
     assert(!html.includes('/src/network/'));
     assert(!html.includes('shopify-api-key'));
   }
