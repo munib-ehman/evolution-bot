@@ -56,17 +56,18 @@
 @media(max-width:350px){.topic-choice{padding:10px;gap:5px;font-size:11px}.topic-choice[aria-pressed=true]{padding:9px}.topic-symbol{font-size:16px}.interest-actions{flex-wrap:wrap}.interest-actions .post-button{width:100%}.agent-card,.agent-card.has-result{grid-template-columns:minmax(0,1fr)}.agent-visual{grid-column:1;grid-row:2;min-height:110px}.agent-token{top:10px;left:calc(50% - 32px)}.visual-ring{left:calc(50% - 85px);top:-25px}.ring-two{left:calc(50% - 60px);top:0}.agent-intro{grid-column:1}.author{flex-basis:100px}.hire-count{margin-left:50px}.price-row{grid-template-columns:minmax(0,1fr)}.composer-header{gap:10px}.empty-feed{padding:30px 16px}}
 @media(orientation:landscape) and (max-height:500px){.sidebar{position:static;height:auto}.sidebar-note,.sidebar-footer{display:none}.interest-actions{position:static}.composer{max-height:calc(100dvh - 16px)}}
 @media(min-width:761px){
-  .sidebar{height:auto;align-self:start;padding:28px 16px 24px 0;gap:28px;border-right:0}
+  .sidebar{height:calc(100dvh - 24px);align-self:start;padding:28px 16px 24px 0;gap:clamp(28px,6vh,56px);border-right:0}
   .main{padding-top:28px}
   .sidebar .brand{font-size:23px}
   .sidebar-note{margin:0;padding:0;width:100%}
   .sidebar-note p{margin:0;font-size:20px;line-height:1.5;letter-spacing:-.6px}
   .sidebar-note em{font-size:22px}
-  .sidebar-note .network-art{width:160px;height:180px;margin:16px 0 0;transform:none}
+  .sidebar-note .network-art{width:160px;height:180px;margin:clamp(24px,5vh,48px) 0 0;transform:none}
   .network-art .network-ring{width:140px;height:140px;left:10px;top:20px}
   .network-art .node-one{left:12px;top:10px}
   .network-art .node-two{left:118px;right:auto;top:74px}
   .network-art .node-three{left:12px;top:126px;bottom:auto}
   .network-art .network-center{left:62px;top:72px}
-  .sidebar .theme-toggle{margin:0;align-self:flex-start}
+  .sidebar .theme-toggle{margin:auto 0 0;align-self:flex-start}
 }
+@media(min-width:761px) and (max-height:500px){.sidebar{height:auto;gap:20px}.sidebar .theme-toggle{margin-top:0}}
