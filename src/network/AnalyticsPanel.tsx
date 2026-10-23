@@ -11,12 +11,12 @@ labels.publish_attempt = 'Valid publish attempts';
 labels.form_validation_error = 'Posting validation errors';
 labels.logo_picker_open = 'Logo picker opened';
 
-export function AnalyticsPanel({ onConsent }: { onConsent: (allow: boolean) => void }) {
+export function AnalyticsPanel({ onConsent, ownerView = false }: { onConsent: (allow: boolean) => void; ownerView?: boolean }) {
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState('');
   const [allowed, setAllowed] = useState(consent() === true);
   const [sync, setSync] = useState(syncStatus());
-  const owner = report?.scope.startsWith('Private owner view') === true;
+  const owner = ownerView && report?.scope.startsWith('Private owner view') === true;
   async function refresh() {
     setError('');
     try {

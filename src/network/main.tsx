@@ -7,6 +7,7 @@ import { ownAgents, publishPost, publishRequest, readFeed } from './store';
 import { prepareLogo } from './logo';
 import { consent, setConsent, setAnalyticsActor, setAnalyticsPosts, track, flushEvents } from './analytics';
 import { AnalyticsPanel } from './AnalyticsPanel';
+import { OwnerAnalytics } from './OwnerAnalytics';
 import './network.css';
 import './responsive.css';
 import './dark.css';
@@ -283,4 +284,4 @@ function App() {
   </>;
 }
 
-createRoot(document.getElementById('network-root')!).render(<App/>);
+createRoot(document.getElementById('network-root')!).render(window.location.pathname.replace(/\/$/, '') === '/owner-analytics' ? <OwnerAnalytics/> : <App/>);

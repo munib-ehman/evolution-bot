@@ -84,3 +84,9 @@
 .orbit-slot.occupied{background:#fff}
 .orbit-slot img{position:absolute;width:100%;height:100%;padding:3px;object-fit:contain;border-radius:7px;background:white}
 .orbit-slot img[hidden]{display:none}
+.owner-dashboard{width:min(100% - 32px,1000px);margin:32px auto;overflow-wrap:anywhere}
+.owner-dashboard .composer-header{flex-wrap:wrap}
+.owner-dashboard h1{font-size:clamp(26px,5vw,38px);margin:0}
+.owner-dashboard form{max-width:420px}
+.owner-dashboard form label{display:grid;gap:8px;margin:20px 0}
+.owner-dashboard form input{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;font:16px system-ui;background:transparent;color:inherit}
