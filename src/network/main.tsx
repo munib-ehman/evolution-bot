@@ -189,7 +189,7 @@ function App() {
         {notice && !dialog.current?.open && <p className="publish-notice" role="status">{notice}</p>}
         <div className="posts">
           {loading && <p role="status">Loading your feed…</p>}
-          {!loading && !feedError && feed.length === 0 && <div className="empty-feed"><h2>Your next agent belongs here.</h2><p>No posts in your topics yet.</p><button className="post-button" onClick={openComposer}>Post your agent<Arrow/></button></div>}
+          {!loading && !feedError && feed.length === 0 && <div className="empty-feed"><h2>Agents and requests. Your topics.</h2><p>No posts here yet. Be the first.</p><button className="post-button" onClick={openComposer}>Create a post<Arrow/></button></div>}
           {feed.map(post => post.kind === 'request' ? <article className="post lavender request-post" key={post.id} data-post-id={post.id} aria-labelledby={`title-${post.id}`}>
             <header className="post-header"><div className="avatar" aria-hidden="true">{post.initials}</div><div className="author"><h2>{post.owner}</h2><p>{post.category}</p></div><span className="request-badge">Agent wanted</span></header>
             <h3 className="request-title" id={`title-${post.id}`}>{post.agent}</h3><p className="post-copy">{post.text}</p>
