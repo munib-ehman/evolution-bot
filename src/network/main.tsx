@@ -22,6 +22,42 @@ function AgentLogo({ post }: { post: AgentPost }) {
   return <span className={`agent-token ${logo && !failed ? 'has-logo' : ''}`}>{logo && !failed ? <img src={logo} alt={`${post.agent} logo`} onError={() => setFailed(true)}/> : post.initials}<span>↗</span></span>;
 }
 
+function AgentOrbit({ posts }: { posts: AgentPost[] }) {
+  const [logos, setLogos] = useState<{ id: string; name: string; logo: string }[]>([]);
+  useEffect(() => {
+    let active = true;
+    if (supabase) {
+      void supabase.from('network_agents').select('id,name,logo_data').not('logo_data', 'is', null).order('created_at', { ascending: true }).order('id').limit(10).then(({ data, error }) => {
+        if (active) setLogos(error ? [] : (data || []).flatMap(agent => {
+          const logo = safeLogo(agent.logo_data);
+          return logo ? [{ id: agent.id, name: agent.name, logo }] : [];
+        }));
+      });
+    } else {
+      const seen = new Set<string>();
+      setLogos([...posts].sort((first, second) => Date.parse(first.publishedAt) - Date.parse(second.publishedAt)).flatMap(post => {
+        const id = post.agentId || post.id;
+        const logo = safeLogo(post.logoData);
+        if (post.kind === 'request' || post.demo || !logo || seen.has(id)) return [];
+        seen.add(id);
+        return [{ id, name: post.agent, logo }];
+      }).slice(0, 10));
+    }
+    return () => { active = false; };
+  }, [posts]);
+  return <div className="network-art agent-orbit" aria-label="First agent uploads">
+    <span className="network-ring" aria-hidden="true"/>
+    {Array.from({ length: 10 }, (_, index) => {
+      const agent = logos[index];
+      const angle = index * Math.PI / 5 - Math.PI / 2;
+      return <span key={agent?.id || index} className={`orbit-slot ${agent ? 'occupied' : ''}`} style={{ left: `${50 + 40 * Math.cos(angle)}%`, top: `${50 + 40 * Math.sin(angle)}%` }} title={agent?.name}>
+        {agent && <img src={agent.logo} alt={`${agent.name} logo`} onError={event => { event.currentTarget.hidden = true; }}/>} 
+      </span>;
+    })}
+    <span className="network-center"><img src="/favicon.svg" width="36" height="36" alt="Evolution"/></span>
+  </div>;
+}
+
 function App() {
   const [dark, setDark] = useState(() => {
     try { const saved = localStorage.getItem('evolution:theme:v1'); if (saved) return saved === 'dark'; } catch {}
@@ -172,7 +208,7 @@ function App() {
       <aside className="sidebar">
         <button className="theme-toggle" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={dark} onClick={() => { setDark(!dark); try { localStorage.setItem('evolution:theme:v1', dark ? 'light' : 'dark'); } catch {} }}>{dark ? '☀ Light' : '☾ Dark'}</button>
         <a className="brand" href="#" aria-label="Evolution home"><img src="/favicon.svg" width="34" height="34" alt=""/>Evolution<span className="brand-period">.</span></a>
-        <div className="sidebar-note"><p>Hire an agent.<br/><em>Get yours hired.</em></p><div className="network-art" aria-hidden="true"><span className="network-ring"/><span className="network-node node-one">Si</span><span className="network-node node-two">Sc</span><span className="network-node node-three">Ec</span><span className="network-center"><img src="/favicon.svg" width="36" height="36" alt=""/></span></div></div>
+        <div className="sidebar-note"><p>Hire an agent.<br/><em>Get yours hired.</em></p><AgentOrbit posts={published}/></div>
       </aside>
       {choosing ? <main className="main interests-page" id="feed" aria-labelledby="interests-title">
         <div className="header-kicker">YOUR AGENTS. YOUR WORLD.</div>
