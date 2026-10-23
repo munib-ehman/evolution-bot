@@ -90,3 +90,16 @@
 .owner-dashboard form{max-width:420px}
 .owner-dashboard form label{display:grid;gap:8px;margin:20px 0}
 .owner-dashboard form input{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;font:16px system-ui;background:transparent;color:inherit}
+.owner-tools{display:flex;align-items:end;gap:16px;margin:24px 0;flex-wrap:wrap}
+.owner-tools label{display:grid;gap:8px;flex:1;min-width:min(220px,100%)}
+.owner-tools input{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;font:16px system-ui;background:transparent;color:inherit}
+.person-card{border:1px solid var(--line);border-radius:14px;margin:16px 0;padding:20px}
+.person-card summary{display:flex;justify-content:space-between;align-items:center;gap:16px;cursor:pointer;flex-wrap:wrap}
+.person-card summary div{display:grid;gap:5px;min-width:0}
+.person-card summary span{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.person-card h2{font-size:17px;margin:24px 0 12px}
+.person-journey{list-style:none;padding:0}
+.person-journey li{display:flex;gap:20px;padding:14px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.person-journey time{font-size:12px;color:var(--muted);min-width:160px}
+.person-journey li div{display:grid;gap:6px;min-width:0}
+.person-journey li span{font-size:13px;color:var(--muted)}

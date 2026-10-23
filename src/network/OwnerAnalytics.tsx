@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { supabase, sendMagicLink, signOut } from '../lib/auth';
-import { AnalyticsPanel } from './AnalyticsPanel';
+import { OwnerJourneys } from './OwnerJourneys';
 
 export function OwnerAnalytics() {
   const [access, setAccess] = useState<'checking' | 'signed-out' | 'denied' | 'owner'>('checking');
@@ -36,6 +36,6 @@ export function OwnerAnalytics() {
     {access === 'signed-out' && <form onSubmit={login}><p>Sign in with your authorized owner account.</p><label>Email<input name="email" type="email" autoComplete="email" required/></label><button className="post-button" disabled={busy}>{busy ? 'Sending…' : 'Email sign-in link'}</button></form>}
     {access === 'denied' && <><p role="alert">Owner access required. Platform analytics are private.</p><button className="post-button" onClick={() => { void signOut(); }}>Sign out</button></>}
     {notice && <p role="status">{notice}</p>}
-    {access === 'owner' && <AnalyticsPanel ownerView onConsent={() => {}}/>}
+    {access === 'owner' && <OwnerJourneys/>}
   </main>;
 }
