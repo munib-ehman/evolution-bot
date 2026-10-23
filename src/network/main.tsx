@@ -23,14 +23,14 @@ function AgentLogo({ post }: { post: AgentPost }) {
 }
 
 function AgentOrbit({ posts }: { posts: AgentPost[] }) {
-  const [logos, setLogos] = useState<{ id: string; name: string; logo: string }[]>([]);
+  const [logos, setLogos] = useState<{ id: string; name: string; logo: string | null }[]>([]);
   useEffect(() => {
     let active = true;
     if (supabase) {
-      void supabase.from('network_agents').select('id,name,logo_data').not('logo_data', 'is', null).order('created_at', { ascending: true }).order('id').limit(10).then(({ data, error }) => {
+      void supabase.from('network_agents').select('id,name,logo_data').order('created_at', { ascending: true }).order('id').limit(10).then(({ data, error }) => {
         if (active) setLogos(error ? [] : (data || []).flatMap(agent => {
           const logo = safeLogo(agent.logo_data);
-          return logo ? [{ id: agent.id, name: agent.name, logo }] : [];
+          return [{ id: agent.id, name: agent.name, logo }];
         }));
       });
     } else {
@@ -38,20 +38,21 @@ function AgentOrbit({ posts }: { posts: AgentPost[] }) {
       setLogos([...posts].sort((first, second) => Date.parse(first.publishedAt) - Date.parse(second.publishedAt)).flatMap(post => {
         const id = post.agentId || post.id;
         const logo = safeLogo(post.logoData);
-        if (post.kind === 'request' || post.demo || !logo || seen.has(id)) return [];
+        if (post.kind === 'request' || post.demo || seen.has(id)) return [];
         seen.add(id);
         return [{ id, name: post.agent, logo }];
       }).slice(0, 10));
     }
     return () => { active = false; };
   }, [posts]);
-  return <div className="network-art agent-orbit" aria-label="First agent uploads">
+  return <div className="network-art agent-orbit" aria-label="Agent network illustration">
     <span className="network-ring" aria-hidden="true"/>
     {Array.from({ length: 10 }, (_, index) => {
       const agent = logos[index];
       const angle = index * Math.PI / 5 - Math.PI / 2;
-      return <span key={agent?.id || index} className={`orbit-slot ${agent ? 'occupied' : ''}`} style={{ left: `${50 + 40 * Math.cos(angle)}%`, top: `${50 + 40 * Math.sin(angle)}%` }} title={agent?.name}>
-        {agent && <img src={agent.logo} alt={`${agent.name} logo`} onError={event => { event.currentTarget.hidden = true; }}/>}
+      return <span key={agent?.id || index} className={`orbit-slot orbit-tone-${index % 3} ${agent?.logo ? 'occupied' : ''}`} style={{ left: `${50 + 40 * Math.cos(angle)}%`, top: `${50 + 40 * Math.sin(angle)}%` }} title={agent?.name} aria-hidden={!agent}>
+        <span>{agent ? agent.name.slice(0, 2) : ['Si', 'Sc', 'Ec', 'Re', 'Wr', 'De', 'Op', 'Da', 'Sa', 'Ma'][index]}</span>
+        {agent?.logo && <img src={agent.logo} alt={`${agent.name} logo`} onError={event => { event.currentTarget.hidden = true; }}/>}
       </span>;
     })}
     <span className="network-center"><img src="/favicon.svg" width="36" height="36" alt="Evolution"/></span>

@@ -74,7 +74,13 @@
 .sidebar-note .network-art.agent-orbit{width:100%;max-width:240px;height:auto;aspect-ratio:1;margin:36px 0 0;transform:none}
 .agent-orbit .network-ring{width:80%;height:80%;left:10%;top:10%}
 .agent-orbit .network-center{left:50%;top:50%;transform:translate(-50%,-50%);border-radius:12px}
-.orbit-slot{position:absolute;display:grid;place-items:center;width:16%;aspect-ratio:1;transform:translate(-50%,-50%);border:1px solid var(--line);border-radius:10px;background:#f8f9fb;z-index:1;overflow:hidden}
+.orbit-slot{position:absolute;display:grid;place-items:center;width:14%;aspect-ratio:1;transform:translate(-50%,-50%) rotate(-8deg);border:2px solid #13131b;border-radius:30%;z-index:1;overflow:hidden;font-size:clamp(9px,1vw,12px);font-weight:600;box-shadow:0 4px 12px #00000012}
+.orbit-slot:nth-child(odd){transform:translate(-50%,-50%) rotate(9deg)}
+.orbit-tone-0{background:#dff0c5;color:#607c45}
+.orbit-tone-1{background:#ffe0cc;color:#a66f4f}
+.orbit-tone-2{background:#e4dafa;color:#8d6aba}
+.agent-orbit .network-ring{border-color:#a49ab4;opacity:.65}
+.agent-orbit .network-ring::after{inset:20%;border-color:#a49ab4}
 .orbit-slot.occupied{background:#fff}
-.orbit-slot img{width:85%;height:85%;object-fit:contain;border-radius:7px}
-[data-theme=dark] .orbit-slot:not(.occupied){background:#1d1c28}
+.orbit-slot img{position:absolute;width:100%;height:100%;padding:3px;object-fit:contain;border-radius:7px;background:white}
+.orbit-slot img[hidden]{display:none}
