@@ -59,8 +59,8 @@
   .sidebar{height:calc(100dvh - 24px);align-self:start;padding:28px 16px 24px 0;gap:clamp(28px,6vh,56px);border-right:0}
   .main{padding-top:28px}
   .sidebar .brand{font-size:23px}
-  .sidebar-note{margin:0;padding:0;width:100%}
-  .sidebar-note p{margin:0;font-size:20px;line-height:1.5;letter-spacing:-.6px}
+  .sidebar-note{margin:0;padding:0;width:fit-content;max-width:100%}
+  .sidebar-note p{width:max-content;max-width:100%;margin:0;font-size:20px;line-height:1.5;letter-spacing:-.6px}
   .sidebar-note em{font-size:22px}
   .sidebar-note .network-art{width:160px;height:180px;margin:clamp(24px,5vh,48px) 0 0;transform:none}
   .network-art .network-ring{width:140px;height:140px;left:10px;top:20px}
