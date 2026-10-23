@@ -19,6 +19,9 @@ Format:
 
 ## Written
 
+- [2026-10-23] Shopify Markets setup checklist for international selling — /blog/shopify-markets-setup-checklist
+- [2026-10-23] Shopify product CSV updates: a safe bulk-edit workflow — /blog/shopify-product-csv-bulk-update-workflow
+- [2026-10-23] Shopify shipping labels: buy, print, void, and reconcile — /blog/shopify-shipping-labels-workflow
 - [2026-10-22] Shopify metafields and metaobjects: a practical content system — /blog/shopify-metafields-metaobjects-content-system
 - [2026-10-22] Shopify Flow order automation: tags, alerts, and safe testing — /blog/shopify-flow-order-automation
 - [2026-10-22] Shopify customer accounts setup: orders, returns, and self-service — /blog/shopify-customer-accounts-self-service
