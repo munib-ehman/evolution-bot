@@ -47,7 +47,7 @@
 .analytics-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 .analytics-grid>div{min-width:0;overflow-wrap:anywhere}
 .analytics-table-wrap{max-width:100%;overscroll-behavior-x:contain}
-.analytics-banner{bottom:max(12px,env(safe-area-inset-bottom));flex-wrap:wrap}
+.analytics-banner{position:relative;inset:auto;transform:none;z-index:auto;margin:0 auto max(16px,env(safe-area-inset-bottom));flex-wrap:wrap}
 .analytics-banner p{min-width:160px}
 @media(min-width:761px) and (max-height:760px){.main{padding-top:24px}.sidebar{padding-top:26px}.interests-page h1{font-size:44px;margin:12px 0}.interests-intro{margin-bottom:18px}.topic-choice{min-height:52px}.interest-actions{margin-top:12px}.sidebar-note{margin-top:40px}}
 @media(max-width:1000px){.shell{grid-template-columns:175px minmax(0,1fr);gap:24px;padding-inline:22px}.topic-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.topic-choice{min-height:56px}.brand{font-size:21px}.agent-card,.agent-card.has-result{grid-template-columns:minmax(0,1fr) 130px}.agent-token{left:23px}.visual-ring{left:-30px}.ring-two{left:0}}
