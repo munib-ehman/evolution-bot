@@ -1,6 +1,16 @@
 .shell{width:100%;max-width:1240px;grid-template-columns:clamp(185px,20vw,245px) minmax(0,1fr);gap:clamp(24px,4vw,64px);padding-inline:clamp(20px,3vw,40px)}
-.main{width:100%;padding-bottom:max(24px,env(safe-area-inset-bottom))}
-.sidebar{max-height:100dvh;overflow-y:auto}
+.main{width:100%;min-width:0;padding-bottom:max(24px,env(safe-area-inset-bottom))}
+.sidebar{min-width:0;max-height:100dvh;overflow-y:auto}
+.posts,.post,.composer form,.composer fieldset,.form-row,.analytics-grid{min-width:0;max-width:100%}
+.composer input[type=hidden]{display:none}
+.form-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+.post-kind>button{flex:1 1 130px;white-space:normal;overflow-wrap:anywhere}
+.composer-header{align-items:flex-start}
+.composer-header h2{min-width:0;line-height:1.25}
+.composer input[type=file]{max-width:100%;overflow:hidden}
+.request-title,.request-badge,.composer-note,.composer small,.feed-end{overflow-wrap:anywhere}
+@media(max-width:760px){.sidebar{flex-wrap:wrap}.sidebar .theme-toggle{margin-top:0;margin-left:auto}.analytics-table-wrap{width:100%;overflow-x:auto}}
+@media(max-width:560px){.composer .form-row{grid-template-columns:minmax(0,1fr)}.composer{padding:16px;border-radius:14px}.composer-header h2{font-size:22px}.feed-header{flex-wrap:wrap}.post-bottom{gap:12px}.post-bottom>.try{margin-left:auto}.request-badge{white-space:normal}.interest-actions>span{min-width:0}}
 .interests-page{padding-bottom:max(28px,env(safe-area-inset-bottom))}
 .interests-page h1{font-size:clamp(36px,4.2vw,56px);margin:16px 0;letter-spacing:-2px}
 .interests-intro{margin:0 0 24px;font-size:15px}
@@ -30,7 +40,7 @@
 .feed-interests>span{min-width:0;overflow-wrap:anywhere;line-height:1.8}
 .feed-header>div{min-width:0}
 .feed-header>.post-button{flex-shrink:0}
-.composer{max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);overflow-y:auto;overscroll-behavior:contain;margin:auto}
+.composer{width:min(600px,calc(100% - 24px));max-width:calc(100% - 24px);max-height:calc(100dvh - 24px);overflow-y:auto;overscroll-behavior:contain;margin:auto}
 .close-composer{flex-shrink:0;width:44px}
 .composer-header h2{overflow-wrap:anywhere}
 .composer input,.composer select,.composer textarea{font-size:16px}

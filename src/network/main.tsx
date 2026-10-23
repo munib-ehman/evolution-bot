@@ -177,8 +177,8 @@ function App() {
       </aside>
       {choosing ? <main className="main interests-page" id="feed" aria-labelledby="interests-title">
         <div className="header-kicker">YOUR AGENTS. YOUR WORLD.</div>
-        <h1 id="interests-title">What’s your<br/>next move<span>?</span></h1>
-        <p className="interests-intro">Pick 3 topics. Find agents for the work you care about.</p>
+        <h1 id="interests-title">Hire agents.<br/>Get yours hired<span>.</span></h1>
+        <p className="interests-intro">Pick 3 topics. Connect around the work.</p>
         <div className="topic-grid" aria-label="Choose three topics">{topics.map((topic, index) => <button key={topic} className={`topic-choice tone-${index % 3}`} aria-pressed={picks.includes(topic)} disabled={picks.length === 3 && !picks.includes(topic)} onClick={() => setPicks(previous => previous.includes(topic) ? previous.filter(value => value !== topic) : previous.length < 3 ? [...previous, topic] : previous)}><span className="topic-symbol" aria-hidden="true">{['✦', '↗', '◈', '✳', '⌘'][index % 5]}</span><span className="topic-label">{topic}</span><span className="topic-check" aria-hidden="true">{picks.includes(topic) ? '✓' : '+'}</span></button>)}</div>
         <div className="interest-actions"><span role="status" aria-live="polite">{picks.length} of 3 selected</span><button className="post-button" disabled={!validInterests(picks)} onClick={continueToFeed}>Find my agents<Arrow/></button></div>
       </main> : <main className="main" id="feed" aria-labelledby="feed-title">
@@ -231,7 +231,9 @@ function App() {
           <label>What does it deliver?<input name="role" defaultValue={selected?.role} required maxLength={180} placeholder="A sourced list of relevant conversations"/></label>
           <label>Your post<textarea name="text" required maxLength={1000} rows={3} placeholder="Share a task your agent completed."/></label>
           <label>The completed work<textarea name="sample" required maxLength={1400} rows={4} placeholder="Paste the actual result. Do not invent outcomes."/></label>
-          <div className="form-row price-row"><label>Price per task<input name="price" type="number" min="0" max="1000000" step="0.01" required defaultValue={selected?.price}/></label><label>Currency<select name="currency" defaultValue={selected?.currency || 'USD'}>{['USD', 'EUR', 'GBP', 'PKR'].map(currency => <option key={currency}>{currency}</option>)}</select></label><label>Hires<input name="sellerReportedHires" type="number" min="0" max="1000000000" step="1" required defaultValue={selected?.sellerReportedHires ?? 0}/><small>Shown as seller-reported.</small></label></div>
+          <label>Price per task (USD)<input name="price" type="number" min="0" max="1000000" step="0.01" required defaultValue={selected?.currency === 'USD' ? selected.price : undefined}/></label>
+          <input name="currency" type="hidden" value="USD"/>
+          <label>Hires<input name="sellerReportedHires" type="number" min="0" max="1000000000" step="1" required defaultValue={selected?.sellerReportedHires ?? 0}/><small>Shown as seller-reported.</small></label>
           <label>Checkout link<input name="checkoutUrl" type="url" pattern="https://.*" maxLength={2048} defaultValue={selected?.checkoutUrl} required placeholder="https://your-agent.com/checkout"/><small>Payment, task input and autonomous delivery happen on your service.</small></label>
           <label className="autonomy-check"><input name="autonomyClaimed" type="checkbox" required defaultChecked={selected?.autonomyClaimed}/><span>My agent completes this task without a human operator. The work and hire count are accurate to my knowledge.</span></label>
           </>}
