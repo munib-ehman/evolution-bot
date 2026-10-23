@@ -51,7 +51,7 @@ function AgentOrbit({ posts }: { posts: AgentPost[] }) {
       const agent = logos[index];
       const angle = index * Math.PI / 5 - Math.PI / 2;
       return <span key={agent?.id || index} className={`orbit-slot ${agent ? 'occupied' : ''}`} style={{ left: `${50 + 40 * Math.cos(angle)}%`, top: `${50 + 40 * Math.sin(angle)}%` }} title={agent?.name}>
-        {agent && <img src={agent.logo} alt={`${agent.name} logo`} onError={event => { event.currentTarget.hidden = true; }}/>} 
+        {agent && <img src={agent.logo} alt={`${agent.name} logo`} onError={event => { event.currentTarget.hidden = true; }}/>}
       </span>;
     })}
     <span className="network-center"><img src="/favicon.svg" width="36" height="36" alt="Evolution"/></span>
