@@ -66,6 +66,7 @@ function App() {
     return true;
   });
   const [postKind, setPostKind] = useState<'agent' | 'request'>('agent');
+  const [requestLength, setRequestLength] = useState(0);
   const [requestsReady, setRequestsReady] = useState(!supabase);
   useEffect(() => {
     if (!supabase) return;
@@ -159,7 +160,7 @@ function App() {
 
   async function openComposer() {
     postingFlow.current = crypto.randomUUID(); formStarted.current = false; track('post_open', null, postingFlow.current);
-    setError(''); setNotice(''); setSelectedId(''); setLogoData(null); setUploading(false); uploadVersion.current++;
+    setError(''); setNotice(''); setSelectedId(''); setLogoData(null); setUploading(false); setRequestLength(0); uploadVersion.current++;
     dialog.current?.showModal();
     try { setAgents(await ownAgents(userId)); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load agents.'); }
   }
@@ -228,7 +229,7 @@ function App() {
           {loading && <p role="status">Loading your feed…</p>}
           {!loading && !feedError && feed.length === 0 && <div className="empty-feed"><h2>Agents and requests.</h2><button className="post-button" onClick={openComposer}>Create a post<Arrow/></button></div>}
           {feed.map(post => post.kind === 'request' ? <article className="post lavender request-post" key={post.id} data-post-id={post.id} aria-labelledby={`title-${post.id}`}>
-            <header className="post-header"><div className="avatar" aria-hidden="true">{post.initials}</div><div className="author"><h2>{post.owner}</h2><p>{post.category}</p></div><span className="request-badge">Agent wanted</span></header>
+            <header className="post-header"><div className="avatar" aria-hidden="true">{post.initials}</div><div className="author"><h2>{post.owner}</h2><p>{post.category}</p></div><div className="request-meta"><span className="request-badge">Agent wanted</span><strong className="request-budget">{post.budget != null ? `${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(post.budget)} USD budget` : 'Budget not set'}</strong></div></header>
             <h3 className="request-title" id={`title-${post.id}`}>{post.agent}</h3><p className="post-copy">{post.text}</p>
             <footer className="post-bottom"><a className="try" href={safeAgentUrl(post.responseUrl)!} target="_blank" rel="noopener noreferrer" onClick={() => track('response_click', post.id)}>Respond<Arrow/></a></footer>
           </article> : <article className={`post ${post.color}`} key={post.id} data-post-id={post.id} aria-labelledby={`title-${post.id}`}>
@@ -259,7 +260,8 @@ function App() {
           {postKind === 'request' ? <>
             <label>Your name<input name="owner" required maxLength={80} autoComplete="name"/></label>
             <label>What agent do you need?<input name="title" required maxLength={100} placeholder="An agent to find relevant leads"/></label>
-            <label>What should it do?<textarea name="text" required maxLength={1000} rows={4} placeholder="Describe the task and the result you need."/></label>
+            <label>Budget (USD)<input name="budget" type="number" inputMode="decimal" min="0.01" max="1000000" step="0.01" required placeholder="150"/><small>Your total budget for this task.</small></label>
+            <label>What should it do?<textarea name="text" required minLength={80} maxLength={600} rows={4} onChange={event => setRequestLength(event.target.value.length)} placeholder="Describe the task, useful inputs and the result you need."/><small>{requestLength}/600 characters · minimum 80. Keep it specific and focused.</small></label>
             <label>Where can builders respond?<input name="responseUrl" type="url" pattern="https://.*" maxLength={2048} required placeholder="https://your-contact-page.com"/><small>Public link to your contact page or profile. Replies happen there.</small></label>
           </> : <>
           <div className="form-row"><label>Agent name<input name="agent" defaultValue={selected?.agent} required maxLength={60}/></label><label>Built by<input name="owner" defaultValue={selected?.owner} required maxLength={80} autoComplete="name"/></label></div>

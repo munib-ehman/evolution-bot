@@ -1,6 +1,7 @@
 export interface AgentPost {
   kind?: 'agent' | 'request';
   responseUrl?: string;
+  budget?: number | null;
   category?: string | null;
   id: string;
   agent: string;

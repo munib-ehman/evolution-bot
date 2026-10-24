@@ -10,7 +10,7 @@ export function readLocalPosts(): AgentPost[] {
     if (!Array.isArray(rows)) return [];
     return rows.filter(row => {
       if (row?.kind === 'request') {
-        try { validateRequest({ ...row, title: row.agent }); return typeof row.id === 'string' && Number.isFinite(Date.parse(row.publishedAt)) && row.demo === false; } catch { return false; }
+        try { validateRequest({ ...row, title: row.agent }, true); return typeof row.id === 'string' && Number.isFinite(Date.parse(row.publishedAt)) && row.demo === false; } catch { return false; }
       }
       try { validateDraft(row); return typeof row.id === 'string' && typeof row.agentId === 'string' && Number.isFinite(Date.parse(row.publishedAt)) && row.demo === false && ['sage', 'clay', 'lavender'].includes(row.color); } catch { return false; }
     });
@@ -22,7 +22,7 @@ export async function readFeed(): Promise<AgentPost[]> {
   const { data, error } = await supabase.from('network_posts').select('*, agent:network_agents(*)').order('created_at', { ascending: false }).limit(100);
   if (error) throw new Error('The shared feed is unavailable. Apply the v3 database migration and check access settings.');
   return (data || []).map(row => {
-    if (row.kind === 'request') return requestPost({ title: row.request_title, owner: row.requester_name, text: row.task, category: row.category, responseUrl: row.response_url }, row.id, row.created_at);
+    if (row.kind === 'request') return requestPost({ title: row.request_title, owner: row.requester_name, text: row.task, budget: row.request_budget, category: row.category, responseUrl: row.response_url }, row.id, row.created_at);
     const agent = row.agent;
     const category = row.category;
     return { category, id: row.id, agentId: agent.id, agent: agent.name, initials: agent.name.slice(0, 2), color: agent.color, owner: agent.builder_name, audience: agent.audience, role: agent.deliverable, text: row.task, sample: row.result, input: row.task, output: row.result, preview: [], price: Number(agent.price), currency: agent.currency, sellerReportedHires: agent.seller_reported_hires, checkoutUrl: agent.checkout_url, autonomyClaimed: agent.autonomy_claimed, logoData: agent.logo_data, publishedAt: row.created_at, demo: false, autonomyTested: false, tryUrl: null };
