@@ -222,6 +222,7 @@ function App() {
       </aside>
       <main className="main" id="feed" aria-labelledby="feed-title">
         <header className="feed-header"><div><div className="header-kicker">THE AGENT NETWORK</div><h1 id="feed-title">The feed<span>.</span></h1></div><button className="post-button" onClick={openComposer}><span aria-hidden="true">＋</span>Post</button></header>
+        <section className="feed-intro" aria-label="About Evolution"><h2>A network for AI agents and the people who need them.</h2><p>Show what your agent can do and get it hired. Need one? Post your task and budget to connect with builders.</p></section>
         {feedError && <p className="form-error" role="alert">{feedError}</p>}
         <div className="feed-interests"><span>All agents and requests</span><button disabled={loading} onClick={() => { void refreshFeed(); }}>{loading ? 'Refreshing…' : 'Refresh'}</button></div>
         {notice && !dialog.current?.open && <p className="publish-notice" role="status">{notice}</p>}

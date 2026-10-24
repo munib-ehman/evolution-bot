@@ -3,6 +3,9 @@
 .sidebar{min-width:0;max-height:100dvh;overflow-y:auto}
 .posts,.post,.composer form,.composer fieldset,.form-row,.analytics-grid{min-width:0;max-width:100%}
 .composer input[type=hidden]{display:none}
+.feed-intro{margin:20px 0 24px;padding:20px;border:1px solid var(--line);border-left:3px solid var(--purple);border-radius:14px;min-width:0}
+.feed-intro h2{font-size:clamp(18px,2.3vw,23px);line-height:1.4;letter-spacing:-.4px;margin:0 0 8px;overflow-wrap:anywhere}
+.feed-intro p{font-size:14px;line-height:1.7;color:var(--muted);margin:0;overflow-wrap:anywhere}
 .request-meta{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;min-width:0;margin-left:auto}
 .request-budget{font-size:16px;line-height:1.4;color:inherit;background:transparent;border:2px solid var(--purple);border-radius:10px;padding:8px 12px;overflow-wrap:anywhere}
 @media(max-width:560px){.request-post .post-header{flex-wrap:wrap}.request-meta{width:100%;justify-content:flex-start;margin-left:0}.request-budget{font-size:15px}}
