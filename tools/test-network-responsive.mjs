@@ -11,7 +11,9 @@ for (const width of [1000, 760, 560, 350]) assert(media.some(query => query.incl
 assert(media.some(query => query.includes('max-height:760px')));
 assert(media.some(query => query.includes('orientation:landscape')));
 assert(source.includes("import './responsive.css'"));
-assert(source.includes('className="topic-label"'));
+assert(source.includes('sortedPosts(publicPosts(published))'));
+assert(!source.includes('Change topics'));
+assert(!source.includes('Pick 3 topics'));
 const declarations = selector => {
   const result = {};
   sheet.walkRules(selector, rule => rule.walkDecls(declaration => { result[declaration.prop] = declaration.value; }));

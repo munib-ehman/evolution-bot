@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { topics, validInterests, readInterests, matchingPosts } from '../src/network/topics.mjs';
+import { topics, validInterests, readInterests, matchingPosts, publicPosts } from '../src/network/topics.mjs';
 import { validateDraft } from '../src/network/model.mjs';
 
 assert.equal(topics.length, 15);
@@ -16,7 +16,9 @@ assert.deepEqual(readInterests({ getItem() { throw new Error('blocked'); } }), [
 const posts = [{ id: 'match', category: 'Sales', demo: false }, { id: 'other', category: 'Design', demo: false }, { id: 'demo', category: 'Sales', demo: true }, { id: 'legacy', demo: false }];
 assert.deepEqual(matchingPosts(posts, picks).map(post => post.id), ['match']);
 assert.deepEqual(matchingPosts(posts, []), []);
+assert.deepEqual(publicPosts(posts).map(post => post.id), ['match', 'other', 'legacy']);
+assert.deepEqual(publicPosts([...posts, { id: 'request', kind: 'request', category: 'Development', demo: false }]).map(post => post.id), ['match', 'other', 'legacy', 'request']);
 const draft = { agent: 'Agent', owner: 'Seller', audience: 'Founders', role: 'Brief', text: 'Task', sample: 'Result', price: 10, currency: 'USD', sellerReportedHires: 0, checkoutUrl: 'https://example.com', autonomyClaimed: true, category: 'Sales' };
 assert.equal(validateDraft(draft).category, 'Sales');
 assert.throws(() => validateDraft({ ...draft, category: 'Unknown' }));
-console.log('PASS: fifteen topics, exactly three unique choices, persistence resilience, matching-only feed and category validation.');
+console.log('PASS: topic validation, optional future matching, public feed across all categories and requests, no demo listings.');

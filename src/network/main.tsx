@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
-import { topics, readInterests, matchingPosts, validInterests } from './topics.mjs';
+import { topics, publicPosts } from './topics.mjs';
 import { supabase, sendMagicLink } from '../lib/auth';
 import { canHire, reportedHires, recordHireClick, safeAgentUrl, safeLogo, sortedPosts, type AgentPost } from './model.mjs';
 import { ownAgents, publishPost, publishRequest, readFeed } from './store';
@@ -76,10 +76,6 @@ function App() {
   useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; }, [dark]);
   const [published, setPublished] = useState<AgentPost[]>([]);
   const [loading, setLoading] = useState(true);
-  const [interests, setInterests] = useState(() => readInterests(window.localStorage));
-  const [picks, setPicks] = useState(interests);
-  const [choosing, setChoosing] = useState(!validInterests(interests));
-  const [preferenceError, setPreferenceError] = useState('');
   const [userId, setUserId] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentPost[]>([]);
   const [selectedId, setSelectedId] = useState('');
@@ -98,13 +94,31 @@ function App() {
   const validationRecorded = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const form = useRef<HTMLFormElement>(null);
-  const feed = sortedPosts(matchingPosts(published, interests));
+  const feed = sortedPosts(publicPosts(published));
   const selected = agents.find(agent => agent.agentId === selectedId);
   useEffect(() => setAnalyticsPosts(published.filter(post => !post.demo)), [published]);
 
+  const loadVersion = useRef(0);
+  const refreshFeed = useCallback(async () => {
+    const version = ++loadVersion.current;
+    setLoading(true);
+    try {
+      const rows = await readFeed();
+      if (version === loadVersion.current) { setPublished(rows); setFeedError(''); }
+    } catch (reason) {
+      if (version === loadVersion.current) setFeedError(reason instanceof Error ? reason.message : 'Could not refresh the feed.');
+    } finally { if (version === loadVersion.current) setLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    void refreshFeed();
+    const onFocus = () => { void refreshFeed(); };
+    window.addEventListener('focus', onFocus);
+    return () => { loadVersion.current++; window.removeEventListener('focus', onFocus); };
+  }, [refreshFeed]);
+
   useEffect(() => {
     let active = true;
-    readFeed().then(rows => { if (active) setPublished(rows); }).catch(reason => { if (active) setFeedError(reason.message); }).finally(() => { if (active) setLoading(false); });
     if (!supabase) return () => { active = false; };
     supabase.auth.getSession().then(({ data }) => { if (active) { setUserId(data.session?.user.id ?? null); setAnalyticsActor(data.session?.user.id ?? null); } });
     const { data } = supabase.auth.onAuthStateChange((event, session) => { setUserId(session?.user.id ?? null); setAnalyticsActor(session?.user.id ?? null); if (event === 'SIGNED_IN' && session?.user) track('login_success'); });
@@ -112,12 +126,12 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (analyticsAllowed !== true || choosing) return;
+    if (analyticsAllowed !== true) return;
     track('feed_view'); void flushEvents();
     const online = () => { void flushEvents(); };
     window.addEventListener('online', online);
     return () => window.removeEventListener('online', online);
-  }, [analyticsAllowed, choosing]);
+  }, [analyticsAllowed]);
 
   useEffect(() => {
     if (analyticsAllowed !== true || !('IntersectionObserver' in window)) return;
@@ -137,7 +151,7 @@ function App() {
     const observe = () => { observer.disconnect(); timers.forEach(timer => clearTimeout(timer)); timers.clear(); if (document.visibilityState === 'visible') elements.filter(element => !seen.has(element)).forEach(element => observer.observe(element)); };
     observe(); document.addEventListener('visibilitychange', observe);
     return () => { observer.disconnect(); timers.forEach(timer => clearTimeout(timer)); document.removeEventListener('visibilitychange', observe); };
-  }, [analyticsAllowed, published, interests, choosing]);
+  }, [analyticsAllowed, published]);
 
   function chooseAnalytics(allow: boolean) { setConsent(allow); setAnalyticsAllowed(allow); }
   function formChanged() { if (!formStarted.current) { formStarted.current = true; track('form_start', null, postingFlow.current); } }
@@ -197,13 +211,6 @@ function App() {
     try { recordHireClick(window.localStorage, post.id); } catch {}
   }
 
-  function continueToFeed() {
-    if (!validInterests(picks)) return;
-    try { localStorage.setItem('evolution:network:interests:v1', JSON.stringify(picks)); setPreferenceError(''); }
-    catch { setPreferenceError('Your choices apply for this visit. Browser storage is unavailable.'); }
-    setInterests([...picks]); setChoosing(false); window.scrollTo(0, 0);
-  }
-
   return <>
     <a className="skip" href="#feed">Skip to feed</a>
     <div className="shell">
@@ -212,21 +219,14 @@ function App() {
         <a className="brand" href="#" aria-label="Evolution home"><img src="/favicon.svg" width="34" height="34" alt=""/>Evolution<span className="brand-period">.</span></a>
         <div className="sidebar-note"><p>Hire an agent.<br/><em>Get yours hired.</em></p><AgentOrbit posts={published}/></div>
       </aside>
-      {choosing ? <main className="main interests-page" id="feed" aria-labelledby="interests-title">
-        <div className="header-kicker">YOUR AGENTS. YOUR WORLD.</div>
-        <h1 id="interests-title">Hire agents.<br/>Get yours hired<span>.</span></h1>
-        <p className="interests-intro">Pick 3 topics. Connect around the work.</p>
-        <div className="topic-grid" aria-label="Choose three topics">{topics.map((topic, index) => <button key={topic} className={`topic-choice tone-${index % 3}`} aria-pressed={picks.includes(topic)} disabled={picks.length === 3 && !picks.includes(topic)} onClick={() => setPicks(previous => previous.includes(topic) ? previous.filter(value => value !== topic) : previous.length < 3 ? [...previous, topic] : previous)}><span className="topic-symbol" aria-hidden="true">{['✦', '↗', '◈', '✳', '⌘'][index % 5]}</span><span className="topic-label">{topic}</span><span className="topic-check" aria-hidden="true">{picks.includes(topic) ? '✓' : '+'}</span></button>)}</div>
-        <div className="interest-actions"><span role="status" aria-live="polite">{picks.length} of 3 selected</span><button className="post-button" disabled={!validInterests(picks)} onClick={continueToFeed}>Find my agents<Arrow/></button></div>
-      </main> : <main className="main" id="feed" aria-labelledby="feed-title">
+      <main className="main" id="feed" aria-labelledby="feed-title">
         <header className="feed-header"><div><div className="header-kicker">THE AGENT NETWORK</div><h1 id="feed-title">The feed<span>.</span></h1></div><button className="post-button" onClick={openComposer}><span aria-hidden="true">＋</span>Post</button></header>
         {feedError && <p className="form-error" role="alert">{feedError}</p>}
-        <div className="feed-interests"><span>{interests.join(' · ')}</span><button onClick={() => { setPicks([...interests]); setChoosing(true); }}>Change topics</button></div>
-        {preferenceError && <p role="status">{preferenceError}</p>}
+        <div className="feed-interests"><span>All agents and requests</span><button disabled={loading} onClick={() => { void refreshFeed(); }}>{loading ? 'Refreshing…' : 'Refresh'}</button></div>
         {notice && !dialog.current?.open && <p className="publish-notice" role="status">{notice}</p>}
         <div className="posts">
           {loading && <p role="status">Loading your feed…</p>}
-          {!loading && !feedError && feed.length === 0 && <div className="empty-feed"><h2>Agents and requests. Your topics.</h2><button className="post-button" onClick={openComposer}>Create a post<Arrow/></button></div>}
+          {!loading && !feedError && feed.length === 0 && <div className="empty-feed"><h2>Agents and requests.</h2><button className="post-button" onClick={openComposer}>Create a post<Arrow/></button></div>}
           {feed.map(post => post.kind === 'request' ? <article className="post lavender request-post" key={post.id} data-post-id={post.id} aria-labelledby={`title-${post.id}`}>
             <header className="post-header"><div className="avatar" aria-hidden="true">{post.initials}</div><div className="author"><h2>{post.owner}</h2><p>{post.category}</p></div><span className="request-badge">Agent wanted</span></header>
             <h3 className="request-title" id={`title-${post.id}`}>{post.agent}</h3><p className="post-copy">{post.text}</p>
@@ -244,7 +244,7 @@ function App() {
           </article>)}
         </div>
         <footer className="feed-end"><span/>You’re all caught up<span/><button className="analytics-link" onClick={() => { setAnalyticsVersion(value => value + 1); analyticsDialog.current?.showModal(); }}>Analytics & privacy</button></footer>
-      </main>}
+      </main>
     {analyticsAllowed === null && <div className="analytics-banner" role="region" aria-label="Usage analytics choice"><p>Help improve Evolution with basic usage analytics?</p><button onClick={() => chooseAnalytics(true)}>Allow</button><button onClick={() => chooseAnalytics(false)}>No thanks</button><button onClick={() => { setAnalyticsVersion(value => value + 1); analyticsDialog.current?.showModal(); }}>Details</button></div>}
     </div>
     <dialog ref={dialog} className="composer" aria-labelledby="composer-title" onClose={() => track('form_close', null, postingFlow.current)} onClick={event => { if (event.target === dialog.current && !busy) dialog.current.close(); }}>

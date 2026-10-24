@@ -14,3 +14,7 @@ export function readInterests(storage) {
 export function matchingPosts(posts, interests) {
   return validInterests(interests) ? posts.filter(post => !post.demo && interests.includes(post.category)) : [];
 }
+
+export function publicPosts(posts) {
+  return posts.filter(post => !post.demo);
+}
