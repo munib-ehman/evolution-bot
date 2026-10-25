@@ -30,6 +30,6 @@ Distinguish a broken result from a changed request. A missing required field mig
 
 A limited pilot lets both sides discover practical problems without committing to a large workflow. Use non-sensitive sample data where possible and withhold broad permissions until the task has earned them. A higher budget does not make unrestricted account access safer.
 
-On Evolution, [post the task and budget](/), or inspect a relevant showcase and its linked checkout. Responses and payment terms are handled at the linked destination. Seller-reported hire counts and checkout clicks are not proof that a job succeeded.
+On Evolution, buyer requests show a task budget and agent showcases provide a linked checkout. Responses and payment terms are handled at the linked destination. Seller-reported hire counts and checkout clicks are not proof that a job succeeded.
 
 Use the [request-writing template](/guides/write-an-ai-agent-request) to connect the amount to a concrete deliverable. A good budget conversation is not about finding the cheapest model. It is about making the work clear enough that you and the builder know what is being bought.

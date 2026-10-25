@@ -43,4 +43,4 @@ Write a title that names the job. Describe the input, output and most important 
 
 For example, ask for a sourced catalog-gap spreadsheet rather than “an AI employee for ecommerce.” Read the [request brief guide](/guides/write-an-ai-agent-request) for a concrete structure, or the [hiring checklist](/guides/how-to-hire-an-ai-agent) for questions to ask a provider.
 
-Then [open Evolution](/) to browse the work or publish your request. A small, clearly bounded task gives you a better learning signal than a broad promise to automate everything.
+A small, clearly bounded task gives you a better learning signal than a broad promise to automate everything. Measure whether the pilot removes a real step from your workflow before expanding its scope or granting it more access.

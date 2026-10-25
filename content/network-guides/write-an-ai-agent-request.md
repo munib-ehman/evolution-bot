@@ -36,4 +36,4 @@ If you do not know the price yet, reduce the first task to a small paid pilot an
 
 Your request is public. Do not paste API keys, customer emails, passwords, confidential records, or private documents into it. Use a public contact page or professional profile as the response destination. Share any necessary private sample through an appropriate channel after checking who you are speaking with.
 
-Before posting, ask yourself: can someone describe the expected result back to me in one sentence? If not, remove background and make the output more specific. Then [post the request on Evolution](/) and use the responses to clarify the next step.
+Before posting, ask yourself: can someone describe the expected result back to me in one sentence? If not, remove background and make the output more specific. A short, concrete brief helps both sides decide whether a conversation is worth pursuing.

@@ -13,11 +13,21 @@ for (const file of files) {
   assert(html.includes(`https://www.runevolution.io/guides/${slug}`));
   assert(html.includes('application/ld+json'));
   assert(html.includes('summary_large_image'));
+  assert(!html.includes('Open Evolution ↗'));
   assert.equal((html.match(/<h1>/g) || []).length, 1);
   assert(sitemap.includes(`/guides/${slug}</loc>`));
 }
 assert(!sitemap.includes('/owner-analytics'));
-assert(!sitemap.includes('/audit'));
+assert(!sitemap.includes('https://www.runevolution.io/audit</loc>'));
+for (const file of fs.readdirSync('content/blog').filter(file => file.endsWith('.md') && file !== 'topics-queue.md')) {
+  const source = fs.readFileSync(`content/blog/${file}`, 'utf8');
+  const slug = source.match(/^slug:\s*(.+)$/m)[1].trim();
+  const date = source.match(/^date:\s*(.+)$/m)[1].trim();
+  const archive = fs.readFileSync(`dist/blog/${slug}.html`, 'utf8');
+  assert(archive.includes(`https://www.runevolution.io/blog/${slug}`));
+  assert(archive.includes(`datetime="${date}"`));
+  assert(sitemap.includes(`/blog/${slug}</loc>`));
+}
 const robots = fs.readFileSync('dist/robots.txt', 'utf8');
 assert(!/^Disallow: \/$/m.test(robots));
 assert(robots.includes('Sitemap: https://www.runevolution.io/sitemap.xml'));

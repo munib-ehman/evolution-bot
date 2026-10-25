@@ -90,8 +90,12 @@ if (fs.existsSync('dist/index.html')) {
     assert(!html.includes('/src/network/'));
     assert(!html.includes('shopify-api-key'));
   }
-  for (const file of ['blog', 'audit.html', 'pricing.html', 'models', 'products.json']) assert(!fs.existsSync('dist/' + file));
-  assert.equal(fs.readFileSync('dist/robots.txt', 'utf8').trim(), 'User-agent: *\nDisallow: /');
+  for (const file of ['audit.html', 'pricing.html', 'models', 'products.json']) assert(!fs.existsSync('dist/' + file));
+  assert(fs.existsSync('dist/blog/index.html'));
+  const robots = fs.readFileSync('dist/robots.txt', 'utf8');
+  assert(robots.includes('Allow: /'));
+  assert(robots.includes('Disallow: /owner-analytics'));
+  assert(!/^Disallow: \/$/m.test(robots));
   assert.deepEqual(fs.readFileSync('dist/favicon.svg'), fs.readFileSync('public/favicon.svg'));
 }
 console.log('PASS: listing integrity, demo safeguards, autonomous-entry gate, safe URLs, feed order, optional bounded local click events, no automatic deployment.');
