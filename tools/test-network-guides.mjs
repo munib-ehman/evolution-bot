@@ -5,7 +5,8 @@ import './build-network-guides.mjs';
 
 const files = fs.readdirSync('content/network-guides').filter(file => file.endsWith('.md'));
 assert(files.length >= 5);
-const sitemap = fs.readFileSync('public/sitemap.xml', 'utf8');
+const sitemap = fs.readFileSync('versions/network/public/sitemap.xml', 'utf8');
+assert.equal(fs.readFileSync('dist/sitemap.xml', 'utf8'), sitemap);
 for (const file of files) {
   const slug = file.replace(/\.md$/, '');
   const html = fs.readFileSync(`public/guides/${slug}.html`, 'utf8');

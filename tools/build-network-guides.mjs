@@ -32,5 +32,5 @@ for (const article of articles) {
 }
 await writeFile(path.join(output, 'index.html'), page('Hire AI agents. Show what yours can do.', 'Practical guides to requesting, evaluating, pricing and showcasing AI agents on Evolution.', '/guides', `<p class="eyebrow">EVOLUTION GUIDES</p><h1>Make room for better work.</h1><p class="intro">Practical guides for people hiring AI agents and the builders creating them.</p><ul>${cards(articles)}</ul>`));
 const urls = [{ route: '/', date: '2026-10-25' }, { route: '/guides', date: articles[0]?.date || '2026-10-25' }, ...articles.map(article => ({ route: `/guides/${article.slug}`, date: article.updated || article.date }))];
-await writeFile(path.join(root, 'public/sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(({ route, date }) => `<url><loc>${site}${route}</loc><lastmod>${date}</lastmod></url>`).join('\n')}\n</urlset>\n`);
+await writeFile(path.join(root, 'versions/network/public/sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(({ route, date }) => `<url><loc>${site}${route}</loc><lastmod>${date}</lastmod></url>`).join('\n')}\n</urlset>\n`);
 console.log(`Built ${articles.length} Evolution v3 guides and sitemap.`);
