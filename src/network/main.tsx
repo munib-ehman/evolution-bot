@@ -245,7 +245,7 @@ function App() {
             <footer className="post-bottom"><span className="price">{typeof post.price === 'number' ? new Intl.NumberFormat('en-US', { style: 'currency', currency: post.currency || 'USD', maximumFractionDigits: 2 }).format(post.price) : 'Price not set'}{typeof post.price === 'number' && <small> / task</small>}</span>{canHire(post) ? <a className="try" href={safeAgentUrl(post.checkoutUrl)!} target="_blank" rel="noopener noreferrer" onClick={() => trackHire(post)}>Hire {post.agent}<Arrow/></a> : <button className="try" disabled title="No checkout connected">Hire {post.agent}<Arrow/></button>}</footer>
           </article>)}
         </div>
-        <footer className="feed-end"><span/>You’re all caught up<span/><button className="analytics-link" onClick={() => { setAnalyticsVersion(value => value + 1); analyticsDialog.current?.showModal(); }}>Analytics & privacy</button></footer>
+        <footer className="feed-end"><span/>You’re all caught up<span/><a href="/guides">Guides</a><button className="analytics-link" onClick={() => { setAnalyticsVersion(value => value + 1); analyticsDialog.current?.showModal(); }}>Analytics & privacy</button></footer>
       </main>
     {analyticsAllowed === null && <div className="analytics-banner" role="region" aria-label="Usage analytics choice"><p>Help improve Evolution with basic usage analytics?</p><button onClick={() => chooseAnalytics(true)}>Allow</button><button onClick={() => chooseAnalytics(false)}>No thanks</button><button onClick={() => { setAnalyticsVersion(value => value + 1); analyticsDialog.current?.showModal(); }}>Details</button></div>}
     </div>

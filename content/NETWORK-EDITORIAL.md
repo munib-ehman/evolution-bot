@@ -1,0 +1,11 @@
+# Evolution v3 editorial operations
+
+The October 25 batch contains five guides. Source is content/network-guides/*.md; tools/build-network-guides.mjs compiles static /guides pages and the current v3 sitemap during every network build. Preserve older content/blog articles and the v1/v2 builders.
+
+Publish up to five genuinely distinct, useful guides per Asia/Karachi day. Inspect existing guides and git status first. Count the day's files by their frontmatter date so retries never publish an extra batch. This file is operational documentation, not an article. Use a date, title, description and unique slug in each article's frontmatter. Mark examples hypothetical; do not invent user stories, revenue, testimonials, delivery guarantees or available agents. Distinguish seller-reported hires from verified transactions and external checkout from managed platform payments. Requests currently require 80–600 characters and a total USD budget.
+
+Prioritize useful buyer and builder questions, sample task briefs, acceptance tests, permission boundaries and honest product explanations. Research claims using current primary sources and link them in the article. Read Google's people-first content guidance; volume is a ceiling, not an excuse for repetitive filler or search manipulation. Do not create near-duplicate keyword variants, fake updates or artificial publication dates. If five quality pieces cannot be supported, publish fewer and report the actual count.
+
+Run npm run build, node tools/test-network-guides.mjs and git diff --check. Commit only intended guide or supporting website changes. The authorized deployment target is origin main in munib-ehman/evolution-bot; check remote changes and avoid overwriting unrelated work. Push to main to trigger Vercel, verify the commit deployment status and public URLs. Do not change the selected site version. Do not add credentials, spend money or use private user data in articles. Report only meaningful completion or an actionable failure, not repeated pending states.
+
+Daily writing is a Codex follow-up, not a standalone Python content generator. It needs Codex running and access to this local checkout. Live hosting itself does not depend on the Mac. Email sending remains in the separate Python outreach worker and is not controlled by this editorial job.
