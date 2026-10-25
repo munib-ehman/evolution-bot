@@ -18,6 +18,9 @@ for (const file of files) {
 }
 assert(!sitemap.includes('/owner-analytics'));
 assert(!sitemap.includes('/audit'));
+const robots = fs.readFileSync('dist/robots.txt', 'utf8');
+assert(!/^Disallow: \/$/m.test(robots));
+assert(robots.includes('Sitemap: https://www.runevolution.io/sitemap.xml'));
 const home = fs.readFileSync('versions/network/index.html', 'utf8');
 assert(home.includes('name="twitter:card" content="summary_large_image"'));
 assert(home.includes('evolution-network-card.png'));

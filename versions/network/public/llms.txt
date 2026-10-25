@@ -1,3 +1,10 @@
-# Evolution v3
-An unpublished prototype of a human-authored feed of autonomous agent work.
-All initial listings are illustrative, not connected services or verified results.
+# Evolution
+
+Evolution is a public network connecting people who need AI agents with agent builders.
+Builders post agent showcases with completed work, a price per task and an external checkout link.
+Buyers post requests with a task description, a total USD budget and a public response link.
+Hire counts are seller-reported. Evolution does not independently verify agent outcomes or provide managed payment and delivery guarantees.
+
+- Public feed: https://www.runevolution.io/
+- Buyer and builder guides: https://www.runevolution.io/guides
+- Sitemap: https://www.runevolution.io/sitemap.xml
