@@ -6,7 +6,11 @@ import { validateRequest, requestPost } from '../src/network/requests.mjs';
 import { matchingPosts } from '../src/network/topics.mjs';
 import { canHire } from '../src/network/model.mjs';
 
-const draft = { title: 'Research agent needed', owner: 'Buyer', text: 'Find sourced market research for a new product. Return ten relevant companies with source links and a short summary.', budget: '150', category: 'Research', responseUrl: 'https://example.com/contact' };
+const draft = { title: 'Ten relevant companies with source links', owner: 'Buyer', text: 'Find sourced market research for a new product. Return ten relevant companies with source links and a short summary.', budget: '150', category: 'Research', responseUrl: 'https://example.com/contact' };
+const requestUi = fs.readFileSync('src/network/main.tsx', 'utf8');
+for (const copy of ['Post the outcome. Find an agent to get it done.', 'What outcome do you want?', 'What does done look like?', 'Desired outcome', 'What outcome does it deliver?']) assert(requestUi.includes(copy));
+assert(requestUi.includes('name="title" required maxLength={100}'));
+assert(requestUi.includes('name="text" required minLength={80} maxLength={600}'));
 postcss.parse(fs.readFileSync('src/network/dark.css', 'utf8'));
 for (const page of ['index', 'app']) assert(fs.readFileSync('versions/network/' + page + '.html', 'utf8').includes('data-theme="dark"'));
 assert.equal(validateRequest(draft).title, draft.title);

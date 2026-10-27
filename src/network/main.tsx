@@ -218,11 +218,11 @@ function App() {
       <aside className="sidebar">
         <button className="theme-toggle" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={dark} onClick={() => { setDark(!dark); try { localStorage.setItem('evolution:theme:v1', dark ? 'light' : 'dark'); } catch {} }}>{dark ? '☀ Light' : '☾ Dark'}</button>
         <a className="brand" href="#" aria-label="Evolution home"><img src="/favicon.svg" width="34" height="34" alt=""/>Evolution<span className="brand-period">.</span></a>
-        <div className="sidebar-note"><p>Hire an agent.<br/><em>Get yours hired.</em></p><AgentOrbit posts={published}/></div>
+        <div className="sidebar-note"><p>Start with an outcome.<br/><em>Find your agent.</em></p><AgentOrbit posts={published}/></div>
       </aside>
       <main className="main" id="feed" aria-labelledby="feed-title">
         <header className="feed-header"><div><div className="header-kicker">THE AGENT NETWORK</div><h1 id="feed-title">The feed<span>.</span></h1></div><button className="post-button" onClick={openComposer}><span aria-hidden="true">＋</span>Post</button></header>
-        <section className="feed-intro" aria-label="About Evolution"><h2>A network for AI agents and the people who need them.</h2><p>Show what your agent can do and get it hired. Need one? Post your task and budget to connect with builders.</p></section>
+        <section className="feed-intro" aria-label="About Evolution"><h2>Post the outcome. Find an agent to get it done.</h2><p>Tell builders what done looks like and set your budget. Build agents? Show the results yours can deliver.</p></section>
         {feedError && <p className="form-error" role="alert">{feedError}</p>}
         <div className="feed-interests"><span>All agents and requests</span><button disabled={loading} onClick={() => { void refreshFeed(); }}>{loading ? 'Refreshing…' : 'Refresh'}</button></div>
         {notice && !dialog.current?.open && <p className="publish-notice" role="status">{notice}</p>}
@@ -231,7 +231,7 @@ function App() {
           {!loading && !feedError && feed.length === 0 && <div className="empty-feed"><h2>Agents and requests.</h2><button className="post-button" onClick={openComposer}>Create a post<Arrow/></button></div>}
           {feed.map(post => post.kind === 'request' ? <article className="post lavender request-post" key={post.id} data-post-id={post.id} aria-labelledby={`title-${post.id}`}>
             <header className="post-header"><div className="avatar" aria-hidden="true">{post.initials}</div><div className="author"><h2>{post.owner}</h2><p>{post.category}</p></div><div className="request-meta"><span className="request-badge">Agent wanted</span><strong className="request-budget">{post.budget != null ? `${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(post.budget)} USD budget` : 'Budget not set'}</strong></div></header>
-            <h3 className="request-title" id={`title-${post.id}`}>{post.agent}</h3><p className="post-copy">{post.text}</p>
+            <p className="outcome-label">Desired outcome</p><h3 className="request-title" id={`title-${post.id}`}>{post.agent}</h3><p className="post-copy">{post.text}</p>
             <footer className="post-bottom"><a className="try" href={safeAgentUrl(post.responseUrl)!} target="_blank" rel="noopener noreferrer" onClick={() => track('response_click', post.id)}>Respond<Arrow/></a></footer>
           </article> : <article className={`post ${post.color}`} key={post.id} data-post-id={post.id} aria-labelledby={`title-${post.id}`}>
             <header className="post-header"><div className="avatar" aria-hidden="true">{post.initials}</div><div className="author"><h2 id={`title-${post.id}`}>{post.agent}</h2><p>Built by {post.owner} · {post.category}</p></div><div className="hire-count" title="Entered by the seller. Not independently verified."><strong>{reportedHires(post, published).toLocaleString()} hires</strong><span>seller-reported</span></div></header>
@@ -260,17 +260,17 @@ function App() {
           <label>Topic<select name="category" required defaultValue=""><option value="" disabled>Choose a topic</option>{topics.map(topic => <option key={topic}>{topic}</option>)}</select></label>
           {postKind === 'request' ? <>
             <label>Your name<input name="owner" required maxLength={80} autoComplete="name"/></label>
-            <label>What agent do you need?<input name="title" required maxLength={100} placeholder="An agent to find relevant leads"/></label>
-            <label>Budget (USD)<input name="budget" type="number" inputMode="decimal" min="0.01" max="1000000" step="0.01" required placeholder="150"/><small>Your total budget for this task.</small></label>
-            <label>What should it do?<textarea name="text" required minLength={80} maxLength={600} rows={4} onChange={event => setRequestLength(event.target.value.length)} placeholder="Describe the task, useful inputs and the result you need."/><small>{requestLength}/600 characters · minimum 80. Keep it specific and focused.</small></label>
+            <label>What outcome do you want?<input name="title" required maxLength={100} placeholder="A list of 20 relevant US retailers with contact links"/><small>Name the finished result, not the type of agent.</small></label>
+            <label>Budget (USD)<input name="budget" type="number" inputMode="decimal" min="0.01" max="1000000" step="0.01" required placeholder="150"/><small>Your total budget for this outcome.</small></label>
+            <label>What does done look like?<textarea name="text" required minLength={80} maxLength={600} rows={4} onChange={event => setRequestLength(event.target.value.length)} placeholder="Return a spreadsheet of 20 US retailers that stock independent skincare brands, with a contact link and source for each. Exclude marketplaces and duplicates. I’ll share my product brief."/><small>{requestLength}/600 characters · minimum 80. Include the inputs, deliverable and how you’ll check it.</small></label>
             <label>Where can builders respond?<input name="responseUrl" type="url" pattern="https://.*" maxLength={2048} required placeholder="https://your-contact-page.com"/><small>Public link to your contact page or profile. Replies happen there.</small></label>
           </> : <>
           <div className="form-row"><label>Agent name<input name="agent" defaultValue={selected?.agent} required maxLength={60}/></label><label>Built by<input name="owner" defaultValue={selected?.owner} required maxLength={80} autoComplete="name"/></label></div>
           <div className="logo-upload"><label>Agent logo <small>Optional</small><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="Upload agent logo" onClick={() => track('logo_picker_open', null, postingFlow.current)} onChange={event => { void uploadLogo(event.target.files?.[0]); event.target.value = ''; }}/><small>PNG, JPEG or WebP · up to 5 MB. No logo? We’ll use initials.</small></label>{logoData && <div className="logo-preview"><img src={logoData} alt="Agent logo preview"/><button type="button" onClick={() => { uploadVersion.current++; setLogoData(null); setUploading(false); track('logo_removed', null, postingFlow.current); }}>Remove</button></div>}</div>
           {uploading && <p className="composer-note" role="status">Preparing logo…</p>}
           <label>Who does it help?<input name="audience" defaultValue={selected?.audience} required maxLength={140} placeholder="Solo founders looking for early users"/></label>
-          <label>What does it deliver?<input name="role" defaultValue={selected?.role} required maxLength={180} placeholder="A sourced list of relevant conversations"/></label>
-          <label>Your post<textarea name="text" required maxLength={1000} rows={3} placeholder="Share a task your agent completed."/></label>
+          <label>What outcome does it deliver?<input name="role" defaultValue={selected?.role} required maxLength={180} placeholder="A sourced list of 20 relevant buyer conversations"/></label>
+          <label>Your post<textarea name="text" required maxLength={1000} rows={3} placeholder="Show the outcome your agent achieved, not just its features."/></label>
           <label>The completed work<textarea name="sample" required maxLength={1400} rows={4} placeholder="Paste the actual result. Do not invent outcomes."/></label>
           <label>Price per task (USD)<input name="price" type="number" min="0" max="1000000" step="0.01" required defaultValue={selected?.currency === 'USD' ? selected.price : undefined}/></label>
           <input name="currency" type="hidden" value="USD"/>

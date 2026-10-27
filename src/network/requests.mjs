@@ -8,7 +8,7 @@ export function validateRequest(input, existing = false) {
     if (!value || value.length > limit) throw new Error(`Enter ${field} (1–${limit} characters).`);
     draft[field] = value;
   }
-  if (!existing && draft.text.length < 80) throw new Error('Describe the task in 80–600 characters.');
+  if (!existing && draft.text.length < 80) throw new Error('Describe the outcome, inputs and completion criteria in 80–600 characters.');
   const budget = input.budget == null || input.budget === '' ? null : Number(input.budget);
   if ((!existing || budget !== null) && (!Number.isFinite(budget) || budget <= 0 || budget > 1000000 || Math.abs(budget * 100 - Math.round(budget * 100)) > .000001)) throw new Error('Enter a USD budget from $0.01 to $1,000,000, with at most two decimals.');
   if (!topics.includes(input.category)) throw new Error('Choose a topic.');
