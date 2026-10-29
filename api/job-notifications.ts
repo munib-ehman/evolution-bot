@@ -23,6 +23,18 @@ export default async function handler(request: Request): Promise<Response> {
     return response;
   }
   try {
+    if (new URL(request.url).searchParams.get('test') === '1') {
+      if (!actor?.email || cron) return Response.json({ error: 'Owner access required' }, { status: 403 });
+      const permission = await fetch(`${base}/rpc/evolution_is_admin`, { method: 'POST', headers: { ...headers, Authorization: authorization! }, body: '{}', signal: AbortSignal.timeout(8000) });
+      if (!permission.ok || await permission.json() !== true) return Response.json({ error: 'Owner access required' }, { status: 403 });
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST', headers: { Authorization: `Bearer ${env.resendKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: env.sharedFromAddress || 'Evolution <info@runevolution.io>', to: [actor.email], subject: 'Evolution notification delivery check', text: 'This is the owner-requested delivery check for Evolution job notifications. No job or application was created and no developer or business was contacted.' }),
+        signal: AbortSignal.timeout(8000),
+      });
+      const result = await response.json() as { id?: string };
+      return Response.json(response.ok && result.id ? { accepted: true, id: result.id } : { error: `Email provider rejected delivery (${response.status})` }, { status: response.ok && result.id ? 200 : 502 });
+    }
     const mails = await (await database('rpc/evolution_claim_mail', { method: 'POST', body: JSON.stringify({ actor: actor?.id || null }) })).json() as Mail[];
     let sent = 0;
     let failed = 0;

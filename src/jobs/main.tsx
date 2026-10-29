@@ -94,12 +94,17 @@ function App() {
     return () => { active = false; };
   }, [user]);
 
-  async function notify() {
+  async function notify(test = false) {
     const { data } = await supabase!.auth.getSession();
     try {
-      const response = await fetch('/api/job-notifications', { method: 'POST', headers: { Authorization: `Bearer ${data.session?.access_token}` } });
+      const response = await fetch(`/api/job-notifications${test ? '?test=1' : ''}`, { method: 'POST', headers: { Authorization: `Bearer ${data.session?.access_token}` } });
+      if (test) {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Email delivery check failed.');
+        setNotice('Email provider accepted the test message to your owner email. Check your inbox; acceptance is not proof of inbox delivery.');
+      }
       return response.ok && response.headers.get('content-type')?.includes('application/json');
-    } catch { return false; }
+    } catch (problem) { if (test) setError(errorMessage(problem)); return false; }
   }
   async function login(email: string, role?: string, name?: string) {
     const query = new URLSearchParams(location.search);
@@ -177,7 +182,7 @@ function App() {
           </article>)}
           {!loading && !error && !jobs.some(item => item.status === 'Open') && <div className="empty"><h3>What would you like done?</h3><p>Post a recurring task for an AI developer.</p><button className="primary" onClick={() => navigate('post')}>Post a Job</button></div>}
         </section>
-      </> : action === 'admin' ? <section className="form-page admin-page"><button className="text-button back" onClick={() => navigate('board')}>← Job board</button><h1>Admin</h1>{!user ? <button className="primary" onClick={() => navigate('login')}>Login with Email</button> : !admin ? <p>Owner access required.</p> : adminData.map((rows, index) => <section key={index}><h2>{['Users', 'Jobs', 'Applications'][index]} ({rows.length})</h2><div className="admin-table"><table><thead><tr>{Object.keys(rows[0] || {}).map(key => <th key={key}>{key.replaceAll('_', ' ')}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{String(value ?? 'Not specified')}</td>)}</tr>)}</tbody></table></div></section>)}</section> : <section className="form-page"><button className="text-button back" onClick={() => navigate('board')}>← Job board</button><div className="eyebrow">EVOLUTION</div><h1>{formTitle}</h1>
+      </> : action === 'admin' ? <section className="form-page admin-page"><button className="text-button back" onClick={() => navigate('board')}>← Job board</button><h1>Admin</h1>{!user ? <button className="primary" onClick={() => navigate('login')}>Login with Email</button> : !admin ? <p>Owner access required.</p> : <><button className="secondary" disabled={busy} onClick={async () => { setBusy(true); setError(''); setNotice(''); await notify(true); setBusy(false); }}>Send test email to me</button>{adminData.map((rows, index) => <section key={index}><h2>{['Users', 'Jobs', 'Applications'][index]} ({rows.length})</h2><div className="admin-table"><table><thead><tr>{Object.keys(rows[0] || {}).map(key => <th key={key}>{key.replaceAll('_', ' ')}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{String(value ?? 'Not specified')}</td>)}</tr>)}</tbody></table></div></section>)}</>}</section> : <section className="form-page"><button className="text-button back" onClick={() => navigate('board')}>← Job board</button><div className="eyebrow">EVOLUTION</div><h1>{formTitle}</h1>
         {action === 'apply' && job && <div className="application-job"><h2>{job.title}</h2><strong>{money(job.monthly_budget)}</strong><p>{job.description}</p><span>{job.frequency || 'Frequency not specified'}</span></div>}
         {!authReady ? <p>Checking login…</p> : action === 'login' && user ? <><p>You’re signed in as {user.email}.</p><button className="primary full" onClick={() => navigate('board')}>Continue to jobs</button></> : wrongRole ? <p>This account is registered as a {account?.role}. Log out to use a different account.</p> : action === 'apply' && loading ? <p>Loading job…</p> : action === 'apply' && !job ? <p>This job is unavailable.</p> : action === 'apply' && job?.status !== 'Open' ? <p>This job is closed.</p> : action === 'apply' && applied.includes(jobId) ? <p>You have applied. The business can contact you directly by email.</p> : action === 'join' && account?.role === 'developer' ? <p>You’re registered. {account.job_notifications ? 'You’ll receive new jobs by email.' : 'New-job emails are turned off.'} <button className="text-button" onClick={() => navigate('alerts')}>Manage job emails</button></p> : <form onSubmit={submit} key={`${action}:${jobId}:${user?.id || 'guest'}`}>
           {(action === 'join' || (action === 'apply' && !account)) && <label>Name<input name="name" autoComplete="name" required minLength={1} maxLength={80} defaultValue={account?.name || user?.user_metadata.evolution_name || ''}/></label>}
