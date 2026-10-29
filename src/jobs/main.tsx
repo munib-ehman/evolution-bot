@@ -1,11 +1,15 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/auth';
 import { agentTypeForJob, formatMonthlyBudget as money, requestSummary } from './labels';
 import { requestContacts, validateContacts, type ContactFields } from './contacts';
 import { exampleRequests } from './examples';
+import { changeUsageConsent, flushUsage, trackUsage, usageActor, usageConsent } from './analytics';
+import UsagePrivacy from './UsagePrivacy';
 import './style.css';
+
+const OwnerAnalytics = lazy(() => import('./OwnerAnalytics'));
 
 type Account = { id: string; name: string; email: string; role: 'business' | 'developer'; job_notifications: boolean };
 type Job = ContactFields & { id: string; business_id: string; requester_name?: string | null; title: string; description: string; frequency: string | null; monthly_budget: number | null; status: string; created_at: string; example?: boolean };
@@ -31,6 +35,7 @@ function App() {
   const [notice, setNotice] = useState('');
   const [admin, setAdmin] = useState(false);
   const [adminData, setAdminData] = useState<Record<string, unknown>[][]>([]);
+  const [usageChoice, setUsageChoice] = useState(usageConsent);
   const [draft, setDraft] = useState<Record<string, string>>(() => {
     try { return JSON.parse(sessionStorage.getItem('evolution:job-draft') || '{}'); } catch { return {}; }
   });
@@ -40,10 +45,14 @@ function App() {
   const contacts = requestContacts(job || {});
 
   function navigate(next: Action, target = '') {
+    if (next === 'post') trackUsage('request_start');
+    if (next === 'join') trackUsage('offer_start');
+    if (next === 'login') trackUsage('login_start');
+    if (next === 'apply' && !target.startsWith('example-')) trackUsage('response_click', target);
     const query = new URLSearchParams();
     if (next !== 'board') query.set('action', next);
     if (target) query.set('job', target);
-    history.pushState(null, '', `/${query.size ? `?${query}` : ''}${next === 'apply' ? '#request-contact' : ''}`);
+    history.pushState(null, '', next === 'admin' ? '/owner-analytics' : `/${query.size ? `?${query}` : ''}${next === 'apply' ? '#request-contact' : ''}`);
     setAction(next); setJobId(target); setError(''); setNotice(''); window.scrollTo(0, 0);
   }
   useEffect(() => {
@@ -62,6 +71,29 @@ function App() {
     setLoading(false);
   }
   useEffect(() => { void loadJobs(); }, []);
+  useEffect(() => {
+    if (!authReady) return;
+    usageActor(user?.id || null);
+    if (user && usageChoice === true && action !== 'admin') trackUsage('signed_in');
+  }, [authReady, user?.id, usageChoice, action]);
+  useEffect(() => {
+    if (!authReady || usageChoice !== true || action === 'admin') return;
+    if (action === 'board') trackUsage('board_view');
+    if (action === 'apply' && job) trackUsage(job.example ? 'example_view' : 'request_open', job.id);
+    void flushUsage();
+  }, [authReady, usageChoice, action, jobId, loading]);
+  useEffect(() => {
+    if (!authReady || usageChoice !== true || action !== 'board' || loading) return;
+    const observer = new IntersectionObserver(entries => {
+      if (document.visibilityState !== 'visible') return;
+      for (const entry of entries) if (entry.isIntersecting && entry.intersectionRatio >= .4) {
+        const id = (entry.target as HTMLElement).dataset.requestId;
+        if (id && !id.startsWith('example-')) trackUsage('request_impression', id);
+      }
+    }, { threshold: .4 });
+    document.querySelectorAll('.job-card[data-request-id]').forEach(card => observer.observe(card));
+    return () => observer.disconnect();
+  }, [authReady, usageChoice, action, loading, jobs]);
   useEffect(() => {
     if (action !== 'apply' || loading || !contacts.length) return;
     const frame = requestAnimationFrame(() => document.getElementById('request-contact')?.scrollIntoView({ block: 'center' }));
@@ -123,10 +155,12 @@ function App() {
       ...(role ? { data: { evolution_role: role, evolution_name: name } } : {}),
     } });
     if (problem) throw problem;
+    trackUsage('login_link_sent');
     setNotice('Check your email for a sign-in link. Open it to verify and continue.');
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setNotice(''); setBusy(true);
+    if (action === 'post') trackUsage('publish_click');
     const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
     try {
       if (!supabase) throw new Error('Email login is not configured.');
@@ -168,7 +202,7 @@ function App() {
         setAccount(previous => previous ? { ...previous, job_notifications: data.enabled === 'on' } : previous);
         setNotice('Request email preference saved.');
       }
-    } catch (problem) { setError(errorMessage(problem)); } finally { setBusy(false); }
+    } catch (problem) { trackUsage('form_error'); setError(errorMessage(problem)); } finally { setBusy(false); }
   }
   useEffect(() => {
     if (action !== 'admin' || !admin || !supabase) return;
@@ -183,11 +217,19 @@ function App() {
     <header className="site-header"><a className="brand" href="/" onClick={event => { event.preventDefault(); navigate('board'); }}><img src="/favicon.svg" width="40" height="40" alt=""/>Evolution<span>.</span></a>
       <div className="header-actions"><button className="text-button" onClick={() => setLight(!light)} aria-label={light ? 'Use dark mode' : 'Use light mode'}>{light ? 'Dark' : 'Light'}</button>{user ? <><span className="account-label">{account?.name || user.email}</span><button className="text-button" onClick={() => { void supabase?.auth.signOut(); navigate('board'); }}>Log out</button></> : <button className="text-button" onClick={() => navigate('login')}>Login with Email</button>}</div>
     </header>
-    <main>
+    <main onChangeCapture={() => { if (action !== 'board' && action !== 'admin') trackUsage('form_started', action === 'apply' && job && !job.example ? job.id : undefined); }} onInvalidCapture={() => trackUsage('form_error')} onClickCapture={event => {
+      if (!(event.target instanceof Element) || action !== 'apply' || !job) return;
+      const link = event.target.closest('.contact-actions a');
+      if (link && !job.example) {
+        const contact = contacts.find(item => item.href === link.getAttribute('href'));
+        if (contact) trackUsage(contact.kind === 'contact_url' ? 'contact_page' : contact.kind, job.id);
+      }
+      if (job.example && event.target.closest('button')?.textContent === 'Use this brief') trackUsage('example_use', job.id);
+    }}>
       {action === 'board' ? <>
         <section className="hero"><h1>Hire AI Agents.<br/><span>Get Work Done.</span></h1><p>AI agents for your recurring work.</p><div className="hero-actions"><button className="primary" onClick={() => navigate('post')}>Request an Agent</button><button className="secondary" onClick={() => navigate('join')}>Offer an Agent</button></div></section>
         <section aria-labelledby="board-heading" className="board"><div className="section-heading"><h2 id="board-heading">Agent requests</h2></div>
-          {loading ? <p role="status">Loading requests…</p> : visibleRequests.map(item => <article className="job-card" key={item.id}>
+          {loading ? <p role="status">Loading requests…</p> : visibleRequests.map(item => <article className="job-card" key={item.id} data-request-id={item.id}>
             <div className="job-card-top"><span className="job-badge">{agentTypeForJob(item.title)}</span><strong className={item.monthly_budget === null ? 'budget budget-unset' : 'budget'}>{money(item.monthly_budget)}</strong></div>
             <div className="request-identity"><span className="request-avatar" aria-hidden="true">{(item.requester_name || 'Requester').split(/\s+/).slice(0, 2).map(part => part[0]).join('')}</span><div><strong>{item.requester_name || 'Requester'}</strong>{item.example ? <small>Illustrative scope and budget · Not a live request</small> : <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</time>}</div></div>
             <h3>{item.title}</h3><p className="job-description">{requestSummary(item.description)}</p>
@@ -195,7 +237,7 @@ function App() {
           </article>)}
           {!loading && !error && !visibleRequests.length && <div className="empty"><h3>What would you like done?</h3><p>Request an AI agent for a recurring task.</p><button className="primary" onClick={() => navigate('post')}>Request an Agent</button></div>}
         </section>
-      </> : action === 'admin' ? <section className="form-page admin-page"><button className="text-button back" onClick={() => navigate('board')}>← Agent requests</button><h1>Admin</h1>{!user ? <button className="primary" onClick={() => navigate('login')}>Login with Email</button> : !admin ? <p>Owner access required.</p> : <><button className="secondary" disabled={busy} onClick={async () => { setBusy(true); setError(''); setNotice(''); await notify(true); setBusy(false); }}>Send test email to me</button>{adminData.map((rows, index) => <section key={index}><h2>{['Users', 'Requests', 'Responses'][index]} ({rows.length})</h2><div className="admin-table"><table><thead><tr>{Object.keys(rows[0] || {}).map(key => <th key={key}>{key.replaceAll('_', ' ')}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{String(value ?? 'Not specified')}</td>)}</tr>)}</tbody></table></div></section>)}</>}</section> : <section className="form-page"><button className="text-button back" onClick={() => navigate('board')}>← Agent requests</button><div className="eyebrow">EVOLUTION</div><h1>{formTitle}</h1>
+      </> : action === 'admin' ? <section className="form-page admin-page"><button className="text-button back" onClick={() => navigate('board')}>← Agent requests</button><h1>Owner</h1>{!user ? <button className="primary" onClick={() => navigate('login')}>Login with Email</button> : !admin ? <p>Owner access required.</p> : <><Suspense fallback={<p>Loading owner analytics…</p>}><OwnerAnalytics/></Suspense><details className="owner-records"><summary>Database records</summary>{adminData.map((rows, index) => <section key={index}><h2>{['Users', 'Requests', 'Responses'][index]} ({rows.length})</h2><div className="admin-table"><table><thead><tr>{Object.keys(rows[0] || {}).map(key => <th key={key}>{key.replaceAll('_', ' ')}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{String(value ?? 'Not specified')}</td>)}</tr>)}</tbody></table></div></section>)}</details></>}</section> : <section className="form-page"><button className="text-button back" onClick={() => navigate('board')}>← Agent requests</button><div className="eyebrow">EVOLUTION</div><h1>{formTitle}</h1>
         {action === 'apply' && job && <div className="application-job"><div className="job-card-top"><span className="job-badge">{agentTypeForJob(job.title)}</span><strong className={job.monthly_budget === null ? 'budget budget-unset' : 'budget'}>{money(job.monthly_budget)}</strong></div><div className="request-identity"><span className="request-avatar" aria-hidden="true">{(job.requester_name || 'Requester').split(/\s+/).slice(0, 2).map(part => part[0]).join('')}</span><div><strong>{job.requester_name || 'Requester'}</strong>{job.example ? <small>Illustrative scope and budget · Not a live request</small> : <time dateTime={job.created_at}>{new Date(job.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</time>}</div></div><h2>{job.title}</h2><p>{job.description}</p>{job.status === 'Open' && contacts.length > 0 && <section className="request-contact" id="request-contact" aria-labelledby="contact-heading"><h2 id="contact-heading">Contact {job.requester_name || 'the requester'}</h2><div className="contact-actions">{contacts.map(contact => <a key={contact.kind} className="secondary" href={contact.href} target={contact.external ? '_blank' : undefined} rel={contact.external ? 'noopener noreferrer nofollow ugc' : undefined}>{contact.label} <span aria-hidden="true">↗</span></a>)}</div><small>Choose a contact method to discuss this outcome directly.</small></section>}</div>}
         {action === 'apply' && job?.example ? <button className="primary full" onClick={() => { setDraft({ title: job.title, description: job.description, frequency: job.frequency || '', budget: String(job.monthly_budget || '') }); navigate('post'); }}>Use this brief</button> : action === 'apply' && job?.status === 'Open' && contacts.length > 0 ? null : !authReady ? <p>Checking login…</p> : action === 'login' && user ? <><p>You’re signed in as {user.email}.</p><button className="primary full" onClick={() => navigate('board')}>Continue to requests</button></> : wrongRole ? <p>This account is registered as {account?.role === 'developer' ? 'an agent builder' : 'a business'}. Log out to use a different account.</p> : action === 'apply' && loading ? <p>Loading request…</p> : action === 'apply' && !job ? <p>This request is unavailable.</p> : action === 'apply' && job?.status !== 'Open' ? <p>This request is closed.</p> : action === 'apply' && applied.includes(jobId) ? <p>Your response is saved. The business can contact you directly by email.</p> : action === 'join' && account?.role === 'developer' ? <p>You’re registered. {account.job_notifications ? 'You’ll receive agent requests by email.' : 'Request emails are turned off.'} <button className="text-button" onClick={() => navigate('alerts')}>Manage request emails</button></p> : <form onSubmit={submit} key={`${action}:${jobId}:${user?.id || 'guest'}`}>
           {(action === 'join' || (action === 'apply' && !account)) && <label>Name<input name="name" autoComplete="name" required minLength={1} maxLength={80} defaultValue={account?.name || user?.user_metadata.evolution_name || ''}/></label>}
@@ -210,7 +252,7 @@ function App() {
         </form>}
       </section>}
       {error && <div role="alert" className="message error">{error}</div>}{notice && <div role="status" className="message success">{notice}</div>}
-    </main><footer><span>Evolution connects businesses with AI agents.</span><div><a href="/guides/">Guides</a>{admin && <button className="text-button" onClick={() => navigate('admin')}>Admin</button>}</div></footer>
+    </main>{action !== 'admin' && !admin && <UsagePrivacy choice={usageChoice} onChoice={allow => { changeUsageConsent(allow); setUsageChoice(allow); }}/>}<footer><span>Evolution connects businesses with AI agents.</span><div><a href="/guides/">Guides</a>{admin && <button className="text-button" onClick={() => navigate('admin')}>Owner analytics</button>}</div></footer>
   </div>;
 }
 
