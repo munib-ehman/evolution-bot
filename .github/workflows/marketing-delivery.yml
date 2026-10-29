@@ -32,6 +32,16 @@ jobs:
             --header "Authorization: Bearer $CRON_SECRET" \
             "https://www.runevolution.io/api/${{ matrix.endpoint }}"
 
+      - name: Deliver job marketplace notifications
+        if: always() && matrix.endpoint == 'marketing-worker'
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "https://www.runevolution.io/api/job-notifications"
+
   hourly:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '7 * * * *'
     runs-on: ubuntu-latest

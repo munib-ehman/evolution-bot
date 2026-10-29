@@ -1,0 +1,75 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
+
+const { PGlite } = await import(pathToFileURL(process.env.PGLITE_MODULE).href);
+const db = new PGlite();
+const business = '11111111-1111-4111-8111-111111111111';
+const developer = '22222222-2222-4222-8222-222222222222';
+const other = '33333333-3333-4333-8333-333333333333';
+const unverified = '44444444-4444-4444-8444-444444444444';
+const legacy = '55555555-5555-4555-8555-555555555555';
+await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
+create schema auth; create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz);
+create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+grant usage on schema auth to authenticated,anon;
+create table public.network_posts(id uuid primary key,seller_id uuid,requester_name text,request_title text,task text,kind text,created_at timestamptz);
+insert into auth.users values('${business}','business@example.com',now()),('${developer}','dev@example.com',now()),('${other}','other@example.com',now()),('${unverified}','unverified@example.com',null);
+insert into public.network_posts values('${legacy}','${business}','Business','Find relevant work according to my roles','Find relevant work according to my roles and provide a shortlist of relevant opportunities.','request','2026-10-24');`);
+await db.exec(fs.readFileSync('supabase/2026-10-29_job_marketplace.sql','utf8'));
+assert.equal((await db.query('select * from evolution_jobs')).rows.length,1);
+assert.equal((await db.query('select monthly_budget,frequency from evolution_jobs')).rows[0].monthly_budget,null);
+assert.equal((await db.query('select * from evolution_mail_queue')).rows.length,0);
+async function asUser(id) {
+  await db.exec('reset role;set role authenticated');
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);
+}
+async function register(id,role='developer') {
+  await asUser(id);
+  return db.query('select public.evolution_register($1,$2)',['Example',role]);
+}
+await assert.rejects(register(unverified));
+await register(developer);
+await register(other);
+assert.equal((await db.query('select * from evolution_users')).rows.length,1);
+await assert.rejects(db.exec(`update evolution_users set role='business'`));
+await assert.rejects(db.exec('select * from evolution_mail_queue'));
+await asUser(business);
+const draft = {title:'Daily product stock report',description:'Check the product inventory every morning and email a report listing the items that need attention.',frequency:'Daily',budget:100};
+async function publish(fields) { return db.query('select public.evolution_post_job($1::jsonb) id',[JSON.stringify(fields)]); }
+await assert.rejects(publish({...draft,frequency:null}));
+await assert.rejects(publish({...draft,budget:-1}));
+await assert.rejects(publish({...draft,budget:10.125}));
+const job = (await publish(draft)).rows[0].id;
+await db.exec('reset role');
+assert.equal((await db.query('select * from evolution_mail_queue')).rows.length,2);
+await asUser(developer);
+await assert.rejects(publish(draft));
+await db.query('select public.evolution_register($1,$2)',['Hijack role','business']);
+assert.equal((await db.query('select role from evolution_users')).rows[0].role,'developer');
+await assert.rejects(db.query('select evolution_apply($1,$2)',[job,'too short']));
+const proposal = 'I can check stock daily and email a clear report. I would need read-only inventory access.';
+await db.query('select evolution_apply($1,$2)',[job,proposal]);
+await assert.rejects(db.query('select evolution_apply($1,$2)',[job,proposal]),/already applied/);
+await assert.rejects(db.query('select evolution_close_job($1)',[job]));
+await asUser(other);
+assert.equal((await db.query('select * from evolution_applications')).rows.length,0);
+await asUser(business);
+assert.equal((await db.query('select * from evolution_applications')).rows.length,1);
+await db.query('select evolution_close_job($1)',[job]);
+await asUser(other);
+await assert.rejects(db.query('select evolution_apply($1,$2)',[job,proposal]),/closed/);
+await db.exec('reset role;set role anon');
+assert.equal((await db.query('select * from evolution_jobs')).rows.length,2);
+await assert.rejects(db.exec('select * from evolution_users'));
+await assert.rejects(db.exec('select * from evolution_applications'));
+await assert.rejects(db.exec('select evolution_claim_mail(null)'));
+await db.exec('reset role;set role service_role');
+const queue = (await db.query('select * from evolution_claim_mail(null)')).rows;
+assert.equal(queue.length,3);
+assert.equal(queue.filter(mail=>mail.reply_to==='dev@example.com').length,1);
+assert.equal((await db.query('select * from evolution_claim_mail(null)')).rows.length,0);
+await db.exec('reset role');
+assert.equal((await db.query('select * from evolution_mail_queue')).rows.length,3);
+await db.close();
+console.log('PASS: preserved legacy request, verified registration, role isolation, public board/private contacts, bounded jobs/proposals, duplicate prevention, closed jobs, transactional fan-out and locked notification claims.');
