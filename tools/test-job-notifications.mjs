@@ -37,6 +37,12 @@ try {
     providerStatus=403;
     assert.equal((await handler(request())).status,502);
     assert.equal(patches[1].state,'failed');
+    providerStatus=429;
+    assert.equal((await handler(request())).status,502);
+    assert.equal(patches[2].state,'pending');
+    providerStatus=500;
+    assert.equal((await handler(request())).status,502);
+    assert.equal(patches[3].state,'uncertain');
     process.env.RESEND_API_KEY='';
     assert.equal((await handler(request())).status,503);
   } finally { globalThis.fetch=originalFetch; }

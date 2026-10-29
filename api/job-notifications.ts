@@ -38,9 +38,16 @@ export default async function handler(request: Request): Promise<Response> {
     const mails = await (await database('rpc/evolution_claim_mail', { method: 'POST', body: JSON.stringify({ actor: actor?.id || null }) })).json() as Mail[];
     let sent = 0;
     let failed = 0;
-    for (const mail of mails) {
+    const started = Date.now();
+    for (const [index, mail] of mails.entries()) {
+      if (index > 0) await new Promise(resolve => setTimeout(resolve, 600));
+      if (Date.now() - started > 35000) {
+        for (const remaining of mails.slice(index)) await database(`evolution_mail_queue?id=eq.${remaining.id}&state=eq.sending`, { method: 'PATCH', body: JSON.stringify({ state: 'pending' }) });
+        break;
+      }
       let state = 'uncertain';
       let providerId: string | null = null;
+      let backoff = false;
       try {
         const recipients = await (await database(`evolution_users?id=eq.${mail.recipient_id}&select=email&limit=1`)).json() as { email: string }[];
         if (!recipients[0]) throw new Error('Recipient unavailable');
@@ -48,14 +55,18 @@ export default async function handler(request: Request): Promise<Response> {
           method: 'POST',
           headers: { Authorization: `Bearer ${env.resendKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': `evolution-job-${mail.id}` },
           body: JSON.stringify({ from: env.sharedFromAddress || 'Evolution <info@runevolution.io>', to: [recipients[0].email], subject: mail.subject, text: mail.body, ...(mail.reply_to ? { reply_to: mail.reply_to } : {}) }),
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(4000),
         });
         if (response.ok) {
           const result = await response.json() as { id?: string };
           if (result.id) { providerId = result.id; state = 'sent'; sent++; }
-        } else { state = 'failed'; failed++; }
-      } catch { failed++; }
+        } else { state = response.status === 429 ? 'pending' : response.status >= 500 ? 'uncertain' : 'failed'; failed++; backoff = true; }
+      } catch { failed++; backoff = true; }
       await database(`evolution_mail_queue?id=eq.${mail.id}&state=eq.sending`, { method: 'PATCH', body: JSON.stringify({ state, provider_id: providerId }) });
+      if (backoff) {
+        for (const remaining of mails.slice(index + 1)) await database(`evolution_mail_queue?id=eq.${remaining.id}&state=eq.sending`, { method: 'PATCH', body: JSON.stringify({ state: 'pending' }) });
+        break;
+      }
     }
     return Response.json({ processed: mails.length, accepted: sent, failed }, { status: failed ? 502 : 200 });
   } catch {
