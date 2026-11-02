@@ -7,6 +7,7 @@ import { requestContacts, validateContacts, type ContactFields } from './contact
 import { exampleRequests } from './examples';
 import { changeUsageConsent, flushUsage, trackUsage, usageActor, usageConsent } from './analytics';
 import UsagePrivacy from './UsagePrivacy';
+import { clearRequestDraft, emailSignInOptions, readRequestDraft, saveRequestDraft, signInCallbackError } from './signin';
 import './style.css';
 
 const OwnerAnalytics = lazy(() => import('./OwnerAnalytics'));
@@ -31,13 +32,13 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [authReady, setAuthReady] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(() => signInCallbackError(location.search, location.hash));
   const [notice, setNotice] = useState('');
   const [admin, setAdmin] = useState(false);
   const [adminData, setAdminData] = useState<Record<string, unknown>[][]>([]);
   const [usageChoice, setUsageChoice] = useState(usageConsent);
   const [draft, setDraft] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(sessionStorage.getItem('evolution:job-draft') || '{}'); } catch { return {}; }
+    try { return readRequestDraft(localStorage); } catch { return {}; }
   });
   const [light, setLight] = useState(() => { try { return localStorage.getItem('evolution:theme:v1') === 'light'; } catch { return false; } });
   const visibleRequests: Job[] = [...jobs.filter(item => item.status === 'Open'), ...exampleRequests];
@@ -106,7 +107,7 @@ function App() {
       if (!active) return;
       if (problem) setError(problem.message);
       setUser(data.session?.user || null); setAuthReady(true);
-    });
+    }).catch(problem => { if (active) { setError(errorMessage(problem)); setAuthReady(true); } });
     const { data } = supabase.auth.onAuthStateChange((_event, session) => { if (active) { setUser(session?.user || null); setAuthReady(true); } });
     return () => { active = false; data.subscription.unsubscribe(); };
   }, []);
@@ -148,15 +149,12 @@ function App() {
     } catch (problem) { if (test) setError(errorMessage(problem)); return false; }
   }
   async function login(email: string, role?: string, name?: string) {
-    const query = new URLSearchParams(location.search);
     const { error: problem } = await supabase!.auth.signInWithOtp({ email, options: {
-      emailRedirectTo: `${location.origin}/?${query}`,
-      shouldCreateUser: action !== 'login',
-      ...(role ? { data: { evolution_role: role, evolution_name: name } } : {}),
+      ...emailSignInOptions(location.origin, location.search, role, name),
     } });
     if (problem) throw problem;
     trackUsage('login_link_sent');
-    setNotice('Check your email for a sign-in link. Open it to verify and continue.');
+    setNotice('Check your inbox and spam folder for a sign-in link. Open the latest link to verify and continue. If you are posting, return to this browser to publish your saved request.');
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setNotice(''); setBusy(true);
@@ -174,7 +172,7 @@ function App() {
       }
       if (action === 'post') {
         Object.assign(data, validateContacts(data));
-        setDraft(data); try { sessionStorage.setItem('evolution:job-draft', JSON.stringify(data)); } catch {}
+        setDraft(data); try { saveRequestDraft(localStorage, data); } catch { if (!user) throw new Error('Your browser could not save this request. Log in first, then return to Request an Agent to publish.'); }
         if (!user) { await login(data.email, 'business', data.requester_name); return; }
         if (!account) {
           const { data: profile, error: problem } = await supabase.rpc('evolution_register', { display_name: data.requester_name, account_role: 'business' });
@@ -183,7 +181,7 @@ function App() {
         }
         const { error: problem } = await supabase.rpc('evolution_post_job', { draft: { ...data, budget: Number(data.budget) } });
         if (problem) throw problem;
-        setDraft({}); try { sessionStorage.removeItem('evolution:job-draft'); } catch {}
+        setDraft({}); try { clearRequestDraft(localStorage); sessionStorage.removeItem('evolution:job-draft'); } catch {}
         await loadJobs(); navigate('board');
         const accepted = await notify();
         setNotice(accepted ? 'Your agent request is live. Email notifications are being processed.' : 'Your agent request is live. Email notifications are queued; delivery is not yet confirmed.');
