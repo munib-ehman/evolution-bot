@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex">
+  <title>Confirm your email | Evolution</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 1rem system-ui, sans-serif; color: #f4f4f5; background: #111113; }
+    main { max-width: 26rem; padding: 2rem; }
+    p { line-height: 1.5; }
+    button { padding: .75rem 1rem; border: 0; border-radius: .5rem; font: inherit; font-weight: 600; color: #111113; background: #f4f4f5; cursor: pointer; }
+    a { color: inherit; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Confirm your email</h1>
+    <p id="instructions">Open your latest sign-in email or request a new link.</p>
+    <button id="confirm" type="button" hidden>Confirm and continue</button>
+    <p><a href="/?action=login">Request a new link</a></p>
+  </main>
+  <script type="module">
+    const link = new URLSearchParams(location.hash.slice(1)).get('link');
+    const target = link && URL.canParse(link) ? new URL(link) : null;
+    // Supabase validates the token and redirect after the user confirms.
+    if (target?.origin === 'https://kclrehokakofftxijxuf.supabase.co' &&
+        target.pathname === '/auth/v1/verify' &&
+        !target.username && !target.password &&
+        target.searchParams.get('token') &&
+        ['signup', 'magiclink'].includes(target.searchParams.get('type'))) {
+      const button = document.getElementById('confirm');
+      document.getElementById('instructions').textContent = 'Confirm to finish signing in to Evolution.';
+      button.hidden = false;
+      button.addEventListener('click', () => {
+        button.disabled = true;
+        button.textContent = 'Confirming…';
+        location.replace(target.href);
+      }, { once: true });
+    }
+  </script>
+</body>
+</html>
