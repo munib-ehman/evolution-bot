@@ -15,6 +15,17 @@ assert.deepEqual(helpers.readRequestDraft(storage, 86401001), {});
 helpers.saveRequestDraft(storage, draft, 1000);
 helpers.clearRequestDraft(storage);
 assert.deepEqual(helpers.readRequestDraft(storage, 2000), {});
+helpers.savePendingSignIn(storage, ' Owner@Example.com ', 'post', 'Owner', 1000);
+assert.deepEqual(helpers.readPendingSignIn(storage, 'owner@example.com', 2000), {email:'owner@example.com',action:'post',name:'Owner'});
+assert.equal(helpers.readPendingSignIn(storage, 'other@example.com', 2000), null);
+assert.equal(helpers.readPendingSignIn(storage, 'owner@example.com', 3601001), null);
+helpers.clearPendingSignIn(storage);
+assert.equal(helpers.readPendingSignIn(storage, 'owner@example.com', 2000), null);
+assert.equal(helpers.requestPayload({...draft, title:'  Daily report  ', budget:'10.01'}).title, 'Daily report');
+assert.equal(helpers.requestPayload({...draft, budget:'10.01'}).budget, 10.01);
+for (const invalid of [{title:'    '}, {description:' '.repeat(45)}, {frequency:'Hourly'}, {budget:''}, {budget:'NaN'}, {budget:'10.123'}]) {
+  assert.throws(() => helpers.requestPayload({...draft,...invalid}));
+}
 for (const action of ['login', 'join', 'post']) {
   const options = helpers.emailSignInOptions('https://www.runevolution.io', `?action=${action}&access_token=not-forwarded`, 'developer', 'Example');
   assert.equal(options.shouldCreateUser, true);

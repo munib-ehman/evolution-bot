@@ -20,7 +20,7 @@ const anonKey = (
 export const authEnabled = Boolean(url && anonKey);
 
 export const supabase: SupabaseClient | null = authEnabled
-  ? createClient(url, anonKey)
+  ? createClient(url, anonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 
 /** Email the user a one-click sign-in link that lands back on this page. */

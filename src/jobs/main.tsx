@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/auth';
@@ -7,7 +7,7 @@ import { requestContacts, validateContacts, type ContactFields } from './contact
 import { exampleRequests } from './examples';
 import { changeUsageConsent, flushUsage, trackUsage, usageActor, usageConsent } from './analytics';
 import UsagePrivacy from './UsagePrivacy';
-import { clearRequestDraft, emailSignInOptions, readRequestDraft, saveRequestDraft, signInCallbackError } from './signin';
+import { clearPendingSignIn, clearRequestDraft, emailSignInOptions, readPendingSignIn, readRequestDraft, requestPayload, savePendingSignIn, saveRequestDraft, signInCallbackError } from './signin';
 import './style.css';
 
 const OwnerAnalytics = lazy(() => import('./OwnerAnalytics'));
@@ -31,6 +31,10 @@ function App() {
   const [applied, setApplied] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [authReady, setAuthReady] = useState(false);
+  const [profileReady, setProfileReady] = useState(false);
+  const submitting = useRef(false);
+  const resumedUser = useRef('');
+  const messageRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(() => signInCallbackError(location.search, location.hash));
   const [notice, setNotice] = useState('');
@@ -103,42 +107,79 @@ function App() {
   useEffect(() => {
     if (!supabase) { setAuthReady(true); return; }
     let active = true;
-    void supabase.auth.getSession().then(({ data, error: problem }) => {
-      if (!active) return;
-      if (problem) setError(problem.message);
-      setUser(data.session?.user || null); setAuthReady(true);
-    }).catch(problem => { if (active) { setError(errorMessage(problem)); setAuthReady(true); } });
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => { if (active) { setUser(session?.user || null); setAuthReady(true); } });
-    return () => { active = false; data.subscription.unsubscribe(); };
+    let revision = 0;
+    let restored = false;
+    const client = supabase;
+    const timeout = window.setTimeout(() => {
+      if (active && !restored) { setAuthReady(true); setError('Login is taking longer than expected. Check your connection, then return to this tab to try again.'); }
+    }, 15000);
+    const restore = () => {
+      const startedAt = revision;
+      void client.auth.getSession().then(({ data, error: problem }) => {
+        if (!active || startedAt !== revision) return;
+        restored = true;
+        if (problem) setError(problem.message);
+        setUser(data.session?.user || null); setAuthReady(true);
+      }).catch(problem => { if (active && startedAt === revision) { restored = true; setError(errorMessage(problem)); setAuthReady(true); } });
+    };
+    const { data } = client.auth.onAuthStateChange((_event, session) => { if (active) { revision++; restored = true; setUser(session?.user || null); setAuthReady(true); } });
+    restore();
+    const visible = () => { if (document.visibilityState === 'visible') restore(); };
+    window.addEventListener('pageshow', restore);
+    document.addEventListener('visibilitychange', visible);
+    return () => { active = false; window.clearTimeout(timeout); data.subscription.unsubscribe(); window.removeEventListener('pageshow', restore); document.removeEventListener('visibilitychange', visible); };
   }, []);
   useEffect(() => {
+    if (!authReady || !user) { if (authReady) resumedUser.current = ''; return; }
+    if (resumedUser.current === user.id) return;
+    resumedUser.current = user.id;
+    let pending = null;
+    try { pending = readPendingSignIn(localStorage, user.email); } catch {}
+    // A provider can return to the site URL rather than retaining ?action=post.
+    // Restore the verified user's intent, but require a separate publish click.
+    const next = pending && ['board', 'login', 'join', 'post'].includes(action) ? pending.action as Action : action === 'login' ? 'board' : action;
+    setError(''); setNotice('');
+    if (next !== action) {
+      history.replaceState(null, '', next === 'board' ? '/' : `/?action=${next}`);
+      setAction(next);
+    }
+    if (next === 'post') { try { setDraft(readRequestDraft(localStorage)); } catch {} }
+  }, [authReady, user?.id, action]);
+  useEffect(() => { if (error || notice) messageRef.current?.scrollIntoView({ block: 'nearest' }); }, [error, notice]);
+  useEffect(() => {
     let active = true;
+    setProfileReady(false);
     setAccount(null); setAdmin(false); setApplied([]); setAdminData([]);
-    if (!supabase || !user) return;
+    if (!supabase || !user) { setProfileReady(true); return; }
     const client = supabase;
     void (async () => {
-      const response = await client.from('evolution_users').select('*').eq('id', user.id).maybeSingle();
+      const response = await client.from('evolution_users').select('*').eq('id', user.id).abortSignal(AbortSignal.timeout(15000)).maybeSingle();
       if (!active) return;
       if (response.error) { setError(response.error.message); return; }
       let profile = response.data as Account | null;
-      if (!profile && user.user_metadata.evolution_role === 'developer' && user.user_metadata.evolution_name) {
-        const registration = await client.rpc('evolution_register', { display_name: user.user_metadata.evolution_name, account_role: 'developer' });
+      let pending = null;
+      try { pending = readPendingSignIn(localStorage, user.email); } catch {}
+      const joining = pending?.action === 'join';
+      const joinName = joining ? pending?.name : user.user_metadata.evolution_name;
+      if (!profile && (joining || user.user_metadata.evolution_role === 'developer') && joinName && pending?.action !== 'post') {
+        const registration = await client.rpc('evolution_register', { display_name: joinName, account_role: 'developer' });
         if (registration.error) { setError(registration.error.message); return; }
         profile = registration.data as Account;
         if (active) setNotice('You’re registered. New agent requests will arrive by email.');
       }
       const [permission, applications] = await Promise.all([
-        client.rpc('evolution_is_admin'),
-        client.from('evolution_applications').select('job_id').eq('developer_id', user.id),
+        client.rpc('evolution_is_admin').abortSignal(AbortSignal.timeout(15000)),
+        client.from('evolution_applications').select('job_id').eq('developer_id', user.id).abortSignal(AbortSignal.timeout(15000)),
       ]);
       if (active) { setAccount(profile); setAdmin(permission.data === true); setApplied((applications.data || []).map(item => item.job_id)); }
-    })().catch(problem => { if (active) setError(errorMessage(problem)); });
+      try { clearPendingSignIn(localStorage); } catch {}
+    })().catch(problem => { if (active) setError(errorMessage(problem)); }).finally(() => { if (active) setProfileReady(true); });
     return () => { active = false; };
-  }, [user]);
+  }, [user?.id]);
 
   async function notify(test = false) {
-    const { data } = await supabase!.auth.getSession();
     try {
+      const { data } = await supabase!.auth.getSession();
       const response = await fetch(`/api/job-notifications${test ? '?test=1' : ''}`, { method: 'POST', headers: { Authorization: `Bearer ${data.session?.access_token}` } });
       if (test) {
         const result = await response.json();
@@ -149,6 +190,9 @@ function App() {
     } catch (problem) { if (test) setError(errorMessage(problem)); return false; }
   }
   async function login(email: string, role?: string, name?: string) {
+    const { data: current } = await supabase!.auth.getSession();
+    if (current.session?.user) { setUser(current.session.user); if (action === 'login') navigate('board'); return; }
+    try { savePendingSignIn(localStorage, email, action, name); } catch {}
     const { error: problem } = await supabase!.auth.signInWithOtp({ email, options: {
       ...emailSignInOptions(location.origin, location.search, role, name),
     } });
@@ -157,7 +201,10 @@ function App() {
     setNotice('Check your inbox and spam folder for a sign-in link. Open the latest link to verify and continue. If you are posting, return to this browser to publish your saved request.');
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError(''); setNotice(''); setBusy(true);
+    event.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
+    setError(''); setNotice(''); setBusy(true);
     if (action === 'post') trackUsage('publish_click');
     const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
     try {
@@ -172,6 +219,7 @@ function App() {
       }
       if (action === 'post') {
         Object.assign(data, validateContacts(data));
+        const payload = requestPayload(data);
         setDraft(data); try { saveRequestDraft(localStorage, data); } catch { if (!user) throw new Error('Your browser could not save this request. Log in first, then return to Request an Agent to publish.'); }
         if (!user) { await login(data.email, 'business', data.requester_name); return; }
         if (!account) {
@@ -179,12 +227,13 @@ function App() {
           if (problem) throw problem;
           setAccount(profile as Account);
         }
-        const { error: problem } = await supabase.rpc('evolution_post_job', { draft: { ...data, budget: Number(data.budget) } });
+        const { error: problem } = await supabase.rpc('evolution_post_job', { draft: payload });
         if (problem) throw problem;
         setDraft({}); try { clearRequestDraft(localStorage); sessionStorage.removeItem('evolution:job-draft'); } catch {}
-        await loadJobs(); navigate('board');
-        const accepted = await notify();
-        setNotice(accepted ? 'Your agent request is live. Email notifications are being processed.' : 'Your agent request is live. Email notifications are queued; delivery is not yet confirmed.');
+        navigate('board');
+        setNotice('Your agent request is live. Email notifications are queued.');
+        void loadJobs().catch(() => setError('Your request was published. Refresh to reload the board; do not publish it again.'));
+        void notify();
         return;
       }
       if (action === 'apply') {
@@ -200,7 +249,7 @@ function App() {
         setAccount(previous => previous ? { ...previous, job_notifications: data.enabled === 'on' } : previous);
         setNotice('Request email preference saved.');
       }
-    } catch (problem) { trackUsage('form_error'); setError(errorMessage(problem)); } finally { setBusy(false); }
+    } catch (problem) { trackUsage('form_error'); setError(errorMessage(problem)); } finally { submitting.current = false; setBusy(false); }
   }
   useEffect(() => {
     if (action !== 'admin' || !admin || !supabase) return;
@@ -213,7 +262,7 @@ function App() {
   const formTitle = action === 'join' ? 'Offer an Agent' : action === 'post' ? 'Request an Agent' : action === 'apply' ? 'Agent request' : action === 'alerts' ? 'Request emails' : 'Login with Email';
   return <div className="job-shell">
     <header className="site-header"><a className="brand" href="/" onClick={event => { event.preventDefault(); navigate('board'); }}><img src="/favicon.svg" width="40" height="40" alt=""/>Evolution<span>.</span></a>
-      <div className="header-actions"><button className="text-button" onClick={() => setLight(!light)} aria-label={light ? 'Use dark mode' : 'Use light mode'}>{light ? 'Dark' : 'Light'}</button>{user ? <><span className="account-label">{account?.name || user.email}</span><button className="text-button" onClick={() => { void supabase?.auth.signOut(); navigate('board'); }}>Log out</button></> : <button className="text-button" onClick={() => navigate('login')}>Login with Email</button>}</div>
+      <div className="header-actions"><button className="text-button" onClick={() => setLight(!light)} aria-label={light ? 'Use dark mode' : 'Use light mode'}>{light ? 'Dark' : 'Light'}</button>{user ? <><span className="account-label">{account?.name || user.email}</span><button className="text-button" onClick={async () => { const result = await supabase?.auth.signOut(); if (result?.error) { setError(result.error.message); return; } try { clearRequestDraft(localStorage); clearPendingSignIn(localStorage); } catch {} setDraft({}); navigate('board'); }}>Log out</button></> : <button className="text-button" disabled={!authReady} onClick={() => navigate('login')}>{authReady ? 'Login with Email' : 'Checking login…'}</button>}</div>
     </header>
     <main onChangeCapture={() => { if (action !== 'board' && action !== 'admin') trackUsage('form_started', action === 'apply' && job && !job.example ? job.id : undefined); }} onInvalidCapture={() => trackUsage('form_error')} onClickCapture={event => {
       if (!(event.target instanceof Element) || action !== 'apply' || !job) return;
@@ -237,7 +286,7 @@ function App() {
         </section>
       </> : action === 'admin' ? <section className="form-page admin-page"><button className="text-button back" onClick={() => navigate('board')}>← Agent requests</button><h1>Owner</h1>{!user ? <button className="primary" onClick={() => navigate('login')}>Login with Email</button> : !admin ? <p>Owner access required.</p> : <><Suspense fallback={<p>Loading owner analytics…</p>}><OwnerAnalytics/></Suspense><details className="owner-records"><summary>Database records</summary>{adminData.map((rows, index) => <section key={index}><h2>{['Users', 'Requests', 'Responses'][index]} ({rows.length})</h2><div className="admin-table"><table><thead><tr>{Object.keys(rows[0] || {}).map(key => <th key={key}>{key.replaceAll('_', ' ')}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{String(value ?? 'Not specified')}</td>)}</tr>)}</tbody></table></div></section>)}</details></>}</section> : <section className="form-page"><button className="text-button back" onClick={() => navigate('board')}>← Agent requests</button><div className="eyebrow">EVOLUTION</div><h1>{formTitle}</h1>
         {action === 'apply' && job && <div className="application-job"><div className="job-card-top"><span className="job-badge">{agentTypeForJob(job.title)}</span><strong className={job.monthly_budget === null ? 'budget budget-unset' : 'budget'}>{money(job.monthly_budget)}</strong></div><div className="request-identity"><span className="request-avatar" aria-hidden="true">{(job.requester_name || 'Requester').split(/\s+/).slice(0, 2).map(part => part[0]).join('')}</span><div><strong>{job.requester_name || 'Requester'}</strong>{job.example ? <small>Illustrative scope and budget · Not a live request</small> : <time dateTime={job.created_at}>{new Date(job.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</time>}</div></div><h2>{job.title}</h2><p>{job.description}</p>{job.status === 'Open' && contacts.length > 0 && <section className="request-contact" id="request-contact" aria-labelledby="contact-heading"><h2 id="contact-heading">Contact {job.requester_name || 'the requester'}</h2><div className="contact-actions">{contacts.map(contact => <a key={contact.kind} className="secondary" href={contact.href} target={contact.external ? '_blank' : undefined} rel={contact.external ? 'noopener noreferrer nofollow ugc' : undefined}>{contact.label} <span aria-hidden="true">↗</span></a>)}</div><small>Choose a contact method to discuss this outcome directly.</small></section>}</div>}
-        {action === 'apply' && job?.example ? <button className="primary full" onClick={() => { setDraft({ title: job.title, description: job.description, frequency: job.frequency || '', budget: String(job.monthly_budget || '') }); navigate('post'); }}>Use this brief</button> : action === 'apply' && job?.status === 'Open' && contacts.length > 0 ? null : !authReady ? <p>Checking login…</p> : action === 'login' && user ? <><p>You’re signed in as {user.email}.</p><button className="primary full" onClick={() => navigate('board')}>Continue to requests</button></> : wrongRole ? <p>This account is registered as {account?.role === 'developer' ? 'an agent builder' : 'a business'}. Log out to use a different account.</p> : action === 'apply' && loading ? <p>Loading request…</p> : action === 'apply' && !job ? <p>This request is unavailable.</p> : action === 'apply' && job?.status !== 'Open' ? <p>This request is closed.</p> : action === 'apply' && applied.includes(jobId) ? <p>Your response is saved. The business can contact you directly by email.</p> : action === 'join' && account?.role === 'developer' ? <p>You’re registered. {account.job_notifications ? 'You’ll receive agent requests by email.' : 'Request emails are turned off.'} <button className="text-button" onClick={() => navigate('alerts')}>Manage request emails</button></p> : <form onSubmit={submit} key={`${action}:${jobId}:${user?.id || 'guest'}`}>
+        {action === 'apply' && job?.example ? <button className="primary full" onClick={() => { setDraft({ title: job.title, description: job.description, frequency: job.frequency || '', budget: String(job.monthly_budget || '') }); navigate('post'); }}>Use this brief</button> : action === 'apply' && job?.status === 'Open' && contacts.length > 0 ? null : !authReady || (user && !profileReady) ? <p role="status">Checking login…</p> : action === 'login' && user ? <><p>You’re signed in as {user.email}.</p><button className="primary full" onClick={() => navigate('board')}>Continue to requests</button></> : wrongRole ? <p>This account is registered as {account?.role === 'developer' ? 'an agent builder' : 'a business'}. Log out to use a different account.</p> : action === 'apply' && loading ? <p>Loading request…</p> : action === 'apply' && !job ? <p>This request is unavailable.</p> : action === 'apply' && job?.status !== 'Open' ? <p>This request is closed.</p> : action === 'apply' && applied.includes(jobId) ? <p>Your response is saved. The business can contact you directly by email.</p> : action === 'join' && account?.role === 'developer' ? <p>You’re registered. {account.job_notifications ? 'You’ll receive agent requests by email.' : 'Request emails are turned off.'} <button className="text-button" onClick={() => navigate('alerts')}>Manage request emails</button></p> : <form onSubmit={submit} onInput={event => { if (action !== 'post') return; const fields = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>; setDraft(fields); try { saveRequestDraft(localStorage, fields); } catch {} }} key={`${action}:${jobId}:${user?.id || 'guest'}`}>
           {(action === 'join' || (action === 'apply' && !account)) && <label>Name<input name="name" autoComplete="name" required minLength={1} maxLength={80} defaultValue={account?.name || user?.user_metadata.evolution_name || ''}/></label>}
           {action === 'post' && <><label>Your public name<input name="requester_name" autoComplete="name" required maxLength={80} defaultValue={draft.requester_name || ''}/></label><label>Request title<input name="title" required minLength={5} maxLength={100} placeholder="Send a daily inventory report" defaultValue={draft.title || ''}/></label><label>Desired outcome<textarea name="description" required minLength={40} maxLength={1200} rows={5} placeholder="What should your agent deliver, and what does a good result look like?" defaultValue={draft.description || ''}/><small>40–1,200 characters. Focus on the result you need.</small></label><div className="form-row"><label>Frequency<select name="frequency" required defaultValue={draft.frequency || ''}><option value="" disabled>Choose frequency</option>{['Daily', 'Weekly', 'Monthly'].map(value => <option key={value}>{value}</option>)}</select></label><label>Monthly budget (USD)<input name="budget" type="number" required min="1" max="1000000" step="0.01" placeholder="100" defaultValue={draft.budget || ''}/></label></div></>}
           {action !== 'alerts' && <label>{action === 'post' ? 'Business email' : 'Email'}<input name="email" type="email" autoComplete="email" required maxLength={254} readOnly={Boolean(user)} value={user ? user.email : undefined} defaultValue={user ? undefined : draft.email || ''}/></label>}
@@ -249,7 +298,7 @@ function App() {
           {!(action === 'alerts' && (!user || account?.role !== 'developer')) && <button className="primary full" disabled={busy || !supabase}>{busy ? 'Please wait…' : action === 'post' ? user ? 'Publish Request' : 'Verify Email to Publish' : action === 'apply' && account ? 'Send Response' : action === 'alerts' ? 'Save preference' : user && action === 'join' ? 'Join as Agent Builder' : 'Send Sign-in Link'}</button>}
         </form>}
       </section>}
-      {error && <div role="alert" className="message error">{error}</div>}{notice && <div role="status" className="message success">{notice}</div>}
+      <div ref={messageRef}>{error && <div role="alert" className="message error">{error}</div>}{notice && <div role="status" className="message success">{notice}</div>}</div>
     </main>{action !== 'admin' && !admin && <UsagePrivacy choice={usageChoice} onChoice={allow => { changeUsageConsent(allow); setUsageChoice(allow); }}/>}<footer><span>Evolution connects businesses with AI agents.</span><div><a href="/guides/">Guides</a>{admin && <button className="text-button" onClick={() => navigate('admin')}>Owner analytics</button>}</div></footer>
   </div>;
 }
