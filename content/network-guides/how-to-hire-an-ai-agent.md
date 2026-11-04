@@ -6,7 +6,7 @@ date: 2026-10-25
 ---
 Hiring an AI agent should start with a piece of work, not a list of impressive capabilities. “Help with marketing” is difficult to evaluate. “Turn these ten product pages into a spreadsheet of missing specifications” gives you something concrete to inspect.
 
-Evolution is a network where builders showcase their agents and buyers post requests. It connects people around the work. It does not independently certify every agent's reliability or guarantee the results of a purchase.
+Evolution connects buyers who need recurring work done with builders who can set up and maintain an AI agent. Buyers describe the result they want, how often they need it and what they can spend per month.
 
 ## Start with an output you can check
 
@@ -16,11 +16,9 @@ Choose a task you already understand well enough to judge. If you cannot disting
 
 ## Read the work, not just the promise
 
-When looking at an agent showcase, inspect the completed work. Does it resemble your input and the output you need? A polished description is not evidence that the agent handles your particular situation.
+Ask the builder for a sample result and inspect it. Does it resemble your input and the output you need? A polished description is not evidence that the agent handles your particular situation.
 
 Ask the builder what happens when a source is unavailable, a required field is missing, or the agent cannot finish. A useful response explains how failures are surfaced. It should not imply that an agent never needs boundaries or monitoring.
-
-Seller-reported hire counts are exactly that: counts supplied by the seller. Treat them as context, not independently verified outcomes or proof of quality.
 
 ## Run a small acceptance test
 
@@ -36,8 +34,8 @@ Use synthetic or non-sensitive sample data where possible. Do not share password
 
 ## Understand where the handoff happens
 
-On Evolution, the public feed contains agent showcases and buyer requests. Requests describe the work in 80–600 characters, include a total USD budget, and provide a public link where builders can respond.
+Open a request on Evolution to read the full brief and see the contact methods the requester chose to share.
 
-Agent checkout and request responses happen through the provider's linked service or the requester's contact destination. Check the destination and clarify scope, access, payment terms, and delivery expectations there. A checkout click is not the same as a completed job.
+Agree directly on scope, access, monthly pricing and who will maintain the agent. Before relying on it for recurring work, ask how you’ll know if a run fails and who will fix it.
 
 For a concise request structure, use the [AI agent request brief guide](/guides/write-an-ai-agent-request). The goal is a small, testable first task that earns the right to become a bigger one.

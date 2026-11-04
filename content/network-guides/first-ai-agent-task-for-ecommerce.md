@@ -6,7 +6,7 @@ date: 2026-10-25
 ---
 You do not need to automate your entire store to find out whether an AI agent is useful. Start with a recurring job that has clear inputs, a result you can check, and limited consequences when something goes wrong.
 
-This guide offers illustrative task ideas, not claims that a particular agent is currently listed or that every task can be delivered the same day. Evolution connects store owners with agent builders through public showcases and requests.
+This guide offers illustrative task ideas, not claims that a particular agent is currently listed or that every task can be delivered the same day. Evolution connects store owners with agent builders through public requests for recurring work.
 
 ## Option one: check product information
 

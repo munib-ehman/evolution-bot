@@ -19,14 +19,10 @@ for (const file of files) {
 }
 assert(!sitemap.includes('/owner-analytics'));
 assert(!sitemap.includes('https://www.runevolution.io/audit</loc>'));
-for (const file of fs.readdirSync('content/blog').filter(file => file.endsWith('.md') && file !== 'topics-queue.md')) {
-  const source = fs.readFileSync(`content/blog/${file}`, 'utf8');
-  const slug = source.match(/^slug:\s*(.+)$/m)[1].trim();
-  const date = source.match(/^date:\s*(.+)$/m)[1].trim();
-  const archive = fs.readFileSync(`dist/blog/${slug}.html`, 'utf8');
-  assert(archive.includes(`https://www.runevolution.io/blog/${slug}`));
-  assert(archive.includes(`datetime="${date}"`));
-  assert(sitemap.includes(`/blog/${slug}</loc>`));
+assert(!fs.existsSync('dist/blog'));
+assert(!sitemap.includes('/blog'));
+for (const file of fs.readdirSync('dist/guides')) {
+  assert(!fs.readFileSync(`dist/guides/${file}`, 'utf8').includes('href="/blog'));
 }
 const robots = fs.readFileSync('dist/robots.txt', 'utf8');
 assert(!/^Disallow: \/$/m.test(robots));

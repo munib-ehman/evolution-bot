@@ -91,7 +91,7 @@ if (fs.existsSync('dist/index.html')) {
     assert(!html.includes('shopify-api-key'));
   }
   for (const file of ['audit.html', 'pricing.html', 'models', 'products.json']) assert(!fs.existsSync('dist/' + file));
-  assert(fs.existsSync('dist/blog/index.html'));
+  assert(!fs.existsSync('dist/blog'));
   const robots = fs.readFileSync('dist/robots.txt', 'utf8');
   assert(robots.includes('Allow: /'));
   assert(robots.includes('Disallow: /owner-analytics'));

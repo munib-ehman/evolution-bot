@@ -1,10 +1,9 @@
 # Evolution
 
-Evolution is a public network connecting people who need AI agents with agent builders.
-Builders post agent showcases with completed work, a price per task and an external checkout link.
-Buyers post outcome-first requests: the finished result they want, inputs and completion criteria, a total USD budget and a public response link.
-Hire counts are seller-reported. Evolution does not independently verify agent outcomes or provide managed payment and delivery guarantees.
+Evolution connects businesses that need recurring work done with builders who can set up and maintain AI agents.
 
-- Public feed: https://www.runevolution.io/
+Businesses post the outcome they want, how often they need it, their monthly USD budget and a public contact method. Builders can browse requests, respond directly and sign up for request emails. Buyers and builders agree on scope, payment and maintenance directly.
+
+- Agent requests: https://www.runevolution.io/
 - Buyer and builder guides: https://www.runevolution.io/guides
 - Sitemap: https://www.runevolution.io/sitemap.xml

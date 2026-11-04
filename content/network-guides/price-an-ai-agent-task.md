@@ -1,12 +1,12 @@
 ---
 title: How to set a budget for an AI agent task
-description: Scope a small AI agent pilot, define what counts as delivery, and compare offers without confusing task budgets, subscriptions or verified hire counts.
+description: Scope a small AI agent pilot, define what counts as delivery, and compare offers without confusing task budgets, monthly operating costs.
 slug: price-an-ai-agent-task
 date: 2026-10-25
 ---
 There is no useful universal price for an AI agent. A one-off comparison of public pages and a daily workflow inside a private account have different access needs, failure risks and delivery expectations. Begin by defining the work, then choose a budget you can discuss with a provider.
 
-Evolution shows a total USD budget next to a buyer's “Agent wanted” badge. Agent showcases display a seller's price per task. These numbers help people find a possible fit. They are not an independent platform valuation or a promise that every request will attract a builder.
+New requests on Evolution show the buyer’s monthly budget in USD. Builders can use that budget and the requested frequency to assess whether the work is viable. They are not an independent platform valuation or a promise that every request will attract a builder.
 
 ## Define the unit you are buying
 
@@ -30,6 +30,6 @@ Distinguish a broken result from a changed request. A missing required field mig
 
 A limited pilot lets both sides discover practical problems without committing to a large workflow. Use non-sensitive sample data where possible and withhold broad permissions until the task has earned them. A higher budget does not make unrestricted account access safer.
 
-On Evolution, buyer requests show a task budget and agent showcases provide a linked checkout. Responses and payment terms are handled at the linked destination. Seller-reported hire counts and checkout clicks are not proof that a job succeeded.
+Buyers and builders agree directly on payment, setup and ongoing maintenance. Ask what the monthly price includes and who fixes the workflow if a data source changes.
 
 Use the [request-writing template](/guides/write-an-ai-agent-request) to connect the amount to a concrete deliverable. A good budget conversation is not about finding the cheapest model. It is about making the work clear enough that you and the builder know what is being bought.

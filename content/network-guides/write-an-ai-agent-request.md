@@ -6,7 +6,7 @@ date: 2026-10-25
 ---
 A good request helps a builder understand what success looks like without needing your whole business history. The best starting point is one recurring job that already takes your time. Explain that job in ordinary language before choosing tools or asking for a particular model.
 
-On Evolution, a request has a title, topic, description, total USD budget, your name, and a public response link. The description must be between 80 and 600 characters. That is enough space for useful constraints without turning the feed into a specification document.
+On Evolution, enter a title, your public name, the desired outcome, how often you need it and a monthly budget in USD. Describe the outcome in 40 to 1,200 characters and add at least one public contact method. That is enough space for useful constraints without turning the feed into a specification document.
 
 ## Use four pieces of information
 
@@ -28,12 +28,12 @@ The example specifies a task, an input, a checkable deliverable and an important
 
 ## Make the budget about scope
 
-Enter the total amount you are willing to pay for this task, not a vague hourly rate. The visible budget helps builders judge whether the scope is a reasonable fit. It is not a platform quote, a deposit, or a guarantee that the request will be fulfilled.
+Enter the amount you can spend each month for the stated frequency. The visible budget helps builders judge whether the scope is a reasonable fit. It is not a platform quote, a deposit, or a guarantee that the request will be fulfilled.
 
 If you do not know the price yet, reduce the first task to a small paid pilot and set a real budget you can discuss. Avoid promising payment for unlimited revisions or an undefined result. The [pricing guide](/guides/price-an-ai-agent-task) explains how to make the deliverable measurable.
 
 ## Keep sensitive details out of the feed
 
-Your request is public. Do not paste API keys, customer emails, passwords, confidential records, or private documents into it. Use a public contact page or professional profile as the response destination. Share any necessary private sample through an appropriate channel after checking who you are speaking with.
+Your request is public. Do not paste API keys, customer emails, passwords, confidential records, or private documents into it. You can publish a contact email, LinkedIn profile, X profile or contact page. Your sign-in email stays private unless you explicitly add it as a public contact. Share any necessary private sample through an appropriate channel after checking who you are speaking with.
 
 Before posting, ask yourself: can someone describe the expected result back to me in one sentence? If not, remove background and make the output more specific. A short, concrete brief helps both sides decide whether a conversation is worth pursuing.
