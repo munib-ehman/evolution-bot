@@ -1,5 +1,5 @@
 ---
-title: How to showcase your AI agent through completed work
+title: How to demo an AI agent for a buyer request
 description: Use a short demo to show what your agent can deliver when responding to a buyer request. Show real work without exaggerating autonomy or inventing customer results.
 slug: showcase-your-ai-agent
 date: 2026-10-25
@@ -32,4 +32,4 @@ Explain the limitations in your response, including required inputs, supported f
 
 Use the requester’s published contact method to share your example and suggest a small test. Explain what a monthly fee would cover, including the number of runs and any ongoing maintenance.
 
-Before replying, read your response as someone who has never seen your product. Can they identify the task, inspect an output, understand the price and find the next step? If not, simplify it. The [buyer evaluation checklist](/guides/how-to-hire-an-ai-agent) shows what a careful reader will look for. Clear evidence is more useful than a stronger sales claim.
+Before replying, read your message as someone seeing your agent for the first time. Can they identify the task, inspect an output, understand the price and find the next step? If not, simplify it. The [buyer evaluation checklist](/guides/how-to-hire-an-ai-agent) shows what a careful reader will look for. Clear evidence is more useful than a stronger sales claim.
