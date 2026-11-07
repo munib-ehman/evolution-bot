@@ -52,6 +52,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200, {'product': 'Nova by Evolution', 'version': 4, 'status': 'running',
                 'ai_configured': all(os.environ.get(key) for key in ['NOVA_AI_BASE_URL', 'NOVA_AI_KEY', 'NOVA_AI_MODEL']),
                 'whatsapp_configured': all(os.environ.get(key) for key in ['META_APP_SECRET', 'META_GRAPH_VERSION', 'WHATSAPP_ACCESS_TOKEN'])})
+        if self.command == 'GET' and url.path == '/connections/google/callback':
+            from connections import setup, callback
+            setup(store)
+            result = callback(store, query.get('state', [''])[0], query.get('code', [None])[0])
+            store.enqueue(result['business_id'], 'delivery', {'text': 'Your Google Calendar is connected. Creating events still follows your approval rules.'})
+            return self.respond(200, '<!doctype html><html><head><meta name="viewport" content="width=device-width"><meta name="referrer" content="no-referrer"><title>Nova connected</title></head><body><h1>Calendar connected</h1><p>Return to your Nova conversation to continue.</p></body></html>', 'text/html; charset=utf-8')
         if self.command == 'GET' and url.path == '/webhooks/whatsapp':
             token = os.environ.get('WHATSAPP_VERIFY_TOKEN', '')
             if token and query.get('hub.mode') == ['subscribe'] and hmac.compare_digest(query.get('hub.verify_token', [''])[0], token):
@@ -83,19 +89,33 @@ class Handler(BaseHTTPRequestHandler):
                         owner = sender == row['owner']
                         text = message.get('text', {}).get('body', '')
                         audio = message.get('audio', {}).get('id')
-                        if not text and not audio:
+                        document = message.get('document') if owner else None
+                        if not text and not audio and not document:
                             continue
                         if not isinstance(text, str) or len(text) > 16000:
                             continue
                         occurred = float(message['timestamp'])
                         if occurred > time.time() + 60:
                             continue
-                        store.enqueue(row['id'], 'owner' if owner else 'customer',
-                                      {'text': text, 'audio': audio, 'from': sender, 'channel': 'whatsapp'},
+                        store.enqueue(row['id'], 'import' if document else 'owner' if owner else 'customer',
+                                      {'text': text, 'audio': audio, 'document': document, 'from': sender, 'channel': 'whatsapp'},
                                       'wa:' + row['id'] + ':' + message['id'], occurred=occurred)
                         if owner:
                             store.db.execute("UPDATE events SET state='pending' WHERE business=? AND kind='delivery' AND state='awaiting_owner'", (row['id'],))
             return self.respond(200, {'accepted': True})
+        if url.path == '/webhooks/sms' and self.command == 'POST':
+            fields = {key: values[0] for key, values in urllib.parse.parse_qs(raw.decode(), keep_blank_values=True).items()}
+            public = os.environ['NOVA_PUBLIC_URL'].rstrip('/') + self.path
+            if not twilio_signature(public, fields, self.headers.get('X-Twilio-Signature'), os.environ.get('TWILIO_AUTH_TOKEN', '')):
+                return self.respond(403, {'error': 'Invalid signature'})
+            row = store.db.execute("SELECT id FROM businesses WHERE json_extract(config,'$.sms_number')=?", (fields.get('To'),)).fetchone()
+            if not row:
+                return self.respond(404, {'error': 'Business number is not configured'})
+            sender = fields.get('From', '').lstrip('+')
+            if not sender.isdecimal() or not fields.get('MessageSid') or not fields.get('Body') or len(fields['Body']) > 16000:
+                raise ValueError('Invalid SMS')
+            store.enqueue(row['id'], 'customer', {'from': sender, 'text': fields['Body'], 'channel': 'sms'}, 'sms:' + row['id'] + ':' + fields['MessageSid'])
+            return self.respond(200, '<Response/>', 'application/xml')
         if url.path == '/webhooks/call' and self.command == 'POST':
             fields = {key: values[0] for key, values in urllib.parse.parse_qs(raw.decode()).items()}
             public = os.environ['NOVA_PUBLIC_URL'].rstrip('/') + self.path

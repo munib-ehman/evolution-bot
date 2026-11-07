@@ -48,6 +48,8 @@ class Store:
         columns = {row[1] for row in self.db.execute('PRAGMA table_info(documents)')}
         if 'customer_safe' not in columns:
             self.db.execute('ALTER TABLE documents ADD COLUMN customer_safe INTEGER NOT NULL DEFAULT 0')
+        import operations
+        operations.setup(self)
 
     def business(self, business):
         row = self.db.execute('SELECT * FROM businesses WHERE id=?', (business,)).fetchone()
@@ -104,8 +106,12 @@ class Store:
             "SELECT kind,body,result FROM events WHERE business=? AND state='done' AND (?='' OR (kind='customer' AND json_extract(body,'$.from')=?)) ORDER BY created DESC LIMIT 6", (business, customer or '', customer or ''))]
         actions = [dict(row) for row in self.db.execute(
             "SELECT id,tool,args,state,result FROM actions WHERE business=? AND (?='' OR (tool='send_message' AND json_extract(args,'$.to')=?)) ORDER BY created DESC LIMIT 12", (business, customer or '', customer or ''))]
-        return {'references': [{'source': name, 'offset': offset, 'text': body}
-                               for _, name, offset, body in passages[:8]], 'recent': history[::-1], 'action_results': actions}
+        result = {'references': [{'source': name, 'offset': offset, 'text': body}
+                                 for _, name, offset, body in passages[:8]], 'recent': history[::-1], 'action_results': actions}
+        if not customer:
+            import operations
+            result['sales'] = operations.context(self, business)
+        return result
 
     def reserve_tokens(self, business, amount, limit):
         month = time.strftime('%Y-%m', time.gmtime())
@@ -122,4 +128,10 @@ class Store:
             (business, since))]
         outstanding = [dict(row) for row in self.db.execute(
             "SELECT id,tool,state FROM actions WHERE business=? AND state IN ('approval','uncertain','failed') ORDER BY created DESC LIMIT 20", (business,))]
-        return {'period_days': 7, 'actions': counts, 'needs_attention': outstanding}
+        import operations
+        month = time.strftime('%Y-%m', time.gmtime())
+        usage = self.db.execute('SELECT reserved FROM usage WHERE business=? AND month=?', (business, month)).fetchone()
+        limit = self.business(business)['config'].get('monthly_token_limit', 500_000)
+        return {'period_days': 7, 'actions': counts, 'needs_attention': outstanding,
+                'sales': operations.report(self, business),
+                'usage_percent': round(100 * (usage[0] if usage else 0) / limit, 1)}

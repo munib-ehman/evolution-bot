@@ -1,0 +1,19 @@
+services:
+  server:
+    build: .
+    command: ["python", "nova.py", "serve", "--host", "0.0.0.0"]
+    env_file: .env
+    ports:
+      - "127.0.0.1:4190:4190"
+    volumes:
+      - nova-data:/app/data
+    restart: unless-stopped
+  worker:
+    build: .
+    command: ["python", "nova.py", "worker"]
+    env_file: .env
+    volumes:
+      - nova-data:/app/data
+    restart: unless-stopped
+volumes:
+  nova-data:

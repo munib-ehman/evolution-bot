@@ -40,14 +40,19 @@ def main():
     store = Store(filename)
     if args.command == 'business':
         store.add_business(args.id, args.name, args.owner, args.phone_id)
-        print('Business created. All actions initially require owner approval.')
+        import onboarding
+        greeting = onboarding.start(store, store.business(args.id))
+        business = store.business(args.id)
+        business['config']['onboarding']['stage'] = 'welcome'
+        onboarding.save(store, business)
+        print('Business created. Onboarding starts with the owner’s first message.\n' + greeting)
     elif args.command == 'import':
         path = Path(args.file)
         store.ingest(args.business, path.name, path.read_text(encoding='utf-8-sig'), args.customer_safe)
         print('Imported reference material. Business decisions still require current owner-approved information.')
     elif args.command == 'configure':
         config = json.loads(Path(args.file).read_text())
-        if not isinstance(config, dict) or set(config) - {'rules', 'connectors', 'monthly_token_limit'}:
+        if not isinstance(config, dict) or set(config) - {'rules', 'connectors', 'monthly_token_limit', 'sms_number'}:
             raise ValueError('Invalid configuration')
         from engine import TOOLS
         for tool, mode in config.get('rules', {}).items():
@@ -55,8 +60,16 @@ def main():
                 raise ValueError('Invalid rule')
         if not isinstance(config.get('monthly_token_limit', 500_000), int) or config.get('monthly_token_limit', 500_000) <= 0:
             raise ValueError('Token allowance must be positive')
-        store.business(args.business)
-        store.db.execute('UPDATE businesses SET config=? WHERE id=?', (json.dumps(config), args.business))
+        if config.get('sms_number'):
+            import re
+            if not re.fullmatch(r'\+\d{7,16}', config['sms_number']):
+                raise ValueError('SMS number must use +country code format')
+            other = store.db.execute("SELECT id FROM businesses WHERE json_extract(config,'$.sms_number')=? AND id<>?", (config['sms_number'], args.business)).fetchone()
+            if other:
+                raise ValueError('SMS number already belongs to another business')
+        current = store.business(args.business)['config']
+        current.update(config)
+        store.db.execute('UPDATE businesses SET config=? WHERE id=?', (json.dumps(current), args.business))
         print('Configuration saved.')
     elif args.command == 'message':
         store.business(args.business)
@@ -78,8 +91,10 @@ def main():
                 execute(store, dict(action))
                 worked = True
             week = time.strftime('%G-W%V', time.gmtime())
-            for business in store.db.execute('SELECT id FROM businesses').fetchall():
+            for business in store.db.execute('SELECT id,config FROM businesses').fetchall():
                 # The report is saved once per UTC week. Delivery waits for an active WhatsApp session.
+                if json.loads(business['config']).get('onboarding', {}).get('stage', 'active') != 'active':
+                    continue
                 store.enqueue(business['id'], 'report', {'channel': 'whatsapp'}, 'weekly:' + business['id'] + ':' + week)
             if not worked:
                 time.sleep(1)

@@ -44,3 +44,11 @@ Configure an approved report template, exact usage/cost accounting, subscription
 7. The weekly report reflects stored action states. Bookings and revenue are only reportable after a connected system provides them.
 
 The backend has automated local checks for core behavior. Provider delivery and real-business outcomes require configured pilot accounts and have not been verified by those checks.
+
+## November 8 implementation update
+
+Conversation onboarding, owner file imports, a practice-response review and explicit activation are now implemented. Customer replies wait for activation. Pause/resume applies to customer tasks, scheduled work and approved actions. Reports include prepared quotes, locally recorded bookings and conservative AI allowance consumption.
+
+The travel and detailing pilots share business-isolated lead, quote and booking records. Google Calendar has an owner-requested OAuth connection and approval-gated event creation with encrypted tokens. A signed Twilio SMS adapter supports customer texts when the business uses a configured Twilio number. The detailer’s actual provider is still unknown.
+
+These additions remain locally verified. The supported action set is finite. Live supplier booking, payments, arbitrary tool onboarding, subscription collection and cloud/provider activation remain outside the completed functionality. Current live call support is inbound owner calls through Twilio; WhatsApp-native live calls and outbound calling are not implemented.

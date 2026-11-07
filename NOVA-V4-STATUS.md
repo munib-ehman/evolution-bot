@@ -13,3 +13,10 @@ Live WhatsApp and calling tests are pending. No Meta, Twilio or AI provider cred
 This is a backend implementation. It has no production cloud deployment, subscription collection or verified live provider delivery. The AI connection must be configured to perform real reasoning. The third-party US texting provider has not been identified. The Twilio adapter currently supports inbound owner calls with turn-based speech.
 
 No replacement of the existing live v3 site was performed. Deploy the v4 worker and server on a persistent host when accounts are connected. Vercel's static v3 build does not run this Python worker.
+
+
+## November 8 continuation
+
+Added guided WhatsApp onboarding, private owner document imports, explicit sharing controls, sample reply review and activation. Added pause/resume, pending-action approval, signed SMS ingestion/replies for optional Twilio numbers, lead/quote/local-booking records, and Google Calendar OAuth/event creation with encrypted tokens. Provider credentials and actual user documents remain unconfigured.
+
+73 local tests pass, with simulated external providers. Python compilation and diff checks pass. Google OAuth helper code was reviewed and integrated after its implementation subagent reached its usage limit. No real provider authorization or delivery was performed. The public site remains v3; v4 backend deployment still needs a persistent server, worker and configured provider accounts.

@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -50,20 +51,78 @@ def whatsapp_send(phone_id, recipient, text, report_template=False):
     return result['messages'][0]['id']
 
 
-def transcribe(media_id):
+def sms_send(from_number, recipient, text):
+    """Send an SMS through Twilio's official REST API and return its SID."""
+    account = os.environ['TWILIO_ACCOUNT_SID']
+    credentials = base64.b64encode((account + ':' + os.environ['TWILIO_AUTH_TOKEN']).encode()).decode()
+    data = urllib.parse.urlencode({'From': from_number, 'To': recipient, 'Body': text}).encode()
+    result = json.loads(request(
+        f'https://api.twilio.com/2010-04-01/Accounts/{urllib.parse.quote(account, safe="")}/Messages.json',
+        data, {'Authorization': 'Basic ' + credentials,
+               'Content-Type': 'application/x-www-form-urlencoded'}, method='POST'))
+    return result['sid']
+
+
+def whatsapp_media(media_id, *, mime_types, limit):
+    """Retrieve validated metadata and bytes through Meta's authenticated media path."""
+    if not isinstance(media_id, str) or not media_id.strip() or media_id in {'.', '..'}:
+        raise ValueError('Invalid WhatsApp media ID')
+    if type(limit) is not int or limit <= 0:
+        raise ValueError('Invalid WhatsApp media limit')
     token = os.environ['WHATSAPP_ACCESS_TOKEN']
     version = os.environ['META_GRAPH_VERSION']
     metadata = json.loads(request(f'https://graph.facebook.com/{version}/{urllib.parse.quote(media_id, safe="")}',
                                   headers={'Authorization': 'Bearer ' + token}))
-    url = urllib.parse.urlparse(metadata['url'])
-    if url.scheme != 'https' or url.hostname not in {'lookaside.fbsbx.com', 'lookaside.facebook.com'}:
+    if not isinstance(metadata, dict):
+        raise ValueError('Invalid WhatsApp media metadata')
+    size = metadata.get('file_size')
+    if type(size) is not int or not 0 < size <= limit:
+        raise ValueError('Invalid WhatsApp media size')
+    mime = metadata.get('mime_type')
+    if not isinstance(mime, str) or mime.split(';', 1)[0].strip().lower() not in mime_types:
+        raise ValueError('Unsupported WhatsApp media MIME type')
+    media_url = metadata.get('url')
+    if not isinstance(media_url, str) or any(c.isspace() or ord(c) < 32 for c in media_url):
+        raise ValueError('Invalid WhatsApp media URL')
+    url = urllib.parse.urlsplit(media_url)
+    if (url.scheme != 'https' or url.hostname not in {'lookaside.fbsbx.com', 'lookaside.facebook.com'}
+            or url.username is not None or url.password is not None or url.port not in {None, 443}
+            or url.fragment):
         raise ValueError('Unsupported WhatsApp media host')
-    audio = request(metadata['url'], headers={'Authorization': 'Bearer ' + token}, limit=15_000_000)
-    boundary = 'nova_audio_boundary'
+    body = request(media_url, headers={'Authorization': 'Bearer ' + token}, limit=limit)
+    if len(body) > limit or len(body) != size:
+        raise ValueError('WhatsApp media size does not match metadata')
+    return metadata, body
+
+
+def whatsapp_document(media_id, filename):
+    """Return (source name, UTF-8 text) for a .txt, .csv or .json export (max 2 MB)."""
+    if not isinstance(filename, str) or any(ord(c) < 32 for c in filename):
+        raise ValueError('Invalid WhatsApp document filename')
+    source = filename.replace('\\', '/').rsplit('/', 1)[-1]
+    extension = os.path.splitext(source)[1].lower()
+    types = {'.txt': {'text/plain'}, '.csv': {'text/plain', 'text/csv', 'application/csv'},
+             '.json': {'text/plain', 'application/json', 'text/json'}}
+    if extension not in types:
+        raise ValueError('Only .txt, .csv and .json exports are supported')
+    _, body = whatsapp_media(media_id, mime_types=types[extension], limit=2_000_000)
+    text = body.decode('utf-8-sig')
+    if not text.strip() or '\x00' in text:
+        raise ValueError('WhatsApp document must contain UTF-8 text')
+    return source, text
+
+
+def transcribe(media_id):
+    formats = {'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'mp4',
+               'audio/aac': 'aac', 'audio/amr': 'amr', 'audio/wav': 'wav',
+               'audio/x-wav': 'wav', 'audio/webm': 'webm', 'audio/opus': 'opus'}
+    metadata, audio = whatsapp_media(media_id, mime_types=formats, limit=15_000_000)
+    mime = metadata['mime_type'].split(';', 1)[0].strip().lower()
+    boundary = 'nova_audio_' + secrets.token_hex(16)
     model = os.environ['NOVA_TRANSCRIPTION_MODEL']
     data = (f'--{boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\n{model}\r\n'
-            f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="voice.ogg"\r\n'
-            'Content-Type: audio/ogg\r\n\r\n').encode() + audio + f'\r\n--{boundary}--\r\n'.encode()
+            f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="voice.{formats[mime]}"\r\n'
+            f'Content-Type: {mime}\r\n\r\n').encode() + audio + f'\r\n--{boundary}--\r\n'.encode()
     result = json.loads(request(os.environ['NOVA_AI_BASE_URL'].rstrip('/') + '/audio/transcriptions', data,
                                {'Authorization': 'Bearer ' + os.environ['NOVA_AI_KEY'],
                                 'Content-Type': f'multipart/form-data; boundary={boundary}'}))
