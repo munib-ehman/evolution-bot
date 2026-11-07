@@ -24,6 +24,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-Type', mime)
         self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Referrer-Policy', 'no-referrer')
         self.send_header('Content-Length', str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
@@ -48,6 +50,9 @@ class Handler(BaseHTTPRequestHandler):
     def route(self, store):
         url = urllib.parse.urlsplit(self.path)
         query = urllib.parse.parse_qs(url.query)
+        if self.command == 'GET' and url.path in {'/', '/signup', '/signup/complete', '/signup/cancel'}:
+            from signup import page
+            return self.respond(200, page(url.path), 'text/html; charset=utf-8')
         if self.command == 'GET' and url.path == '/health':
             return self.respond(200, {'product': 'Nova by Evolution', 'version': 4, 'status': 'running',
                 'ai_configured': all(os.environ.get(key) for key in ['NOVA_AI_BASE_URL', 'NOVA_AI_KEY', 'NOVA_AI_MODEL']),
@@ -69,6 +74,24 @@ class Handler(BaseHTTPRequestHandler):
         if length < 0 or length > 1_000_000:
             return self.respond(413, {'error': 'Request too large'})
         raw = self.rfile.read(length)
+        if url.path == '/signup/checkout' and self.command == 'POST':
+            origin = self.headers.get('Origin', '')
+            expected = os.environ.get('NOVA_PUBLIC_URL', '').rstrip('/')
+            if not expected or origin != expected:
+                return self.respond(403, {'error': 'Open the signup page to begin checkout'})
+            from billing import setup, create_checkout
+            setup(store)
+            payload = json.loads(raw)
+            phone = payload.get('phone')
+            if isinstance(phone, str):
+                phone = phone.replace(' ', '').replace('-', '').replace('(', '').replace(')', '').removeprefix('+')
+            result = create_checkout(store, phone, payload.get('consent'))
+            return self.respond(200, {'url': result})
+        if url.path == '/webhooks/stripe' and self.command == 'POST':
+            from billing import setup, webhook
+            setup(store)
+            result = webhook(store, raw, self.headers.get('Stripe-Signature', ''))
+            return self.respond(200, {'status': result})
         if url.path == '/webhooks/whatsapp' and self.command == 'POST':
             if not whatsapp_signature(raw, self.headers.get('X-Hub-Signature-256'), os.environ.get('META_APP_SECRET', '')):
                 return self.respond(403, {'error': 'Invalid signature'})
@@ -79,12 +102,15 @@ class Handler(BaseHTTPRequestHandler):
                 for change in entry.get('changes', []):
                     value = change.get('value', {})
                     phone_id = value.get('metadata', {}).get('phone_number_id')
-                    row = store.db.execute('SELECT id,owner FROM businesses WHERE phone_id=?', (phone_id,)).fetchone()
-                    if not row:
-                        continue
                     for message in value.get('messages', []):
                         sender = message.get('from')
                         if not isinstance(sender, str) or not sender.isdecimal():
+                            continue
+                        # The Nova contact serves many owners; customer-facing numbers remain business-specific.
+                        row = store.db.execute("SELECT id,owner FROM businesses WHERE owner=? AND json_extract(config,'$.operator_phone_id')=?", (sender, phone_id)).fetchone()
+                        if not row:
+                            row = store.db.execute('SELECT id,owner FROM businesses WHERE phone_id=?', (phone_id,)).fetchone()
+                        if not row:
                             continue
                         owner = sender == row['owner']
                         text = message.get('text', {}).get('body', '')
@@ -121,7 +147,12 @@ class Handler(BaseHTTPRequestHandler):
             public = os.environ['NOVA_PUBLIC_URL'].rstrip('/') + self.path
             if not twilio_signature(public, fields, self.headers.get('X-Twilio-Signature'), os.environ.get('TWILIO_AUTH_TOKEN', '')):
                 return self.respond(403, {'error': 'Invalid signature'})
-            business = store.business(os.environ['NOVA_CALL_BUSINESS'])
+            owner = fields.get('From', '').lstrip('+')
+            candidates = store.db.execute("SELECT id FROM businesses WHERE owner=? AND json_extract(config,'$.subscription_active')=1", (owner,)).fetchall()
+            if len(candidates) == 1:
+                business = store.business(candidates[0]['id'])
+            else:
+                business = store.business(os.environ['NOVA_CALL_BUSINESS'])
             if fields.get('From', '').lstrip('+') != business['owner']:
                 return self.respond(403, '<Response><Reject/></Response>', 'application/xml')
             if query.get('event'):
@@ -143,13 +174,13 @@ class Handler(BaseHTTPRequestHandler):
                         for offset in range(0, len(full), 3800):
                             store.enqueue(business['id'], 'delivery', {'text': full[offset:offset + 3800]},
                                           'call-result:' + event['id'] + ':' + str(offset))
-                    return self.respond(200, call_xml(reply), 'application/xml')
+                    return self.respond(200, call_xml(reply, action='/webhooks/call?turn=' + event['id']), 'application/xml')
                 if event['state'] == 'failed' or time.time() - event['created'] > 90:
                     return self.respond(200, call_xml('I could not finish that request. Please message me on WhatsApp.'), 'application/xml')
                 redirect = escape('/webhooks/call?event=' + event['id'])
                 return self.respond(200, f'<Response><Pause length="2"/><Redirect method="POST">{redirect}</Redirect></Response>', 'application/xml')
             if fields.get('SpeechResult'):
-                key = 'call:' + fields['CallSid'] + ':' + str(fields.get('SpeechResult'))
+                key = 'call:' + fields['CallSid'] + ':' + query.get('turn', ['first'])[0] + ':' + str(fields.get('SpeechResult'))
                 import hashlib
                 event = store.enqueue(business['id'], 'call', {'text': fields['SpeechResult'][:8000], 'channel': 'call'},
                                       hashlib.sha256(key.encode()).hexdigest())

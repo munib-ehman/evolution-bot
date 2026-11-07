@@ -51,6 +51,17 @@ def whatsapp_send(phone_id, recipient, text, report_template=False):
     return result['messages'][0]['id']
 
 
+def whatsapp_welcome(phone_id, recipient):
+    """A configured Meta-approved template starts the paid owner's conversation."""
+    payload = {'messaging_product': 'whatsapp', 'to': recipient, 'type': 'template',
+               'template': {'name': os.environ['WHATSAPP_WELCOME_TEMPLATE'],
+                            'language': {'code': os.environ.get('WHATSAPP_WELCOME_LANGUAGE', 'en_US')}}}
+    result = json.loads(request(f"https://graph.facebook.com/{os.environ['META_GRAPH_VERSION']}/{phone_id}/messages",
+                               json.dumps(payload).encode(), {'Authorization': 'Bearer ' + os.environ['WHATSAPP_ACCESS_TOKEN'],
+                                                             'Content-Type': 'application/json'}))
+    return result['messages'][0]['id']
+
+
 def sms_send(from_number, recipient, text):
     """Send an SMS through Twilio's official REST API and return its SID."""
     account = os.environ['TWILIO_ACCOUNT_SID']
@@ -60,6 +71,20 @@ def sms_send(from_number, recipient, text):
         f'https://api.twilio.com/2010-04-01/Accounts/{urllib.parse.quote(account, safe="")}/Messages.json',
         data, {'Authorization': 'Basic ' + credentials,
                'Content-Type': 'application/x-www-form-urlencoded'}, method='POST'))
+    return result['sid']
+
+
+def call_owner(recipient):
+    account = os.environ['TWILIO_ACCOUNT_SID']
+    public = os.environ['NOVA_PUBLIC_URL'].rstrip('/')
+    if urllib.parse.urlsplit(public).scheme != 'https':
+        raise ValueError('Calls require a public HTTPS callback')
+    credentials = base64.b64encode((account + ':' + os.environ['TWILIO_AUTH_TOKEN']).encode()).decode()
+    payload = {'From': os.environ['NOVA_CALL_FROM_NUMBER'], 'To': '+' + recipient,
+               'Url': public + '/webhooks/call', 'Method': 'POST', 'TimeLimit': '900'}
+    result = json.loads(request(f'https://api.twilio.com/2010-04-01/Accounts/{urllib.parse.quote(account, safe="")}/Calls.json',
+                               urllib.parse.urlencode(payload).encode(), {'Authorization': 'Basic ' + credentials,
+                               'Content-Type': 'application/x-www-form-urlencoded'}, method='POST'))
     return result['sid']
 
 

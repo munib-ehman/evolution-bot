@@ -1,54 +1,51 @@
-# Evolution v4 — Nova
+# Nova by Evolution — Evolution v4 MVP
 
-Nova is an AI business operator managed through WhatsApp text, voice notes and phone calls. The proposed base subscription is $200 per month with a measured usage allowance. This implementation does not collect payment.
+Nova is a business operator managed through WhatsApp. The monthly subscription is USD 200. Signup is the only customer web screen. Ongoing setup, instructions, decisions and reports happen in the conversation, with official account-authorization links where required.
 
-The owner supplies business information and chooses which tools can run automatically, which need approval and which are disabled. Nova uses server-side memory, planning, persistent tasks and configured business integrations to act on those instructions.
+## Implemented journey
 
-## Implemented first backend
+| Step | Implemented behavior |
+| --- | --- |
+| Subscribe | The owner enters their WhatsApp number and consents to service messages. Stripe-hosted checkout uses a verified fixed USD 200/month price. |
+| Welcome | A verified paid webhook provisions the owner account and queues a Meta-approved welcome template from the shared Nova contact. |
+| Talk about the business | A guided interview asks what the business sells, its desired outcome, tools, process, bottlenecks and current inquiry-handling effort. Text, voice notes and a Twilio telephone interview are supported by adapters. |
+| Share information | Owner document attachments import conversation exports and business information. Imports are private until explicitly shared for customer replies. |
+| Connect tools | An owner-requested Google authorization link connects Calendar. Other tools use administrator-configured business integration endpoints. |
+| Choose an opportunity | Nova recommends supported inquiry, follow-up and quote workflows, with baseline-based time estimates and honest cost unknowns. |
+| Build and review | A reviewed recipe is configured, demonstrated on an owner sample and activated only after explicit approval. |
+| Operate | Persistent queues execute actions under owner rules. Pause/resume, approvals, lead records, quotes and local bookings are available. |
+| Improve and report | Weekly reports use recorded task states, quote/booking records and available model-usage evidence. Suggestions prioritize failed actions and approval backlogs. |
+| Manage subscription | A WhatsApp billing command returns a private Stripe portal link. Inactive or expired subscriptions stop execution. |
 
-- Business-isolated SQLite storage for imported UTF-8 conversations and business documents, recent messages, tasks, proposals and action results.
-- A configurable AI provider using the Chat Completions protocol. Retrieval supplies source-labelled passages and recent conversation context. Imports do not retrain the underlying model.
-- Signed WhatsApp Cloud API webhooks, durable inbound message deduplication, customer reply proposals and queued replies. Customer replies follow the owner’s send_message rule.
-- Voice-note retrieval and a configurable transcription connection.
-- A signed Twilio inbound phone-call flow with speech collection, background planning and spoken responses. This is a turn-based voice prototype and needs live latency testing.
-- Owner commands for approval, rejection and tool-level permission changes.
-- Tools for saving a business fact, scheduling a task, sending WhatsApp messages and invoking explicitly configured HTTPS integrations.
-- Weekly reports built from recorded actions. Proactive delivery uses a configured Meta-approved template outside an active session. If no template is configured, the report waits for the owner’s next inbound WhatsApp message.
-- One worker per database, atomic claims, and uncertain delivery states requiring reconciliation rather than automatic resends.
-- A conservative AI token admission allowance. This is not dollar metering or a profitability calculation.
+## First supported workflows
 
-## Pilot path
+The travel and detailing pilots share a common core. Inquiries collect requirements and prepare responses using explicitly shared business material. Lead records, quotes and local bookings are created through permission-gated tools. The follow-up recipe schedules one check four hours after an inquiry and cancels when a customer replies, opts out or has a recorded booking.
 
-Create separate travel and detailing business records. Import approved chat exports, catalog information and current business rules. Connect the business's official messaging channel. A Nova number must be assigned per business in this first version because inbound customer messages route by phone-number ID.
+A locally recorded booking does not reserve a flight, hotel or supplier service, charge a customer or establish revenue. A Google Calendar event is a separate approved action. Travel inventory and ticketing require their real supplier integrations. Arbitrary product/code generation is not implemented by the recipe builder.
 
-Ask Nova to retrieve information, save rules, prepare work, schedule follow-ups and use configured integrations. The owner reviews the exact action and arguments before approving. Permission changes are explicit owner commands.
+## Owner controls
 
-The general operator accepts broad requests. Its executable capabilities come from the tool registry and business connectors. Novel work needs an integration or builder implementation. Arbitrary shell access is not part of this first backend.
+Owner messages include PAUSE, RESUME, REPORT, CALL ME, CONNECT CALENDAR, RECOMMEND, BUILD inquiries/followups/quotes, ACTIVATE WORKFLOW and BILLING. Ordinary approval phrases work when exactly one action awaits review. Multiple actions require their IDs. Supported natural rule instructions include asking before bookings, quotes or calendar changes and enabling automatic customer replies. Default permissions require approval.
 
-## Required before a real customer pilot
+The onboarding call is proposed to the owner and requires approval before an outbound call is initiated. Calls use Twilio telephone service with speech turns; WhatsApp-native live calling is not implemented.
 
-Supply authorized Meta credentials and phone-number ID, an AI provider key and selected models, and a cloud host with persistent storage. Live calls additionally need a Twilio number, credentials and public webhook URL. The existing US texting provider still needs identification and its own adapter.
+## Usage and cost controls
 
-Test actual messages, voice notes and calls on the authorized numbers. Verify current provider permissions, supported account setup and costs. Do not treat a WhatsApp connection as blanket access to a personal inbox or historical chats. Historical exports must be supplied or synchronized through an officially supported onboarding flow.
+A conservative monthly token reservation guard limits AI usage. Provider-reported model tokens are persisted when supplied. Configured per-million rates estimate model cost, with separate rates for an optional cheaper customer model. Shorter customer outputs and bounded retrieval reduce model usage.
 
-Configure an approved report template, exact usage/cost accounting, subscription billing, encrypted backups and a tested data deletion/retention process before commercial rollout. Customer messages produce reply proposals; send_message auto allows replies without individual approval. Customers cannot invoke administrative tools or choose other recipients. Documents supplied to customers must be explicitly imported with --customer-safe. Historical chat imports remain private owner context by default.
+The $200 subscription has no automatic overage billing. Complete dollar cost reconciliation, measured staff-time savings and an agreed commercial allowance require real pilot measurements. WhatsApp/SMS, voice, transcription, hosting and other provider charges remain excluded from model-only estimates and are labelled unknown. Time savings shown during setup are assumptions to test, not measured results.
 
-## Acceptance checks
+## Verification
 
-1. A real WhatsApp owner message receives a relevant response using that business's supplied material.
-2. Duplicate inbound delivery produces one queued task.
-3. A proposed external action waits until the authenticated owner approves its exact content.
-4. An approval from another business cannot unlock that action.
-5. A disabled tool cannot execute. An ambiguous provider result is recorded without a resend.
-6. A scheduled task survives service restart and runs once through the same permission gate.
-7. The weekly report reflects stored action states. Bookings and revenue are only reportable after a connected system provides them.
+99 local tests pass, including checkout verification, repeat/concurrent checkout handling, duplicate and out-of-order payment events, subscription expiry, signed webhooks, business isolation, owner approvals, sample review/activation, scheduled follow-up cancellation, model-usage records and paid-to-onboarding progression. Providers are simulated in these tests. Python compilation and diff checks pass.
 
-The backend has automated local checks for core behavior. Provider delivery and real-business outcomes require configured pilot accounts and have not been verified by those checks.
+## Live setup still required
 
-## November 8 implementation update
+- An authorized Stripe account with the USD 200 monthly price, webhook signing secret and configured customer portal.
+- Meta developer app/test-number access, messaging credentials, and approved welcome/report templates.
+- An AI provider account and selected model/transcription configuration.
+- Twilio credentials and an authorized phone number for calls or optional SMS.
+- A Google OAuth application and persistent encryption key for Calendar.
+- A persistent cloud server and worker, plus customer-facing business-channel connections.
 
-Conversation onboarding, owner file imports, a practice-response review and explicit activation are now implemented. Customer replies wait for activation. Pause/resume applies to customer tasks, scheduled work and approved actions. Reports include prepared quotes, locally recorded bookings and conservative AI allowance consumption.
-
-The travel and detailing pilots share business-isolated lead, quote and booking records. Google Calendar has an owner-requested OAuth connection and approval-gated event creation with encrypted tokens. A signed Twilio SMS adapter supports customer texts when the business uses a configured Twilio number. The detailer’s actual provider is still unknown.
-
-These additions remain locally verified. The supported action set is finite. Live supplier booking, payments, arbitrary tool onboarding, subscription collection and cloud/provider activation remain outside the completed functionality. Current live call support is inbound owner calls through Twilio; WhatsApp-native live calls and outbound calling are not implemented.
+No live payment, message, authorization or call was performed by the local tests. The detailer's actual US number provider still needs identification. Production account provisioning, encrypted backups and data retention/deletion procedures require deployment work. The existing public site remains the v3 marketplace until a separate deployment decision.

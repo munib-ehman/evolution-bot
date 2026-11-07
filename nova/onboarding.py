@@ -29,10 +29,32 @@ def handle(store, business, text, planner):
         reply = 'What would you like me to handle first? For example, customer inquiries, quotes and follow-ups.'
     elif stage == 'goal':
         store.ingest(business['id'], 'Owner goal', text)
-        flow['stage'] = 'knowledge'
+        flow['stage'] = 'tools' if flow.get('detailed') else 'knowledge'
         reply = ('Send exported conversations as .txt files and your current packages or services as .txt or .csv files. '
                  'I’ll keep imports private. For information I can use with customers, reply SHARE followed by the exact file name. '
                  'You can also describe the business information here. Say DONE when ready.')
+        if flow.get('detailed'):
+            reply = 'Which tools and messaging numbers does your team use? Where do inquiries, quotes, bookings and payments get recorded?'
+    elif stage == 'tools':
+        store.ingest(business['id'], 'Current business tools', text)
+        flow['stage'] = 'bottlenecks'
+        reply = 'Walk me through one customer from first inquiry to completed booking. Which steps take the most time or get forgotten?'
+    elif stage == 'bottlenecks':
+        store.ingest(business['id'], 'Business process and bottlenecks', text)
+        flow['stage'] = 'baseline'
+        reply = 'About how many inquiries do you handle each week, and how many staff minutes does each take? Reply with two numbers, for example 40 10, or say SKIP.'
+    elif stage == 'baseline':
+        if normalized != 'skip':
+            try:
+                count, minutes = text.split()
+                count, minutes = int(count), float(minutes)
+                if not 0 <= count <= 100000 or not 0 < minutes <= 1440:
+                    raise ValueError()
+            except (ValueError, OverflowError):
+                return 'Reply with weekly inquiries and minutes per inquiry, for example 40 10, or SKIP.'
+            business['config']['baseline'] = {'weekly_inquiries': count, 'minutes_per_inquiry': minutes}
+        flow['stage'] = 'knowledge'
+        reply = 'Send your current packages, services, FAQs and exported conversations as text files. Imports stay private until you explicitly SHARE a file for customer use. Say DONE when ready.'
     elif stage == 'knowledge':
         if normalized != 'done':
             store.ingest(business['id'], 'Setup information ' + str(time.time_ns()), text)
@@ -61,6 +83,9 @@ def handle(store, business, text, planner):
         else:
             flow['stage'] = 'active'
             reply = 'Nova is active. Message me your work, ask for a report, or say PAUSE anytime. Quotes and bookings follow your approval rules.'
+            if flow.get('detailed'):
+                from workflows import recommendations_text
+                reply += '\n\n' + recommendations_text(business)
     else:
         raise ValueError('Setup state is unavailable')
     business['config']['onboarding'] = flow

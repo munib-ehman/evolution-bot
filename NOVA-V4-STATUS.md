@@ -20,3 +20,14 @@ No replacement of the existing live v3 site was performed. Deploy the v4 worker 
 Added guided WhatsApp onboarding, private owner document imports, explicit sharing controls, sample reply review and activation. Added pause/resume, pending-action approval, signed SMS ingestion/replies for optional Twilio numbers, lead/quote/local-booking records, and Google Calendar OAuth/event creation with encrypted tokens. Provider credentials and actual user documents remain unconfigured.
 
 73 local tests pass, with simulated external providers. Python compilation and diff checks pass. Google OAuth helper code was reviewed and integrated after its implementation subagent reached its usage limit. No real provider authorization or delivery was performed. The public site remains v3; v4 backend deployment still needs a persistent server, worker and configured provider accounts.
+
+
+## Paid onboarding and workflow assembly — November 8
+
+Implemented server signup with phone/consent, Stripe-hosted USD 200/month checkout, signed payment/subscription webhooks, verified paid provisioning, one welcome per signup and shared Nova contact owner routing. Added hosted billing management links and execution gates for inactive or expired subscriptions. No live payment account or product was provisioned.
+
+Added a detailed text/voice interview, approved outbound owner calls through Twilio, baseline collection, three explicit workflow recommendations, sample-tested recipe activation, one scheduled follow-up with cancellation checks, and weekly optimization suggestions. Model usage evidence is persisted and model costs can be estimated from configured rates; remaining provider charges remain unknown. Supported customer workflows remain inquiries, follow-ups and quote preparation through existing tools.
+
+Live blockers remain Meta developer registration/test-number access, provider secrets and approved WhatsApp welcome/report templates, configured Stripe account/price/webhooks, and a persistent cloud deployment. The current detailer’s third-party number provider still needs identification. Calls are telephone calls through Twilio, not WhatsApp-native live calls. Custom code generation, supplier booking and arbitrary business automation are not implemented by the recipe builder.
+
+Verification for this checkpoint — 99 local tests pass. Added a real HTTP signup/routing test with simulated payment creation, verified Stripe webhook-to-business-to-welcome flow, detailed onboarding, trial review, recipe activation, subscription expiry and checkout concurrency coverage. Python compilation and git diff checks pass. Vercel Marketplace discovery confirmed Stripe, but account resource listing returned no resources. No provider or paid resource was provisioned.

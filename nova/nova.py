@@ -85,6 +85,8 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         store.db.execute("UPDATE actions SET state='uncertain',result=? WHERE state='executing'", (json.dumps({'error': 'Worker interrupted. Reconcile before retry.'}),))
         store.db.execute("UPDATE events SET state=CASE WHEN kind='delivery' THEN 'uncertain' ELSE 'interrupted' END WHERE state='processing'")
+        if os.environ.get('WHATSAPP_WELCOME_TEMPLATE'):
+            store.db.execute("UPDATE events SET state='pending' WHERE kind='delivery' AND state='awaiting_template'")
         while True:
             worked = work_once(store)
             for action in store.db.execute("SELECT * FROM actions WHERE state='ready' ORDER BY created LIMIT 5").fetchall():

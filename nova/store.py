@@ -50,6 +50,8 @@ class Store:
             self.db.execute('ALTER TABLE documents ADD COLUMN customer_safe INTEGER NOT NULL DEFAULT 0')
         import operations
         operations.setup(self)
+        import metering
+        metering.setup(self)
 
     def business(self, business):
         row = self.db.execute('SELECT * FROM businesses WHERE id=?', (business,)).fetchone()
@@ -132,6 +134,8 @@ class Store:
         month = time.strftime('%Y-%m', time.gmtime())
         usage = self.db.execute('SELECT reserved FROM usage WHERE business=? AND month=?', (business, month)).fetchone()
         limit = self.business(business)['config'].get('monthly_token_limit', 500_000)
+        import metering
         return {'period_days': 7, 'actions': counts, 'needs_attention': outstanding,
                 'sales': operations.report(self, business),
+                'costs': metering.summary(self, business),
                 'usage_percent': round(100 * (usage[0] if usage else 0) / limit, 1)}

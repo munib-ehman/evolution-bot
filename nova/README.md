@@ -100,3 +100,29 @@ Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN. Add sms_number in a business confi
 ## Production boundary
 
 Live WhatsApp, SMS, Google and call credentials remain required. Tests simulate provider responses and do not establish real delivery, AI output quality or cloud uptime. SMS STOP requests suppress further outbound messages. Proactive WhatsApp follow-ups outside an active session still require an approved template integration. This backend has no checkout or subscription collection. Dollar cost metering and a commercial usage allowance are still pending; the token reservation guard is only an internal conservative limit.
+
+## Paid signup and automatic welcome
+
+The Nova server now serves /signup. It collects the owner’s international WhatsApp number and explicit consent, then creates a Stripe-hosted subscription checkout for USD 200/month. NOVA_STRIPE_PRICE_ID must point to an active fixed monthly USD 200 price. Configure NOVA_STRIPE_SUCCESS_URL and NOVA_STRIPE_CANCEL_URL to the public /signup/complete and /signup/cancel URLs. Enable the hosted Stripe billing portal for owner subscription management.
+
+POST /webhooks/stripe verifies signatures and reconciles payment/subscription status against Stripe before provisioning. A browser success redirect cannot activate an account. Duplicate events cannot create extra accounts or welcome messages. Past-due/cancelled/expired subscriptions stop execution. Reinstatement returns prior approved actions for fresh review. Legacy pilot accounts without billing settings retain their existing behavior.
+
+NOVA_WHATSAPP_PHONE_ID is the shared Nova contact number. Paid owners are routed by their WhatsApp sender number and the operator phone ID. Customer-facing merchant numbers remain separate business connections. Configure WHATSAPP_WELCOME_TEMPLATE to a Meta-approved zero-parameter welcome template asking the owner what they sell and who their customers are. Signup consent is recorded locally; Meta account verification and any sender onboarding must be configured separately. If no welcome template is configured, delivery waits. Restart the worker after configuring it to release waiting welcomes.
+
+The owner can say BILLING or CANCEL SUBSCRIPTION to receive a private Stripe-hosted management link. Cancellation/payment-method changes happen on that provider page. Stripe credentials and a configured account are required. No live Stripe integration, prices, templates or billing resources were provisioned during implementation.
+
+## Detailed interview, recommendations and assembly
+
+Paid users start a detailed interview covering business description, desired work, existing tools, the current process, bottlenecks and baseline inquiry volume/handling time. They can answer through text, voice notes or an approved onboarding call. CALL ME proposes an outbound call to their registered number; approval uses the normal action gate. NOVA_CALL_FROM_NUMBER and Twilio credentials are required. The existing call endpoint conducts the interview in turns. WhatsApp-native live calling is not implemented.
+
+After setup review, Nova suggests three supported workflow recipes: inquiries, followups and quotes. RECOMMEND or OPTIMIZE shows them again. BASELINE 40 10 records 40 weekly inquiries at 10 staff minutes each. Savings are explicitly estimates, not measured performance or guaranteed revenue.
+
+BUILD inquiries, BUILD followups or BUILD quotes prepares a recipe. Nova requests a customer sample, provides a practice reply and waits for ACTIVATE WORKFLOW. A customer-safe business document must be present before activation. Inquiry workflows propose lead records and customer replies. The follow-up recipe creates one future check after four hours, cancelled when the customer replies, opts out or has a recorded booking. Existing approval rules still apply. Proactive customer templates beyond the active WhatsApp session are not part of this recipe.
+
+This is configuration of reviewed recipes, not arbitrary code generation or deployment. Quotes are recorded under owner approval; supplier availability, travel ticketing and payments need their corresponding real integrations. The weekly report adds the next improvement based on failures or approval backlogs.
+
+## Cost and time evidence
+
+Provider-reported model token usage is saved when present. Configure current per-million input/output rates to estimate that portion of cost. NOVA_CUSTOMER_AI_MODEL can select a cheaper model for customer replies, with separate rates. Customer responses have a shorter output limit, and retrieval bounds supplied context. Model dollar estimates exclude voice, WhatsApp/SMS, hosting and third-party tools; unknown charges remain labelled unknown. Token reservation limits still enforce the internal AI allowance. The fixed Stripe subscription does not automatically bill overages.
+
+Full production cost reconciliation, measured staff-time tracking and optimizing arbitrary third-party workflows still need deployment evidence. Recommendations are grounded in the owner’s baseline and recorded task states; they are never represented as proven savings.
