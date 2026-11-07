@@ -8,7 +8,7 @@ Read `nova/MVP.md` for features and pilot acceptance criteria. Read `nova/README
 
 Verified on November 8, 2026 Asia/Karachi — 20 local tests pass, including model planning through a simulated provider, approval and execution, signed webhooks, recipient restrictions, data isolation, duplicate handling, scheduled tasks and uncertain delivery. Python compilation and a real local HTTP startup/message/report/readback smoke test also pass.
 
-Live WhatsApp and calling tests are pending. No Meta, Twilio or AI provider credentials were available in this checkout. The user selected Meta's test number. Chrome reached Meta's sign-in redirect, but the login page rendered blank. No test number or app credentials were obtained.
+Live WhatsApp and calling tests are pending. No Meta, Twilio or AI provider credentials were available in this checkout. The user selected Meta's test number. The user signed into Facebook successfully. Meta’s documentation still offered Get Started for developer registration. Its registration dialog rendered blank or redirected to the public developer homepage after reload. No app dashboard, test number or credentials were obtained. The Chrome Meta setup tab was preserved for handoff.
 
 This is a backend implementation. It has no production cloud deployment, subscription collection or verified live provider delivery. The AI connection must be configured to perform real reasoning. The third-party US texting provider has not been identified. The Twilio adapter currently supports inbound owner calls with turn-based speech.
 
