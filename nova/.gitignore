@@ -1,0 +1,8 @@
+data/
+__pycache__/
+*.sqlite*
+*.worker.lock
+.env
+.env.*
+!.env.example
+business-config.json
