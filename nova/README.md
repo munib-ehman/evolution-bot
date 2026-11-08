@@ -180,3 +180,27 @@ NOVA_AI_PROVIDER=ollama NOVA_AI_MODEL=llama3.2:3b python3 nova.py doctor --probe
 ```
 
 The doctor prints configuration/worker readiness and optionally probes model availability without exposing secrets or customer records. It does not claim provider delivery has passed. Account credits in Codex are not visible to this application or the agent.
+
+## Run the operator on this Mac
+
+`python3 mac_host.py install` installs a per-user login service, `io.runevolution.nova`, using the already installed Ollama and cloudflared. It copies the reviewed Python runtime into `~/Library/Application Support/EvolutionNova` because macOS background services cannot read Documents without extra privacy access. It preserves installed private settings and data. Code updates require running install again; no Git pull is automatically executed.
+
+The service runs the local AI, Python server on loopback 4190, public callback gateway on loopback 4191, durable worker, keep-awake helper and a free Cloudflare Quick Tunnel. It keeps the system awake while running, subject to macOS lid/power behavior. It does not operate with the Mac off or logged out. The private database and credentials remain in the user's Application Support runtime. Keep that directory backed up privately.
+
+```sh
+python3 mac_host.py status
+python3 mac_host.py stop
+python3 mac_host.py install
+```
+
+The public gateway forwards only callback, signup and public status routes. It blocks `/local/*`, `/health`, model APIs and filesystem paths, regardless of an incoming Authorization header. The public website bridges to the callback gateway through `NOVA_BACKEND_URL`. Only signed provider callbacks may enqueue real WhatsApp work; possessing the public tunnel URL grants no owner access.
+
+After the Quick Tunnel is ready, connect the website:
+
+```sh
+python3 mac_host.py link-website
+```
+
+This sets the existing Vercel project's production backend URL and redeploys that project. A Quick Tunnel URL changes on reconnection/restart, so run link-website again when it changes. The service writes its current URL to the private `data/host-status.json`; `data/website-linked.json` records the last synced one. This is a free development/pilot tunnel with no uptime guarantee. A stable named tunnel requires the user's Cloudflare account authorization and domain setup; it has not been provisioned.
+
+Meta setup is still required: actual developer app and app secret, current supported Graph API version, messaging token, test phone number ID and verified recipient. Configure Meta's callback to `https://nova-evolution-v4.vercel.app/webhooks/whatsapp`, use the generated private verify token, and subscribe to messages. The verify token is stored only in the private runtime config and should be entered directly into Meta, never committed or pasted into chat. An administrator then creates an expiring pilot with the actual authorized owner/phone IDs. No Meta account or phone number is invented.
