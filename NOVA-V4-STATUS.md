@@ -60,3 +60,11 @@ Created/reused Nova product nova_evolution_v4 and a USD 200 monthly sandbox pric
 Actual Stripe testing exposed valid checkout URLs with Stripe fragments being rejected. Fixed validation to preserve fragments while retaining exact HTTPS Stripe-host validation. Added a regression and blocked sandbox keys from opening production checkout. 112 backend tests and six bridge tests pass.
 
 The Stripe claim page was sent to the user. Computer-use opening timed out; no browser activation is claimed. Live Stripe account ownership/activation, live price, live webhook signing secret, persistent server/worker, Meta credentials and AI configuration remain outstanding. Production checkout remains closed.
+
+## Pakistan individual onboarding correction — November 8
+
+The user clarified they reside in Pakistan and have no registered entity. Researched official provider rules before proceeding. Stripe's sandbox setup is not a route to a live Pakistan merchant account. Chose to attempt Paddle because its published country policy does not exclude Pakistan and its verification guidance explicitly accommodates individuals/sole traders. Approval is not guaranteed.
+
+Opened Paddle signup in Chrome, selected Digital products or SaaS, and accepted the policy checkbox after explicit user confirmation. Filled Subhan Ahmed and the existing Gmail; marketing opt-in was left unchecked. Password creation is a user handoff and is pending. Do not submit invented registration, address, identity, banking or tax information. Do not use the US outreach footer as the applicant's actual address.
+
+Prepared truthful, reviewable applicant/product answers in nova/PAYMENT-ONBOARDING-PK.md. No Paddle account, provider approval, live integration or payment is claimed. The persistent backend, Meta/AI setup and actual fulfillment test remain outstanding.
