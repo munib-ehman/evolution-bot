@@ -218,6 +218,22 @@ class BillingTests(unittest.TestCase):
         self.assertTrue(all(call.kwargs.get('method') != 'POST' for call in self.http.call_args_list))
         self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM signups').fetchone()[0], 1)
 
+    def test_unknown_checkout_status_never_creates_another_session(self):
+        self.checkout()
+        self.session['status'] = 'unknown'
+        self.http.reset_mock()
+        with self.assertRaisesRegex(ValueError, 'unknown status'):
+            self.checkout()
+        self.assertTrue(all(call.kwargs.get('method') != 'POST' for call in self.http.call_args_list))
+
+    def test_old_ambiguous_checkout_requires_reconciliation(self):
+        self.checkout()
+        self.store.db.execute('UPDATE signups SET session_id=NULL,consent_at=?', (time.time() - 24 * 3600,))
+        self.http.reset_mock()
+        with self.assertRaisesRegex(ValueError, 'reconciliation'):
+            self.checkout()
+        self.assertTrue(all(call.kwargs.get('method') != 'POST' for call in self.http.call_args_list))
+
     def test_simultaneous_checkout_is_blocked(self):
         self.store.db.execute('INSERT INTO checkout_locks VALUES(?,?,?)', ('923001234567', 'other-request', time.time() + 60))
         with self.assertRaises(ValueError):

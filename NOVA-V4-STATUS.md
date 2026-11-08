@@ -35,7 +35,7 @@ Verification for this checkpoint — 99 local tests pass. Added a real HTTP sign
 
 ## Full audit and review preview — November 8
 
-105 backend tests pass. Fixed scheduled text changing owner permissions, audio opt-out handling, approved quote workflow processing, duplicate checkout reuse after one hour, missing WhatsApp notices for scheduled work, and outbound call callback routing. Bound outgoing calls to approved action IDs and retain that binding through speech turns.
+107 backend tests pass. Fixed scheduled text changing owner permissions, audio opt-out handling, approved quote workflow processing, duplicate checkout reuse after one hour, missing WhatsApp notices for scheduled work, and outbound call callback routing. Bound outgoing calls to approved action IDs and retain that binding through speech turns.
 
 Added nova/preview as an explicitly scripted interactive product walkthrough, including setup, trial review, workflow activation, action approval, pause/resume, reports and guarded signup. DOM interaction checks pass. It collects no real data, takes no payments and sends no messages. This preview is not the live operator backend. Provider and persistent deployment blockers above remain unresolved.
 
