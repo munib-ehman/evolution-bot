@@ -3,6 +3,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py ./
+COPY preview/signup_template.py ./preview/signup_template.py
 RUN useradd --uid 10001 --create-home nova && mkdir /app/data && chown nova:nova /app/data
 USER nova
 ENV NOVA_DB=/app/data/nova.sqlite

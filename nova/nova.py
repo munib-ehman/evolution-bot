@@ -87,7 +87,9 @@ def main():
         store.db.execute("UPDATE events SET state=CASE WHEN kind='delivery' THEN 'uncertain' ELSE 'interrupted' END WHERE state='processing'")
         if os.environ.get('WHATSAPP_WELCOME_TEMPLATE'):
             store.db.execute("UPDATE events SET state='pending' WHERE kind='delivery' AND state='awaiting_template'")
+        from readiness import heartbeat
         while True:
+            heartbeat(store)
             worked = work_once(store)
             for action in store.db.execute("SELECT * FROM actions WHERE state='ready' ORDER BY created LIMIT 5").fetchall():
                 execute(store, dict(action))

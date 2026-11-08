@@ -246,7 +246,15 @@ class MVPTests(unittest.TestCase):
                 self.assertIn('$200/month', page)
                 self.assertIn('type="checkbox" required', page)
             payload = json.dumps({'phone': '+1 (555) 555-0101', 'consent': True}).encode()
-            with patch('billing.create_checkout', return_value='https://checkout.stripe.com/c/test') as checkout:
+            with patch('billing.create_checkout') as closed_checkout:
+                req = urllib.request.Request(base + '/signup/checkout', payload, {'Origin': 'https://nova.example'})
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    urllib.request.urlopen(req)
+                self.assertEqual(error.exception.code, 503)
+                closed_checkout.assert_not_called()
+            with urllib.request.urlopen(base + '/public/status') as response:
+                self.assertFalse(json.load(response)['checkout_ready'])
+            with patch('readiness.status', return_value={'checkout_ready': True}), patch('billing.create_checkout', return_value='https://checkout.stripe.com/c/test') as checkout:
                 req = urllib.request.Request(base + '/signup/checkout', payload, {'Origin': 'https://nova.example'})
                 with urllib.request.urlopen(req) as response:
                     self.assertEqual(json.load(response)['url'], 'https://checkout.stripe.com/c/test')

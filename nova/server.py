@@ -53,6 +53,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.command == 'GET' and url.path in {'/', '/signup', '/signup/complete', '/signup/cancel'}:
             from signup import page
             return self.respond(200, page(url.path), 'text/html; charset=utf-8')
+        if self.command == 'GET' and url.path == '/public/status':
+            from readiness import status
+            return self.respond(200, status(store))
         if self.command == 'GET' and url.path == '/health':
             return self.respond(200, {'product': 'Nova by Evolution', 'version': 4, 'status': 'running',
                 'ai_configured': all(os.environ.get(key) for key in ['NOVA_AI_BASE_URL', 'NOVA_AI_KEY', 'NOVA_AI_MODEL']),
@@ -79,6 +82,9 @@ class Handler(BaseHTTPRequestHandler):
             expected = os.environ.get('NOVA_PUBLIC_URL', '').rstrip('/')
             if not expected or origin != expected:
                 return self.respond(403, {'error': 'Open the signup page to begin checkout'})
+            from readiness import status
+            if not status(store)['checkout_ready']:
+                return self.respond(503, {'error': 'Nova setup is in progress. No payment has been taken.'})
             from billing import setup, create_checkout
             setup(store)
             payload = json.loads(raw)

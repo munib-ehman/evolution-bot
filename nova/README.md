@@ -126,3 +126,17 @@ This is configuration of reviewed recipes, not arbitrary code generation or depl
 Provider-reported model token usage is saved when present. Configure current per-million input/output rates to estimate that portion of cost. NOVA_CUSTOMER_AI_MODEL can select a cheaper model for customer replies, with separate rates. Customer responses have a shorter output limit, and retrieval bounds supplied context. Model dollar estimates exclude voice, WhatsApp/SMS, hosting and third-party tools; unknown charges remain labelled unknown. Token reservation limits still enforce the internal AI allowance. The fixed Stripe subscription does not automatically bill overages.
 
 Full production cost reconciliation, measured staff-time tracking and optimizing arbitrary third-party workflows still need deployment evidence. Recommendations are grounded in the owner’s baseline and recorded task states; they are never represented as proven savings.
+
+## Hosted signup and backend connection
+
+`preview/` now publishes the short signup page and a server-side bridge. The shared signup renderer is `preview/signup_template.py`; `signup.py` imports it for the persistent server. Run `python3 preview/build.py` to generate public pages. The old scripted conversation is available explicitly at `/demo.html`.
+
+Set `NOVA_BACKEND_URL` on the website project to the persistent server's HTTPS origin. Set `NOVA_PUBLIC_URL` on the persistent server to the public website origin. The bridge forwards only signup, public availability, signed Stripe/WhatsApp/Twilio callbacks, and the Google callback. Original webhook bytes and signature headers are preserved. Private administration routes are not forwarded. The website never receives payment card details.
+
+Configure Stripe success/cancel URLs to the public website's `/signup/complete` and `/signup/cancel`. Configure provider callbacks at the public website's `/webhooks/stripe`, `/webhooks/whatsapp`, `/webhooks/call`, `/webhooks/sms`, and `/connections/google/callback` as applicable. The backend must remain one server plus one worker with a shared persistent database. Vercel's website functions do not run the SQLite worker.
+
+`GET /public/status` exposes only whether checkout is open and a short public message. Checkout requires core provider settings, a worker heartbeat within 120 seconds, and `NOVA_ACCEPT_SIGNUPS=true`. Keep that launch flag false until the actual provider flow passes. Optional voice/Calendar need their respective provider accounts before use. No configuration-only check proves external delivery works.
+
+Before activating checkout, verify a real provider test flow and configured usage allowance, ensure a durable database/backups, and then set the launch flag. With no backend, the live website returns setup-pending and does not submit phone details or collect payment.
+
+Run the website connection checks with `node --test preview/test-bridge.mjs`. They cover raw signed webhook forwarding, route restrictions, callback queries and unavailable-backend handling.

@@ -31,3 +31,5 @@ Thumbs.db
 
 # Nova preview deployment metadata
 nova/preview/.vercel/
+
+nova/preview/public/
