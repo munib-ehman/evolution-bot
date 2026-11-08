@@ -37,7 +37,7 @@ The $200 subscription has no automatic overage billing. Complete dollar cost rec
 
 ## Verification
 
-110 local tests pass, including checkout verification, repeat/concurrent checkout handling, duplicate and out-of-order payment events, subscription expiry, signed webhooks, business isolation, owner approvals, sample review/activation, scheduled follow-up cancellation, model-usage records and paid-to-onboarding progression. Providers are simulated in these tests. Python compilation and diff checks pass.
+112 local tests pass, including checkout verification, repeat/concurrent checkout handling, duplicate and out-of-order payment events, subscription expiry, signed webhooks, business isolation, owner approvals, sample review/activation, scheduled follow-up cancellation, model-usage records and paid-to-onboarding progression. Providers are simulated in these tests. Python compilation and diff checks pass.
 
 ## Live setup still required
 

@@ -19,6 +19,7 @@ def status(store):
     row = store.db.execute("SELECT updated FROM runtime_status WHERE name='worker'").fetchone()
     worker = bool(row and time.time() - row['updated'] < 120)
     configured = all(os.environ.get(key) for key in REQUIRED)
-    ready = configured and worker and os.environ.get('NOVA_ACCEPT_SIGNUPS') == 'true'
+    live_payments = os.environ.get('NOVA_STRIPE_SECRET_KEY', '').startswith(('sk_live_', 'rk_live_'))
+    ready = configured and live_payments and worker and os.environ.get('NOVA_ACCEPT_SIGNUPS') == 'true'
     return {'checkout_ready': ready, 'status': 'open' if ready else 'setup_pending',
             'message': 'Ready to start.' if ready else 'Pilot setup is in progress. Checkout will open once Nova is ready.'}

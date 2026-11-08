@@ -156,6 +156,10 @@ class BillingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.checkout()
 
+    def test_official_stripe_checkout_fragment_is_preserved(self):
+        self.session['url'] = 'https://checkout.stripe.com/c/pay/cs_test_sample#fidkdWxOYHwnPyd1blpxYHZxWjA0'
+        self.assertEqual(self.checkout(), self.session['url'])
+
     def test_provider_failure_is_retryable_without_event_receipt(self):
         self.checkout()
         with patch('channels.request', side_effect=TimeoutError('unavailable')):

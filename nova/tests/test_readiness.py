@@ -27,6 +27,7 @@ class ReadinessTests(unittest.TestCase):
 
     def test_config_without_worker_or_launch_verification_is_closed(self):
         os.environ.update({key: 'configured' for key in readiness.REQUIRED})
+        os.environ['NOVA_STRIPE_SECRET_KEY'] = 'sk_live_test_fixture'
         os.environ['NOVA_ACCEPT_SIGNUPS'] = 'true'
         self.assertFalse(readiness.status(self.store)['checkout_ready'])
         readiness.heartbeat(self.store)
@@ -35,8 +36,16 @@ class ReadinessTests(unittest.TestCase):
 
     def test_ready_worker_expiry_closes_checkout(self):
         os.environ.update({key: 'configured' for key in readiness.REQUIRED})
+        os.environ['NOVA_STRIPE_SECRET_KEY'] = 'sk_live_test_fixture'
         os.environ['NOVA_ACCEPT_SIGNUPS'] = 'true'
         readiness.heartbeat(self.store)
         self.assertTrue(readiness.status(self.store)['checkout_ready'])
         self.store.db.execute('UPDATE runtime_status SET updated=?', (time.time()-121,))
+        self.assertFalse(readiness.status(self.store)['checkout_ready'])
+
+    def test_sandbox_key_never_opens_production_checkout(self):
+        os.environ.update({key: 'configured' for key in readiness.REQUIRED})
+        os.environ['NOVA_STRIPE_SECRET_KEY'] = 'sk_test_fixture'
+        os.environ['NOVA_ACCEPT_SIGNUPS'] = 'true'
+        readiness.heartbeat(self.store)
         self.assertFalse(readiness.status(self.store)['checkout_ready'])

@@ -49,3 +49,14 @@ Published the shorter shared signup UI and server-side website bridge in deploym
 Added public availability and a worker heartbeat. Payment creation stays closed until core configuration, a recent worker heartbeat and an explicit launch flag are present. Updated the Docker image to include the shared signup renderer. 110 backend tests and six website bridge tests pass; signup DOM checks verify availability gating and untrusted payment URL rejection.
 
 The Vercel project has no environment variables or persistent backend host. Stripe installation was attempted and returned integration_terms_acceptance_required. The user was given the Vercel Stripe terms URL in an asynchronous question. No terms were accepted by the agent, payment resource provisioned, payment taken, or provider delivery claimed. Meta, AI and optional voice/Calendar credentials remain absent. This is not yet a working paid operator.
+
+
+## Stripe provisioning and actual provider test — November 8
+
+After the user accepted Vercel's Stripe integration terms, provisioned sandbox resource stripe-coffee-island, ir_4E1GNUfntgpWea8q, attached to nova-evolution-v4. The user still must complete Stripe's separate claim/activation flow. Current resource claim_status is sandbox.
+
+Created/reused Nova product nova_evolution_v4 and a USD 200 monthly sandbox price. The real Stripe API created a subscription Checkout session successfully; no payment was submitted. Expired the smoke-test sessions. Saved non-secret results in nova/billing-sandbox.json. Secrets remain in ignored local environment files and the provider-managed Vercel integration.
+
+Actual Stripe testing exposed valid checkout URLs with Stripe fragments being rejected. Fixed validation to preserve fragments while retaining exact HTTPS Stripe-host validation. Added a regression and blocked sandbox keys from opening production checkout. 112 backend tests and six bridge tests pass.
+
+The Stripe claim page was sent to the user. Computer-use opening timed out; no browser activation is claimed. Live Stripe account ownership/activation, live price, live webhook signing secret, persistent server/worker, Meta credentials and AI configuration remain outstanding. Production checkout remains closed.

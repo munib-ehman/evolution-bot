@@ -1,0 +1,12 @@
+{
+  "mode": "sandbox",
+  "product_id": "nova_evolution_v4",
+  "price_id": "price_1UZT5UIuH7Mpn9jqYDxy5WRy",
+  "currency": "usd",
+  "monthly_amount": 200.0,
+  "checkout_session_created": true,
+  "checkout_mode": "subscription",
+  "payment_status": "unpaid",
+  "payment_taken": false,
+  "test_session_expired": true
+}

@@ -77,7 +77,7 @@ def _checkout_url(url):
         raise ValueError('Invalid Stripe Checkout URL')
     parsed = urlsplit(url)
     if (any(c.isspace() or ord(c) < 32 for c in url) or parsed.scheme != 'https'
-            or parsed.netloc != 'checkout.stripe.com' or parsed.fragment or not parsed.path.startswith('/c/')):
+            or parsed.netloc != 'checkout.stripe.com' or not parsed.path.startswith('/c/')):
         raise ValueError('Invalid Stripe Checkout URL')
     return url
 

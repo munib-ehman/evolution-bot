@@ -135,7 +135,7 @@ Set `NOVA_BACKEND_URL` on the website project to the persistent server's HTTPS o
 
 Configure Stripe success/cancel URLs to the public website's `/signup/complete` and `/signup/cancel`. Configure provider callbacks at the public website's `/webhooks/stripe`, `/webhooks/whatsapp`, `/webhooks/call`, `/webhooks/sms`, and `/connections/google/callback` as applicable. The backend must remain one server plus one worker with a shared persistent database. Vercel's website functions do not run the SQLite worker.
 
-`GET /public/status` exposes only whether checkout is open and a short public message. Checkout requires core provider settings, a worker heartbeat within 120 seconds, and `NOVA_ACCEPT_SIGNUPS=true`. Keep that launch flag false until the actual provider flow passes. Optional voice/Calendar need their respective provider accounts before use. No configuration-only check proves external delivery works.
+`GET /public/status` exposes only whether checkout is open and a short public message. Checkout requires core provider settings, a live Stripe key, a worker heartbeat within 120 seconds, and `NOVA_ACCEPT_SIGNUPS=true`. Sandbox keys never open production checkout. Keep that launch flag false until the actual provider flow passes. Optional voice/Calendar need their respective provider accounts before use. No configuration-only check proves external delivery works.
 
 Before activating checkout, verify a real provider test flow and configured usage allowance, ensure a durable database/backups, and then set the launch flag. With no backend, the live website returns setup-pending and does not submit phone details or collect payment.
 
