@@ -35,7 +35,7 @@ def run(store, text):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--message', help='Run one owner message, otherwise open an interactive review')
-    parser.add_argument('--db', default='data/local-review.sqlite')
+    parser.add_argument('--db', default=str(Path(__file__).resolve().parent / 'data/local-review.sqlite'))
     args = parser.parse_args()
     os.environ.setdefault('NOVA_AI_PROVIDER','ollama')
     os.environ.setdefault('NOVA_AI_MODEL','llama3.2:3b')

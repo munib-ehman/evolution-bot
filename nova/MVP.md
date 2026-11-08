@@ -37,7 +37,7 @@ The $200 subscription has no automatic overage billing. Complete dollar cost rec
 
 ## Verification
 
-112 local tests pass, including checkout verification, repeat/concurrent checkout handling, duplicate and out-of-order payment events, subscription expiry, signed webhooks, business isolation, owner approvals, sample review/activation, scheduled follow-up cancellation, model-usage records and paid-to-onboarding progression. Providers are simulated in these tests. Python compilation and diff checks pass.
+124 local tests pass, including checkout verification, repeat/concurrent checkout handling, duplicate and out-of-order payment events, subscription expiry, signed webhooks, business isolation, owner approvals, sample review/activation, scheduled follow-up cancellation, model-usage records and paid-to-onboarding progression. Providers are simulated in these tests. Python compilation and diff checks pass.
 
 ## Live setup still required
 
@@ -49,3 +49,5 @@ The $200 subscription has no automatic overage billing. Complete dollar cost rec
 - A persistent cloud server and worker, plus customer-facing business-channel connections.
 
 No live payment, message, authorization or call was performed by the local tests. The detailer's actual US number provider still needs identification. Production account provisioning, encrypted backups and data retention/deletion procedures require deployment work. The existing public site remains the v3 marketplace until a separate deployment decision.
+
+For the current 18-capability status count, actual local-model evidence and free-pilot setup, read MVP-IMPLEMENTATION-AUDIT.md. Paid signup remains gated; invited pilots can be created with an explicit expiry without requiring payment.

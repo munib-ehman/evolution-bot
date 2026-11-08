@@ -8,7 +8,8 @@ def save(store, business):
 
 
 def start(store, business):
-    business['config']['onboarding'] = {'stage': 'profile'}
+    previous = business['config'].get('onboarding', {})
+    business['config']['onboarding'] = {'stage': 'profile', **({'detailed': True} if previous.get('detailed') else {})}
     save(store, business)
     return 'Hi, I’m Nova by Evolution. What does your business sell, and who are your customers? You can send a voice note.'
 

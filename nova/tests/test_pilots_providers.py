@@ -28,6 +28,13 @@ class PilotProviderTests(unittest.TestCase):
         self.assertEqual(self.store.business('pilot')['config']['onboarding'], {'stage':'welcome','detailed':True})
         self.assertEqual(result['token_limit'], 100000)
 
+    def test_free_pilot_first_message_keeps_detailed_interview(self):
+        from engine import work_once
+        create(self.store,'pilot','Business','15555550101','phone')
+        self.store.enqueue('pilot','owner',{'text':'Hi','channel':'local'})
+        work_once(self.store,lambda *_: self.fail('Greeting should not need AI'))
+        self.assertEqual(self.store.business('pilot')['config']['onboarding'],{'stage':'profile','detailed':True})
+
     def test_pilot_expiry_holds_approved_work(self):
         create(self.store, 'pilot', 'Business', '15555550101', 'phone')
         self.store.db.execute("UPDATE businesses SET config=json_set(config,'$.pilot.expires',?,'$.onboarding.stage','active')", (time.time()-1,))

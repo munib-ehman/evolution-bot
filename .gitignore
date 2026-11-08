@@ -33,3 +33,6 @@ Thumbs.db
 nova/preview/.vercel/
 
 nova/preview/public/
+
+# Local operator runtime data
+/data/

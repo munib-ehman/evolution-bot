@@ -140,3 +140,43 @@ Configure Stripe success/cancel URLs to the public website's `/signup/complete` 
 Before activating checkout, verify a real provider test flow and configured usage allowance, ensure a durable database/backups, and then set the launch flag. With no backend, the live website returns setup-pending and does not submit phone details or collect payment.
 
 Run the website connection checks with `node --test preview/test-bridge.mjs`. They cover raw signed webhook forwarding, route restrictions, callback queries and unavailable-backend handling.
+
+## Free local pilot and implementation audit
+
+Read `MVP-IMPLEMENTATION-AUDIT.md` for the counted 18-capability review and actual outstanding work. A local pilot can run before subscription setup; this does not open paid public checkout.
+
+For a review using only fictional business information and the already installed local model, run from `nova/`:
+
+```sh
+ollama serve
+```
+
+In another terminal:
+
+```sh
+python3 local_pilot.py
+```
+
+The review uses `llama3.2:3b`, defaults to the local Ollama connection and stores its fictional state in `nova/data/local-review.sqlite`. It refuses remote model profiles and reasserts deny rules for external sends/calls/connectors/Calendar on each instruction. Owner approvals still apply to other actions. Type REPORT for activity or EXIT to leave. This review has a seven-day invitation; it never charges, calls or sends a real customer message.
+
+To exercise the guided interview and workflow flow against the installed model with temporary fictional records:
+
+```sh
+python3 tools/verify_local_pilot.py
+```
+
+To configure an invited real pilot after its channel is connected, an administrator can run:
+
+```sh
+python3 nova.py pilot BUSINESS_ID 'Business name' OWNER_PHONE_DIGITS META_PHONE_ID --days 7 --token-limit 100000
+```
+
+Use real authorized identifiers. This creates an expiring pilot with the detailed interview and default owner approval rules. It makes no outbound contact; the owner messages the connected business number to begin. No payment is required for pilot access, and expired pilots stop executing work. Duplicate owners cannot silently receive another invitation. Launching a paid subscription remains a separate flow.
+
+Model profiles: `NOVA_AI_PROVIDER=ollama` uses only a loopback `/v1` endpoint, no key and an installed local model. `NOVA_AI_PROVIDER=groq` uses Groq's fixed official endpoint and GROQ_API_KEY. `custom` retains the existing HTTPS provider/key/model configuration. No automatic paid fallback is present. Text-only local models do not transcribe voice notes.
+
+```sh
+NOVA_AI_PROVIDER=ollama NOVA_AI_MODEL=llama3.2:3b python3 nova.py doctor --probe-model
+```
+
+The doctor prints configuration/worker readiness and optionally probes model availability without exposing secrets or customer records. It does not claim provider delivery has passed. Account credits in Codex are not visible to this application or the agent.
