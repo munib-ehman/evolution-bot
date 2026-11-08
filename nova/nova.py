@@ -31,6 +31,13 @@ def main():
     message.add_argument('text')
     state = commands.add_parser('state')
     state.add_argument('business')
+    pilot = commands.add_parser('pilot', help='Create an expiring invitation without collecting payment')
+    for field in ['id', 'name', 'owner', 'phone_id']:
+        pilot.add_argument(field)
+    pilot.add_argument('--days', type=int, default=7)
+    pilot.add_argument('--token-limit', type=int, default=100000)
+    doctor = commands.add_parser('doctor', help='Show readiness without exposing credentials')
+    doctor.add_argument('--probe-model', action='store_true')
     commands.add_parser('worker')
     server = commands.add_parser('serve')
     server.add_argument('--host', default='127.0.0.1')
@@ -38,7 +45,10 @@ def main():
     args = parser.parse_args()
     filename = os.environ.get('NOVA_DB', 'data/nova.sqlite')
     store = Store(filename)
-    if args.command == 'business':
+    if args.command == 'pilot':
+        from pilots import create
+        print(json.dumps(create(store, args.id, args.name, args.owner, args.phone_id, args.days, args.token_limit)))
+    elif args.command == 'business':
         store.add_business(args.id, args.name, args.owner, args.phone_id)
         import onboarding
         greeting = onboarding.start(store, store.business(args.id))
@@ -77,6 +87,9 @@ def main():
     elif args.command == 'state':
         print(json.dumps({'report': store.report(args.business), 'events': [dict(row) for row in store.db.execute(
             'SELECT id,kind,state,result FROM events WHERE business=? ORDER BY created DESC LIMIT 20', (args.business,))]}, indent=2))
+    elif args.command == 'doctor':
+        from diagnostics import report
+        print(json.dumps(report(store, args.probe_model), indent=2))
     elif args.command == 'serve':
         store.db.close()
         serve(args.host, args.port)

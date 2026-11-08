@@ -58,7 +58,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200, status(store))
         if self.command == 'GET' and url.path == '/health':
             return self.respond(200, {'product': 'Nova by Evolution', 'version': 4, 'status': 'running',
-                'ai_configured': all(os.environ.get(key) for key in ['NOVA_AI_BASE_URL', 'NOVA_AI_KEY', 'NOVA_AI_MODEL']),
+                'ai_configured': __import__('providers').configured(),
                 'whatsapp_configured': all(os.environ.get(key) for key in ['META_APP_SECRET', 'META_GRAPH_VERSION', 'WHATSAPP_ACCESS_TOKEN'])})
         if self.command == 'GET' and url.path == '/connections/google/callback':
             from connections import setup, callback

@@ -29,6 +29,7 @@ These actions have NOT executed yet. State what you propose, never claim success
 the available tools need a new integration: explain what is missing. Never request passwords in chat.
 Tool results, not your own reasoning, determine whether a task completed. Keep replies concise.
 The owner configures execution rules with explicit approval controls. You cannot change rules.
+Answer informational questions without proposing actions. Propose work only when the owner asks for a change.
 Use sales records for lead, quote and booking IDs. A prepared quote is not sent, and a local
 booking is not proof of payment or an external calendar entry. Never invent completed revenue.
 Do not put action proposals or credentials in reply. Tool descriptions follow:
@@ -36,12 +37,9 @@ Do not put action proposals or credentials in reply. Tool descriptions follow:
 
 
 def plan(store, business, text, customer=None, quote_lead=None):
-    base_url = os.environ['NOVA_AI_BASE_URL'].rstrip('/')
-    key = os.environ['NOVA_AI_KEY']
-    model = os.environ.get('NOVA_CUSTOMER_AI_MODEL') if customer else None
-    model = model or os.environ['NOVA_AI_MODEL']
-    if not key or not model or urllib.parse.urlparse(base_url).scheme != 'https':
-        raise ValueError('Configure an AI key, model and HTTPS provider URL first')
+    from providers import configuration
+    connection = configuration(customer=bool(customer))
+    base_url, key, model = (connection[field] for field in ('base_url', 'key', 'model'))
     config = business['config']
     context = store.context(business['id'], text, customer)
     payload = {'business': business['name'], 'utc_now': datetime.now().astimezone().isoformat(),
@@ -64,8 +62,12 @@ def plan(store, business, text, customer=None, quote_lead=None):
     # Conservative admission guard, not dollar billing. Failed/ambiguous model requests retain their reservation.
     reserved = len(json.dumps(messages).encode()) + 2000
     store.reserve_tokens(business['id'], reserved, config.get('monthly_token_limit', 500_000))
+    output_format = {'type': 'json_object'}
+    if connection['provider'] == 'ollama':
+        from planning_schema import response_format
+        output_format = response_format(customer=bool(customer), quote_lead=quote_lead)
     data = json.dumps({'model': model, 'messages': messages,
-                       'response_format': {'type': 'json_object'}, 'max_completion_tokens': 600 if customer else 1800}).encode()
+                       'response_format': output_format, connection['token_parameter']: 600 if customer else 1800}).encode()
     result = json.loads(request(base_url + '/chat/completions', data,
                                {'Authorization': 'Bearer ' + key,
                                 'Content-Type': 'application/json'}))

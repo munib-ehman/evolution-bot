@@ -141,6 +141,9 @@ def _create_checkout(store, phone):
 def subscription_active(store, business):
     """Access gate for parent integration; legacy businesses retain existing access."""
     config = store.business(business)['config']
+    pilot = config.get('pilot')
+    if isinstance(pilot, dict) and isinstance(pilot.get('expires'), (int, float)) and pilot['expires'] > time.time():
+        return True
     if 'subscription_active' not in config:
         return True
     if not config['subscription_active']:

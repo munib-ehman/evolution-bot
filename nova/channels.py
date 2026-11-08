@@ -141,6 +141,10 @@ def whatsapp_document(media_id, filename):
 
 
 def transcribe(media_id):
+    from providers import configuration
+    connection = configuration(transcription=True)
+    if connection['provider'] == 'ollama':
+        raise ValueError('Local Ollama has no speech transcription endpoint. Send text or configure an approved transcription provider.')
     formats = {'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'mp4',
                'audio/aac': 'aac', 'audio/amr': 'amr', 'audio/wav': 'wav',
                'audio/x-wav': 'wav', 'audio/webm': 'webm', 'audio/opus': 'opus'}
@@ -151,8 +155,8 @@ def transcribe(media_id):
     data = (f'--{boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\n{model}\r\n'
             f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="voice.{formats[mime]}"\r\n'
             f'Content-Type: {mime}\r\n\r\n').encode() + audio + f'\r\n--{boundary}--\r\n'.encode()
-    result = json.loads(request(os.environ['NOVA_AI_BASE_URL'].rstrip('/') + '/audio/transcriptions', data,
-                               {'Authorization': 'Bearer ' + os.environ['NOVA_AI_KEY'],
+    result = json.loads(request(connection['base_url'] + '/audio/transcriptions', data,
+                               {'Authorization': 'Bearer ' + connection['key'],
                                 'Content-Type': f'multipart/form-data; boundary={boundary}'}))
     return result['text']
 
