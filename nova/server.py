@@ -147,14 +147,31 @@ class Handler(BaseHTTPRequestHandler):
             public = os.environ['NOVA_PUBLIC_URL'].rstrip('/') + self.path
             if not twilio_signature(public, fields, self.headers.get('X-Twilio-Signature'), os.environ.get('TWILIO_AUTH_TOKEN', '')):
                 return self.respond(403, {'error': 'Invalid signature'})
-            owner = fields.get('From', '').lstrip('+')
-            candidates = store.db.execute("SELECT id FROM businesses WHERE owner=? AND json_extract(config,'$.subscription_active')=1", (owner,)).fetchall()
-            if len(candidates) == 1:
-                business = store.business(candidates[0]['id'])
+            binding = query.get('owner_call', [''])[0]
+            if binding:
+                action = store.db.execute("SELECT * FROM actions WHERE id=? AND tool='call_owner' AND state IN ('executing','succeeded','uncertain')", (binding,)).fetchone()
+                if not action:
+                    return self.respond(403, '<Response><Reject/></Response>', 'application/xml')
+                business = store.business(action['business'])
+                result = json.loads(action['result'] or '{}')
+                valid = (fields.get('To', '').lstrip('+') == business['owner'] and
+                         fields.get('From') == os.environ.get('NOVA_CALL_FROM_NUMBER') and
+                         bool(fields.get('CallSid')) and
+                         (not result.get('provider_id') or result['provider_id'] == fields['CallSid']))
             else:
-                business = store.business(os.environ['NOVA_CALL_BUSINESS'])
-            if fields.get('From', '').lstrip('+') != business['owner']:
+                owner = fields.get('From', '').lstrip('+')
+                candidates = store.db.execute("SELECT id FROM businesses WHERE owner=? AND json_extract(config,'$.subscription_active')=1", (owner,)).fetchall()
+                if len(candidates) == 1:
+                    business = store.business(candidates[0]['id'])
+                else:
+                    business = store.business(os.environ['NOVA_CALL_BUSINESS'])
+                valid = fields.get('Direction', 'inbound') == 'inbound' and owner == business['owner']
+            if not valid:
                 return self.respond(403, '<Response><Reject/></Response>', 'application/xml')
+            def call_path(**extra):
+                params = {'owner_call': binding} if binding else {}
+                params.update(extra)
+                return '/webhooks/call' + ('?' + urllib.parse.urlencode(params) if params else '')
             if query.get('event'):
                 event = store.db.execute('SELECT * FROM events WHERE id=? AND business=?', (query['event'][0], business['id'])).fetchone()
                 if not event:
@@ -174,10 +191,10 @@ class Handler(BaseHTTPRequestHandler):
                         for offset in range(0, len(full), 3800):
                             store.enqueue(business['id'], 'delivery', {'text': full[offset:offset + 3800]},
                                           'call-result:' + event['id'] + ':' + str(offset))
-                    return self.respond(200, call_xml(reply, action='/webhooks/call?turn=' + event['id']), 'application/xml')
+                    return self.respond(200, call_xml(reply, action=call_path(turn=event['id'])), 'application/xml')
                 if event['state'] == 'failed' or time.time() - event['created'] > 90:
-                    return self.respond(200, call_xml('I could not finish that request. Please message me on WhatsApp.'), 'application/xml')
-                redirect = escape('/webhooks/call?event=' + event['id'])
+                    return self.respond(200, call_xml('I could not finish that request. Please message me on WhatsApp.', action=call_path()), 'application/xml')
+                redirect = escape(call_path(event=event['id']))
                 return self.respond(200, f'<Response><Pause length="2"/><Redirect method="POST">{redirect}</Redirect></Response>', 'application/xml')
             if fields.get('SpeechResult'):
                 key = 'call:' + fields['CallSid'] + ':' + query.get('turn', ['first'])[0] + ':' + str(fields.get('SpeechResult'))
@@ -185,8 +202,8 @@ class Handler(BaseHTTPRequestHandler):
                 event = store.enqueue(business['id'], 'call', {'text': fields['SpeechResult'][:8000], 'channel': 'call'},
                                       hashlib.sha256(key.encode()).hexdigest())
                 return self.respond(200, f'<Response><Say>Let me work on that.</Say><Pause length="2"/>'
-                                    f'<Redirect method="POST">/webhooks/call?event={event}</Redirect></Response>', 'application/xml')
-            return self.respond(200, call_xml('Hi, this is Nova, your AI operator.'), 'application/xml')
+                                    f'<Redirect method="POST">{escape(call_path(event=event))}</Redirect></Response>', 'application/xml')
+            return self.respond(200, call_xml('Hi, this is Nova, your AI operator.', action=call_path()), 'application/xml')
         token = os.environ.get('NOVA_ADMIN_TOKEN', '')
         if not token or not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + token):
             return self.respond(401, {'error': 'Authentication required'})

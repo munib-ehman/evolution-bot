@@ -28,3 +28,6 @@ pnpm-debug.log*
 .idea
 .DS_Store
 Thumbs.db
+
+# Nova preview deployment metadata
+nova/preview/.vercel/

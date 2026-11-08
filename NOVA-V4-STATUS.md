@@ -31,3 +31,12 @@ Added a detailed text/voice interview, approved outbound owner calls through Twi
 Live blockers remain Meta developer registration/test-number access, provider secrets and approved WhatsApp welcome/report templates, configured Stripe account/price/webhooks, and a persistent cloud deployment. The current detailer’s third-party number provider still needs identification. Calls are telephone calls through Twilio, not WhatsApp-native live calls. Custom code generation, supplier booking and arbitrary business automation are not implemented by the recipe builder.
 
 Verification for this checkpoint — 99 local tests pass. Added a real HTTP signup/routing test with simulated payment creation, verified Stripe webhook-to-business-to-welcome flow, detailed onboarding, trial review, recipe activation, subscription expiry and checkout concurrency coverage. Python compilation and git diff checks pass. Vercel Marketplace discovery confirmed Stripe, but account resource listing returned no resources. No provider or paid resource was provisioned.
+
+
+## Full audit and review preview — November 8
+
+105 backend tests pass. Fixed scheduled text changing owner permissions, audio opt-out handling, approved quote workflow processing, duplicate checkout reuse after one hour, missing WhatsApp notices for scheduled work, and outbound call callback routing. Bound outgoing calls to approved action IDs and retain that binding through speech turns.
+
+Added nova/preview as an explicitly scripted interactive product walkthrough, including setup, trial review, workflow activation, action approval, pause/resume, reports and guarded signup. DOM interaction checks pass. It collects no real data, takes no payments and sends no messages. This preview is not the live operator backend. Provider and persistent deployment blockers above remain unresolved.
+
+Published a separate review demo at https://nova-evolution-v4.vercel.app (Vercel deployment dpl_HM1Fx71p68YNSH4jnpsmVoebzo77, READY). Existing runevolution.io remains unchanged. The demo is hosted independently from the persistent Nova backend. Vercel Git auto-linking to the repository was unavailable for this account, so the reviewed preview was uploaded directly.

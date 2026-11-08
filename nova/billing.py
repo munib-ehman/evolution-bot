@@ -109,15 +109,19 @@ def _create_checkout(store, phone):
     _price(price, price_id)
     if price.get('active') is not True:
         raise ValueError('Price is inactive')
-    pending = store.db.execute('SELECT * FROM signups WHERE phone=? AND business IS NULL AND price_id=? AND consent_at>? ORDER BY consent_at DESC LIMIT 1',
-                               (phone, price_id, time.time() - 3600)).fetchone()
+    pending = store.db.execute('SELECT * FROM signups WHERE phone=? AND business IS NULL ORDER BY consent_at DESC LIMIT 1',
+                               (phone,)).fetchone()
     if pending and pending['session_id']:
         existing_session = _api('checkout/sessions/' + quote(pending['session_id'], safe=''))
         if existing_session.get('status') == 'open':
             return _checkout_url(existing_session.get('url'))
         if existing_session.get('status') == 'complete':
             raise ValueError('Your checkout is complete and payment verification is pending. Please wait for Nova’s WhatsApp welcome.')
+        if existing_session.get('status') != 'expired':
+            raise ValueError('The previous checkout has an unknown status. Reconcile it before starting another.')
         pending = None
+    if pending and not pending['session_id'] and pending['consent_at'] < time.time() - 23 * 3600:
+        raise ValueError('A previous checkout needs payment-provider reconciliation before another can be created.')
     signup = pending['id'] if pending else secrets.token_hex(24)
     if not pending:
         store.db.execute('INSERT INTO signups(id,phone,consent_at,price_id) VALUES(?,?,?,?)',

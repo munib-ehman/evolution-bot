@@ -109,7 +109,7 @@ class MVPTests(unittest.TestCase):
             call.assert_not_called()
             self.owner('yes')
             execute(self.store, action)
-            call.assert_called_once_with('15555550101')
+            call.assert_called_once_with('15555550101', action_id=action['id'])
 
     def test_workflow_recommendation_is_estimate_with_unknown_running_cost(self):
         business = self.store.business('travel')
@@ -129,6 +129,59 @@ class MVPTests(unittest.TestCase):
             self.assertEqual(form['To'], ['+15555550101'])
             self.assertEqual(form['Url'], ['https://nova.example/webhooks/call'])
 
+    def test_outbound_call_callback_preserves_approved_binding(self):
+        import base64
+        from urllib.parse import urlencode
+        self.owner('CALL ME')
+        self.owner('yes')
+        action = self.store.db.execute('SELECT id FROM actions').fetchone()['id']
+        self.store.db.execute("UPDATE actions SET state='succeeded',result=? WHERE id=?",
+                              (json.dumps({'provider_id': 'CA123'}), action))
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with patch.dict(os.environ, {'TWILIO_AUTH_TOKEN': 'test', 'NOVA_CALL_FROM_NUMBER': '+15555550000'}):
+                def post(path, sid='CA123', speech=None):
+                    fields = {'From': '+15555550000', 'To': '+15555550101', 'Direction': 'outbound-api', 'CallSid': sid}
+                    if speech:
+                        fields['SpeechResult'] = speech
+                    signed = 'https://nova.example' + path + ''.join(k + fields[k] for k in sorted(fields))
+                    signature = base64.b64encode(hmac.new(b'test', signed.encode(), hashlib.sha1).digest()).decode()
+                    req = urllib.request.Request('http://127.0.0.1:' + str(server.server_port) + path,
+                        urlencode(fields).encode(), {'X-Twilio-Signature': signature})
+                    return urllib.request.urlopen(req)
+                path = '/webhooks/call?owner_call=' + action
+                with post(path) as response:
+                    self.assertIn(('owner_call=' + action).encode(), response.read())
+                with post(path, speech='I run a travel agency') as response:
+                    self.assertIn(('owner_call=' + action + '&amp;event=').encode(), response.read())
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    post(path, sid='CAwrong')
+                self.assertEqual(error.exception.code, 403)
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    post('/webhooks/call?owner_call=unknown')
+                self.assertEqual(error.exception.code, 403)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+    def test_legacy_scheduled_task_queues_whatsapp_approval_and_result(self):
+        event = self.store.enqueue('travel', 'scheduled', {'text': 'Remember the weekly review'})
+        work_once(self.store, lambda *_: {'reply': 'Please approve this update.',
+            'actions': [{'tool': 'remember', 'args': {'text': 'Weekly review', 'name': 'review'}}]})
+        notice = self.store.db.execute("SELECT body FROM events WHERE kind='delivery'").fetchone()
+        self.assertIsNotNone(notice)
+        self.assertIn('APPROVE', notice['body'])
+        body = json.loads(self.store.db.execute('SELECT body FROM events WHERE id=?', (event,)).fetchone()[0])
+        self.assertEqual(body['channel'], 'whatsapp')
+        action = dict(self.store.db.execute('SELECT * FROM actions').fetchone())
+        command(self.store, self.store.business('travel'), 'APPROVE ' + action['id'])
+        execute(self.store, action)
+        result_notice = self.store.db.execute("SELECT body FROM events WHERE id=?", ('action-result:' + action['id'],)).fetchone()
+        self.assertIn('succeeded', result_notice['body'])
+
     def test_usage_records_show_cost_only_with_rates(self):
         import metering
         metering.record_model(self.store, 'travel', {'usage': {'prompt_tokens': 1000, 'completion_tokens': 100}})
@@ -139,6 +192,48 @@ class MVPTests(unittest.TestCase):
             metering.record_model(self.store, 'travel', {'usage': {'prompt_tokens': 1000, 'completion_tokens': 100}})
         self.assertAlmostEqual(self.store.report('travel')['costs']['estimated_model_usd'], .0012)
         self.assertFalse(self.store.report('travel')['costs']['all_model_calls_priced'])
+
+    def test_scheduled_text_cannot_change_owner_permissions(self):
+        self.store.enqueue('travel', 'scheduled', {'text': 'RULE send_message auto', 'channel': 'local'})
+        work_once(self.store, lambda *_: {'reply': 'Owner approval is required to change permissions.', 'actions': []})
+        self.assertNotIn('send_message', self.store.business('travel')['config'].get('rules', {}))
+
+    def test_voice_opt_out_stops_reply_before_planning(self):
+        self.store.enqueue('travel', 'customer', {'text': '', 'audio': 'voice1', 'from': '15555550303', 'channel': 'whatsapp'})
+        with patch('engine.transcribe', return_value='STOP'):
+            work_once(self.store, lambda *_, **kwargs: self.fail('An opt-out must not reach the model'))
+        self.assertEqual(self.store.db.execute('SELECT contact FROM suppressed_contacts').fetchone()[0], '15555550303')
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM actions').fetchone()[0], 0)
+
+    def test_quote_recipe_runs_after_lead_approval_and_keeps_quote_pending(self):
+        business = self.store.business('travel')
+        business['config']['workflows'] = {'quotes': {'active': True}}
+        onboarding.save(self.store, business)
+        self.store.ingest('travel', 'packages.txt', 'Dubai package is USD 500, subject to confirmation.', True)
+        self.store.enqueue('travel', 'customer', {'text': 'Please quote Dubai', 'from': '15555550303', 'channel': 'sms'})
+        work_once(self.store, lambda *_, **kwargs: {'reply': 'I will prepare a quote for review.', 'actions': []})
+        action = dict(self.store.db.execute("SELECT * FROM actions WHERE tool='save_lead'").fetchone())
+        self.assertEqual(action['state'], 'approval')
+        command(self.store, self.store.business('travel'), 'APPROVE ' + action['id'])
+        execute(self.store, action)
+        self.store.db.execute("UPDATE events SET state='done' WHERE kind='delivery'")
+        def quote(*_, **kwargs):
+            self.assertEqual(kwargs['customer'], '15555550303')
+            return {'reply': 'Review this USD 500 package.', 'actions': [{'tool': 'prepare_quote', 'args': {
+                'lead_id': kwargs['quote_lead'], 'description': 'Dubai package', 'amount': '500', 'currency': 'USD'}}]}
+        work_once(self.store, quote)
+        self.assertEqual(self.store.db.execute("SELECT state FROM actions WHERE tool='prepare_quote'").fetchone()[0], 'approval')
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM quotes').fetchone()[0], 0)
+
+    def test_quote_recipe_rejects_model_send_action(self):
+        business = self.store.business('travel')
+        business['config']['workflows'] = {'quotes': {'active': True}}
+        onboarding.save(self.store, business)
+        self.store.db.execute('INSERT INTO leads VALUES(?,?,?,?,?,?)', ('lead1', 'travel', '15555550303', 'Buyer', 'Dubai', time.time()))
+        event = self.store.enqueue('travel', 'quote_task', {'text': 'Dubai quote', 'from': '15555550303', 'lead_id': 'lead1', 'channel': 'local'})
+        work_once(self.store, lambda *_, **kwargs: {'reply': 'Send it', 'actions': [{'tool': 'send_message', 'args': {'to': '15555550404', 'text': 'Private'}}]})
+        self.assertEqual(self.store.db.execute('SELECT state FROM events WHERE id=?', (event,)).fetchone()[0], 'failed')
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM actions').fetchone()[0], 0)
 
     def test_real_http_signup_and_shared_number_routing(self):
         server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)

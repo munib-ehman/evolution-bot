@@ -74,14 +74,17 @@ def sms_send(from_number, recipient, text):
     return result['sid']
 
 
-def call_owner(recipient):
+def call_owner(recipient, action_id=None):
     account = os.environ['TWILIO_ACCOUNT_SID']
     public = os.environ['NOVA_PUBLIC_URL'].rstrip('/')
     if urllib.parse.urlsplit(public).scheme != 'https':
         raise ValueError('Calls require a public HTTPS callback')
     credentials = base64.b64encode((account + ':' + os.environ['TWILIO_AUTH_TOKEN']).encode()).decode()
+    callback = public + '/webhooks/call'
+    if action_id:
+        callback += '?' + urllib.parse.urlencode({'owner_call': action_id})
     payload = {'From': os.environ['NOVA_CALL_FROM_NUMBER'], 'To': '+' + recipient,
-               'Url': public + '/webhooks/call', 'Method': 'POST', 'TimeLimit': '900'}
+               'Url': callback, 'Method': 'POST', 'TimeLimit': '900'}
     result = json.loads(request(f'https://api.twilio.com/2010-04-01/Accounts/{urllib.parse.quote(account, safe="")}/Calls.json',
                                urllib.parse.urlencode(payload).encode(), {'Authorization': 'Basic ' + credentials,
                                'Content-Type': 'application/x-www-form-urlencoded'}, method='POST'))

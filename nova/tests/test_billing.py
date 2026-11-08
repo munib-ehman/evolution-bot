@@ -212,6 +212,7 @@ class BillingTests(unittest.TestCase):
     def test_repeat_checkout_reuses_open_session(self):
         first = self.checkout()
         self.session['status'] = 'open'
+        self.store.db.execute('UPDATE signups SET consent_at=?', (time.time() - 7200,))
         self.http.reset_mock()
         self.assertEqual(self.checkout(), first)
         self.assertTrue(all(call.kwargs.get('method') != 'POST' for call in self.http.call_args_list))
