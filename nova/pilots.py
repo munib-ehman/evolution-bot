@@ -17,7 +17,7 @@ def create(store, business_id, name, owner, phone_id, days=7, token_limit=100000
                   'pilot': {'expires': time.time() + days * 86400, 'created': time.time()},
                   'monthly_token_limit': token_limit,
                   'onboarding': {'stage': 'welcome', 'detailed': True},
-                  'rules': {}}
+                  'execution_mode': 'automatic', 'rules': {}}
         store.db.execute('UPDATE businesses SET config=? WHERE id=?', (json.dumps(config), business_id))
         store.db.execute('COMMIT')
     except Exception:

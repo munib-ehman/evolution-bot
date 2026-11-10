@@ -135,7 +135,10 @@ class Store:
         usage = self.db.execute('SELECT reserved FROM usage WHERE business=? AND month=?', (business, month)).fetchone()
         limit = self.business(business)['config'].get('monthly_token_limit', 500_000)
         import metering
-        return {'period_days': 7, 'actions': counts, 'needs_attention': outstanding,
+        import workproducts
+        workproducts.setup(self)
+        completed = [dict(row) for row in self.db.execute('SELECT kind, COUNT(*) AS count FROM workproducts WHERE business=? AND created>=? GROUP BY kind', (business, since))]
+        return {'work_completed': completed, 'period_days': 7, 'actions': counts, 'needs_attention': outstanding,
                 'sales': operations.report(self, business),
                 'costs': metering.summary(self, business),
                 'usage_percent': round(100 * (usage[0] if usage else 0) / limit, 1)}

@@ -75,6 +75,7 @@ def runtime():
     logs={}
     specs={'server':[sys.executable,str(ROOT/'nova.py'),'serve'],
            'worker':[sys.executable,str(ROOT/'nova.py'),'worker'],
+           'demo':[sys.executable,str(ROOT/'demo_server.py')],
            'gateway':[sys.executable,str(ROOT/'gateway.py')],
            'awake':['/usr/bin/caffeinate','-is']}
     if not reachable('http://127.0.0.1:11434/api/tags'):
@@ -147,6 +148,7 @@ def install():
     for source in ROOT.glob('*.py'):
         shutil.copyfile(source,INSTALLED/source.name)
     shutil.copyfile(ROOT/'preview/signup_template.py',INSTALLED/'preview/signup_template.py')
+    shutil.copyfile(ROOT/'demo.html',INSTALLED/'demo.html')
     if CONFIG.exists():
         merged = {**settings(), **settings(INSTALLED/'.env.local')}
         installed_config=INSTALLED/'.env.local'
@@ -162,7 +164,14 @@ def install():
     PLIST.chmod(0o600)
     domain='gui/'+str(os.getuid())
     subprocess.run(['launchctl','bootout',domain+'/'+LABEL],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-    subprocess.run(['launchctl','bootstrap',domain,str(PLIST)],check=True)
+    # bootout can return before launchd has finished removing the previous job.
+    for attempt in range(4):
+        result = subprocess.run(['launchctl','bootstrap',domain,str(PLIST)], capture_output=True, text=True)
+        if result.returncode == 0:
+            break
+        if attempt == 3:
+            raise RuntimeError('Could not restart the local Nova service: ' + result.stderr.strip())
+        time.sleep(attempt + 1)
     print('Nova login service installed and started. It runs while this user is logged in. No paid services activated.')
 
 

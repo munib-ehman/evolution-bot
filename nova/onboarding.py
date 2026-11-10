@@ -61,12 +61,14 @@ def handle(store, business, text, planner):
             store.ingest(business['id'], 'Setup information ' + str(time.time_ns()), text)
             return 'Saved privately. You can send more information or files. Say DONE when ready.'
         flow['stage'] = 'permissions'
-        reply = ('How should I work? Reply 1 to ask before every action. Reply 2 to answer customer messages and schedule tasks automatically, '
+        reply = ('I can run supported work automatically and report back. Reply CONTINUE for this mode. Or reply 1 to ask before every action, or 2 for automatic replies and scheduling, '
                  'while asking before quotes, bookings and other changes. You can change these rules later.')
     elif stage == 'permissions':
-        if normalized not in {'1', '2'}:
-            return 'Reply 1 to approve every action, or 2 for automatic replies and task scheduling with approval for other changes.'
-        business['config']['rules'] = {'send_message': 'auto' if normalized == '2' else 'approve',
+        if normalized not in {'1', '2', '3', 'continue'}:
+            return 'Reply CONTINUE for automatic work, 1 to review every action, or 2 for automatic replies and scheduling only.'
+        automatic = normalized in {'3', 'continue'}
+        business['config']['execution_mode'] = 'automatic' if automatic else 'review'
+        business['config']['rules'] = {} if automatic else {'send_message': 'auto' if normalized == '2' else 'approve',
                                        'schedule': 'auto' if normalized == '2' else 'approve'}
         flow['stage'] = 'trial'
         reply = 'Let’s check my understanding. Send a sample customer inquiry. I’ll prepare a practice response for you to review.'

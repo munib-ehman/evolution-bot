@@ -16,9 +16,9 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def request(url, data=None, headers=None, method=None, limit=2_000_000):
+def request(url, data=None, headers=None, method=None, limit=2_000_000, timeout=45):
     req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
-    with urllib.request.build_opener(NoRedirect()).open(req, timeout=45) as response:
+    with urllib.request.build_opener(NoRedirect()).open(req, timeout=timeout) as response:
         body = response.read(limit + 1)
         if len(body) > limit:
             raise ValueError('Provider response exceeded limit')

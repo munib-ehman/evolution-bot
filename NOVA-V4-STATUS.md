@@ -104,3 +104,13 @@ The reconnected public website verification challenge returned HTTP 200 with the
 ## Meta appeal outcome observed — November 10
 
 After the user completed the checkpoint and selfie submission, Facebook displayed “Subhan, you submitted an appeal” dated 10 November 2026. The page says the profile is unavailable pending review and to check back for the result; its stated usual review time is about an hour, not a guarantee. This is a provider account restriction, so app creation and WhatsApp setup cannot proceed until access is restored. No new accounts, alternate identities or access workarounds were attempted. No WhatsApp message has been sent. The appeal tab was preserved for the user.
+
+## November 10: real SEO + inbound-sales demo; automatic execution
+
+- Added persisted SEO / BDR / business-learning workproducts using the configured model and business references. Owner commands: `SEO ...`, `BDR ...`, `LEARN ...`. SEO drafts exclude private conversation imports; sources and usage are saved. Producing a document does not publish it.
+- Added automatic execution mode for new pilots and an authenticated owner command `WORK AUTOMATICALLY`. Supported actions use automatic execution in this mode; explicit existing rules and PAUSE still apply. Existing tenants are not silently migrated. Onboarding also offers automatic mode.
+- Added a real loopback-only conversational demo at http://127.0.0.1:4192/ with isolated SQLite, business text imports, private historical conversations versus customer-safe facts, real local inference, simulated inbound leads, saved downloadable work, and no per-action approval UI. No external sends or publishing are available in that isolated demo.
+- The demo runs as part of the Mac login service. No paid model fallback. It requires the Mac on and awake. It is a screen-share/local demo, not a public remote-user chat endpoint.
+- First model acceptance exposed an invented hotel recommendation; simplified the customer-only prompt, removed owner tool descriptions from customer context and set deterministic generation. Retest requested exact dates and departure city without the unsupported recommendation. This is not a guarantee against model errors.
+- Automated checks: 134 Python tests plus 6 bridge checks passed. Further live browser and model acceptance evidence follows below.
+- Meta WhatsApp provisioning remains blocked by the account appeal. No real WhatsApp test message has been sent. Voice notes/calls need actual provider connections; the local demo explicitly labels these unavailable. Arbitrary business operations still require implemented integrations.
