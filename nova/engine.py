@@ -228,6 +228,11 @@ def report_text(report):
 def command(store, business, text):
     parts = text.strip().split()
     normalized = text.strip().lower().rstrip('.!')
+    if business['config'].get('onboarding', {}).get('stage', 'active') == 'active':
+        import routines
+        routine_reply = routines.handle(store, business, text)
+        if routine_reply is not None:
+            return routine_reply
     if normalized in {'work automatically', 'no approvals', 'automatic mode'}:
         business['config']['execution_mode'] = 'automatic'
         business['config']['rules'] = {tool: 'auto' for tool in TOOLS}

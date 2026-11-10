@@ -103,6 +103,8 @@ def main():
         from readiness import heartbeat
         while True:
             heartbeat(store)
+            import routines
+            routines.tick(store)
             worked = work_once(store)
             for action in store.db.execute("SELECT * FROM actions WHERE state='ready' ORDER BY created LIMIT 5").fetchall():
                 execute(store, dict(action))

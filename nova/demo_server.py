@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Loopback-only, isolated live Nova review. Never invokes messaging or publishing tools."""
 import json
+import base64
 import os
 import secrets
 import threading
@@ -10,7 +11,8 @@ from pathlib import Path
 
 from store import Store, identifier
 import workproducts
-from engine import plan
+from engine import plan, work_once
+import routines
 
 ROOT = Path(__file__).resolve().parent
 BUSINESS = 'live-demo'
@@ -40,14 +42,18 @@ def state(store):
             'documents': [dict(r) for r in store.db.execute('SELECT name,customer_safe FROM documents WHERE business=?', (BUSINESS,))],
             'drafts': [dict(r) for r in store.db.execute('SELECT id,kind,title,body,state,sources FROM workproducts WHERE business=? ORDER BY created DESC LIMIT 20', (BUSINESS,))],
             'usage': store.report(BUSINESS).get('costs', {}), 'busy': LOCK.locked(),
-            'channel': 'Local demo. No real messages, calls or publications.'}
+            'voice_configured': __import__('speech').configured(), 'channel': 'Local demo. No real messages, calls or publications.'}
 
 
-def run_job(mode, text):
+def run_job(mode, text, audio=None):
     store = Store(DB)
     try:
         initial(store)
         business = store.business(BUSINESS)
+        if audio is not None:
+            from speech import transcribe_bytes
+            text = transcribe_bytes(audio)
+            message(store, 'lead' if mode == 'inbound' else 'you', 'Voice note: ' + text)
         if mode == 'inbound':
             shared = store.db.execute('SELECT 1 FROM documents WHERE business=? AND customer_safe=1', (BUSINESS,)).fetchone()
             if not shared:
@@ -63,6 +69,10 @@ def run_job(mode, text):
                               'done', json.dumps({'reply': result['reply'], 'simulation': True, 'delivery': 'local_demo_only'}), time.time(), time.time()))
             message(store, 'nova', result['reply'] + '\n\nReplied in this local simulation. No WhatsApp message was sent.')
         else:
+            routine_reply = routines.handle(store, business, text, channel='local')
+            if routine_reply is not None:
+                message(store, 'nova', routine_reply)
+                return
             clean = text.strip()
             prefix, _, rest = clean.partition(' ')
             kind = prefix.lower() if prefix.lower() in {'seo', 'bdr', 'learn'} else ('seo' if any(w in clean.lower() for w in ('article', 'seo', 'blog')) else 'bdr')
@@ -110,8 +120,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/api/state' and self.command == 'GET':
                 return self.respond(200, state(store))
             length = int(self.headers.get('Content-Length', '0'))
-            if not 0 < length <= 120000:
-                return self.respond(413, {'error': 'Request must be at most 120 KB'})
+            if not 0 < length <= 8000000:
+                return self.respond(413, {'error': 'Request must be at most 8 MB'})
             data = json.loads(self.rfile.read(length))
             if LOCK.locked():
                 return self.respond(409, {'error': 'Nova is finishing the current task'})
@@ -127,14 +137,20 @@ class Handler(BaseHTTPRequestHandler):
                 store.ingest(BUSINESS, name.strip(), text, data['shared'])
                 message(store, 'nova', 'Saved ' + name.strip() + (' as approved customer information.' if data['shared'] else ' privately. Other customers cannot see these conversations.'))
                 return self.respond(200, {'saved': True})
-            if self.path == '/api/chat' and self.command == 'POST':
+            if self.path in {'/api/chat', '/api/voice'} and self.command == 'POST':
                 text, mode = data.get('text'), data.get('mode')
+                audio = None
+                if self.path == '/api/voice':
+                    audio = base64.b64decode(data.get('audio', ''), validate=True)
+                    if not 1 <= len(audio) <= 5000000:
+                        raise ValueError('Use a voice recording under 5 MB.')
+                    text = '[Voice note is being transcribed on your Mac]'
                 if not isinstance(text, str) or not 1 <= len(text.strip()) <= 6000 or mode not in {'owner', 'inbound'}:
                     raise ValueError('Send an owner instruction or a test inbound lead, at most 6,000 characters.')
                 if not LOCK.acquire(blocking=False):
                     return self.respond(409, {'error': 'Nova is finishing the current task'})
                 message(store, 'lead' if mode == 'inbound' else 'you', text.strip())
-                threading.Thread(target=run_job, args=(mode, text.strip()), daemon=True).start()
+                threading.Thread(target=run_job, args=(mode, text.strip(), audio), daemon=True).start()
                 return self.respond(202, {'queued': True})
             return self.respond(404, {'error': 'Unknown endpoint'})
         except (ValueError, TypeError, KeyError):
@@ -149,11 +165,33 @@ class Handler(BaseHTTPRequestHandler):
         self.route()
 
 
+def background():
+    while True:
+        if LOCK.acquire(blocking=False):
+            store = Store(DB)
+            try:
+                initial(store)
+                routines.tick(store, channel='local')
+                pending = store.db.execute("SELECT id FROM events WHERE state='pending' AND due<=? ORDER BY due,created LIMIT 1", (time.time(),)).fetchone()
+                if pending:
+                    work_once(store)
+                    result = store.db.execute('SELECT state,result FROM events WHERE id=?', (pending['id'],)).fetchone()
+                    reply = json.loads(result['result'] or '{}').get('reply', 'Task result saved.')
+                    message(store, 'nova', 'Background work ' + result['state'] + '\n\n' + reply)
+            except Exception:
+                message(store, 'nova', 'A background task needs attention. No external message or publication was made.')
+            finally:
+                store.db.close()
+                LOCK.release()
+        time.sleep(2)
+
+
 def main():
     os.environ.setdefault('NOVA_AI_PROVIDER', 'ollama')
     os.environ.setdefault('NOVA_AI_MODEL', 'llama3.2:3b')
     if configuration_provider() != 'ollama':
         raise ValueError('The demo only uses a local model. No paid fallback.')
+    threading.Thread(target=background, daemon=True).start()
     server = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
     server.serve_forever()
 

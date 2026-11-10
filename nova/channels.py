@@ -141,6 +141,10 @@ def whatsapp_document(media_id, filename):
 
 
 def transcribe(media_id):
+    from speech import configured as local_speech_configured, transcribe_bytes
+    if os.environ.get('NOVA_TRANSCRIPTION_PROVIDER') == 'local' or (os.environ.get('NOVA_AI_PROVIDER') == 'ollama' and local_speech_configured()):
+        _, audio = whatsapp_media(media_id, mime_types={'audio/ogg','audio/mpeg','audio/mp4','audio/aac','audio/amr','audio/wav','audio/x-wav','audio/webm','audio/opus'}, limit=15_000_000)
+        return transcribe_bytes(audio)
     from providers import configuration
     connection = configuration(transcription=True)
     if connection['provider'] == 'ollama':

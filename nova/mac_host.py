@@ -51,6 +51,9 @@ def prepare():
                   NOVA_AI_BASE_URL='http://127.0.0.1:11434/v1',
                   NOVA_DB=str(DATA/'nova.sqlite'),NOVA_PUBLIC_URL=PUBLIC_ORIGIN,
                   NOVA_ACCEPT_SIGNUPS='false')
+    if (ROOT/'models/ggml-base.bin').is_file():
+        values.setdefault('NOVA_WHISPER_MODEL', str(ROOT/'models/ggml-base.bin'))
+        values.setdefault('NOVA_TRANSCRIPTION_PROVIDER', 'local')
     values.setdefault('NOVA_ADMIN_TOKEN',secrets.token_urlsafe(36))
     values.setdefault('WHATSAPP_VERIFY_TOKEN',secrets.token_urlsafe(36))
     write_settings(values)
