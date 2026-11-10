@@ -28,6 +28,7 @@ def report(store, probe=False):
     return {'ai': ai, 'worker_recent': bool(row and 0 <= time.time()-row['updated'] < 120),
             'whatsapp_configured': whatsapp,
             'owner_welcome_template_configured': bool(os.environ.get('WHATSAPP_WELCOME_TEMPLATE')),
+            'local_voice_transcription_configured': __import__('speech').configured(),
             'voice_call_configured': all(os.environ.get(k) for k in ('TWILIO_ACCOUNT_SID','TWILIO_AUTH_TOKEN','NOVA_CALL_FROM_NUMBER')),
             'calendar_configured': all(os.environ.get(k) for k in ('GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET','NOVA_TOKEN_ENCRYPTION_KEY')),
             'public_https_configured': urlsplit(os.environ.get('NOVA_PUBLIC_URL','')).scheme == 'https',

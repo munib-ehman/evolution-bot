@@ -95,6 +95,8 @@ def runtime():
     signal.signal(signal.SIGTERM,stop)
     signal.signal(signal.SIGINT,stop)
     previous_url=None
+    next_start={}
+    tunnel_failures=0
     try:
         while not stopped:
             if 'model' not in specs and not reachable('http://127.0.0.1:11434/api/tags'):
@@ -103,6 +105,15 @@ def runtime():
             for name,command in specs.items():
                 child=children.get(name)
                 if child and child.poll() is None:continue
+                if name == 'tunnel' and child is not None:
+                    if name not in next_start:
+                        tunnel_failures += 1
+                        delay = min(300, 15 * 2 ** min(tunnel_failures - 1, 5))
+                        next_start[name] = time.time() + delay
+                        print('Public callback connection failed; retrying in ' + str(delay) + ' seconds.', flush=True)
+                    if time.time() < next_start[name]:
+                        continue
+                    next_start.pop(name, None)
                 if name in logs:logs[name].close()
                 logs[name]=open(DATA/(name+'.log'),'w' if name=='tunnel' else 'a')
                 children[name]=subprocess.Popen(command,cwd=ROOT,env=env,stdin=subprocess.DEVNULL,stdout=logs[name],stderr=subprocess.STDOUT)
