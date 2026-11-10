@@ -92,3 +92,9 @@ Managed host acceptance after deployment: authenticated loopback /local/message 
 Browser access became available after the user's settings/restart work. Meta /apps redirected to the developer homepage because registration was incomplete. Reloading the visible registration dialog produced the actual verification flow. The account's SMS verification is observed complete. Contact-email confirmation remains incomplete; Meta rejected the previously displayed email code and a fresh email was requested. The user was asked to complete that email step directly. No OTPs, account-verification phone or secrets are saved here.
 
 The user explicitly requested the first Nova message to their Pakistan mobile number and ongoing chat there. Saved the normalized recipient privately in the installed runtime's data/whatsapp-setup.json, with message_sent=false. No message has been sent, app/test number obtained, credentials configured or real WhatsApp chat verified. Mac services remain running and prior public callback tests passed.
+
+## November 10 resume
+
+Mac login service, worker, local model, callback gateway and tunnel are running. Free tunnel rotated after restart; reconnected the existing Vercel website to the current Mac endpoint using mac_host.py link-website. Deployment dpl_DKexbkiNbP4R8bbZtYsKapfm7vV4 is READY.
+
+Meta app setup could not resume because Facebook redirected /apps to a human-verification checkpoint. Opened the checkpoint and observed the image-text CAPTCHA. Left completion to the user, with an asynchronous request. No challenge was solved or bypassed. No Meta app creation, test number, token or first WhatsApp message has been confirmed. Existing code remains pushed on versions/v4-nova; private runtime recipient remains as authorized by the user.
