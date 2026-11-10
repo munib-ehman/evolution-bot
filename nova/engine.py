@@ -396,7 +396,7 @@ def work_once(store, planner=plan):
             reply = command(store, business, text) if owner_control else None
             requested_call = owner_control and text.strip().lower().rstrip('.!') in {'call me', 'start onboarding call'}
             if requested_call:
-                answer = {'reply': 'I can call your registered number for setup. Approve this call when ready.',
+                answer = {'reply': ('I will call your registered number for setup.' if business['config'].get('execution_mode') == 'automatic' else 'I can call your registered number for setup. Approve this call when ready.'),
                           'actions': [{'tool': 'call_owner', 'args': {}}]}
                 reply = answer['reply']
             if reply is None:

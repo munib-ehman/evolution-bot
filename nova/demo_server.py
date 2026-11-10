@@ -119,6 +119,11 @@ class Handler(BaseHTTPRequestHandler):
                 name, text = data.get('name'), data.get('text')
                 if not isinstance(name, str) or not 1 <= len(name.strip()) <= 120 or not isinstance(text, str) or not 1 <= len(text.strip()) <= 100000 or type(data.get('shared')) is not bool:
                     raise ValueError('Add a short file name and 1–100,000 characters of business information.')
+                business_name = data.get('business_name', '').strip()
+                if len(business_name) > 100:
+                    raise ValueError('Business name is too long')
+                if business_name:
+                    store.db.execute('UPDATE businesses SET name=? WHERE id=?', (business_name, BUSINESS))
                 store.ingest(BUSINESS, name.strip(), text, data['shared'])
                 message(store, 'nova', 'Saved ' + name.strip() + (' as approved customer information.' if data['shared'] else ' privately. Other customers cannot see these conversations.'))
                 return self.respond(200, {'saved': True})

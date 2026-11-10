@@ -24,8 +24,9 @@ class WorkTests(unittest.TestCase):
     def tearDown(self):
         self.env.stop(); self.store.db.close(); self.temp.cleanup()
 
-    def answer(self, body='A grounded original article with useful headings.'):
-        return json.dumps({'choices': [{'message': {'content': json.dumps({'title': 'Family travel', 'body': body})}}], 'usage': {'prompt_tokens': 30, 'completion_tokens': 20}}).encode()
+    def answer(self, body='A grounded original article with useful headings.', kind='seo'):
+        output = {'title': 'Family travel', 'body': body} if kind != 'seo' else {'title': 'Family travel', 'search_intent': 'Plan a family holiday', 'meta_description': 'A useful travel guide', 'article': body, 'publishing_checklist': 'Verify facts before publication'}
+        return json.dumps({'choices': [{'message': {'content': json.dumps(output)}}], 'usage': {'prompt_tokens': 30, 'completion_tokens': 20}}).encode()
 
     def test_grounded_draft_is_persisted_without_external_actions(self):
         with patch('workproducts.request', return_value=self.answer()) as model:
@@ -50,7 +51,7 @@ class WorkTests(unittest.TestCase):
     def test_no_cross_business_sources(self):
         self.store.add_business('b', 'Other', '15555550102', 'b')
         self.store.ingest('b', 'Other secret', 'Other business secret')
-        with patch('workproducts.request', return_value=self.answer()) as model:
+        with patch('workproducts.request', return_value=self.answer(kind='bdr')) as model:
             workproducts.generate(self.store, self.business, 'bdr', 'Help a lead')
         self.assertNotIn('Other business secret', model.call_args.args[1].decode())
 
