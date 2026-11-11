@@ -88,7 +88,7 @@ class BillingTests(unittest.TestCase):
         self.assertTrue(row['phone_id'].startswith('nova-owner:'))
         self.assertEqual(row['owner'], '923001234567')
         config = json.loads(row['config'])
-        self.assertEqual(config['onboarding'], {'stage': 'profile', 'detailed': True})
+        self.assertEqual(config['onboarding'], {'stage': 'profile', 'require_inbox': True})
         self.assertEqual(config['operator_phone_id'], 'shared-phone')
         self.assertTrue(billing.subscription_active(self.store, row['id']))
         event = self.store.db.execute('SELECT * FROM events').fetchone()
@@ -191,13 +191,36 @@ class BillingTests(unittest.TestCase):
         with patch.dict(os.environ, {'WHATSAPP_WELCOME_TEMPLATE': 'nova_welcome'}), patch('engine.whatsapp_welcome', return_value='wa-welcome') as sender:
             work_once(self.store)
             sender.assert_called_once_with('shared-phone', '923001234567')
-        messages = ['We sell travel packages', 'Handle inquiries and quotes', 'WhatsApp and Calendar',
-                    'Follow-ups get forgotten', '40 10', 'DONE', '1', 'Dubai trip', 'ACTIVATE']
-        for message in messages:
+        def turn(message):
             event = self.store.enqueue(business, 'owner', {'text': message, 'channel': 'local'})
             work_once(self.store, lambda *_: {'reply': 'What dates and budget do you have?', 'actions': []})
-            state = self.store.db.execute('SELECT state FROM events WHERE id=?', (event,)).fetchone()[0]
-            self.assertEqual(state, 'done')
+            row = self.store.db.execute('SELECT state,result FROM events WHERE id=?', (event,)).fetchone()
+            self.assertEqual(row['state'], 'done')
+            return json.loads(row['result'])['reply']
+
+        turn('We sell Umrah travel packages')
+        turn('Handle inquiries and follow up')
+        self.assertIn('Share one current package', turn('DONE'))
+        self.store.ingest(business, 'packages.txt', 'Ask for departure city and dates.', True)
+        self.assertIn('authorize Nova', turn('DONE'))
+        self.assertIn('awaiting an authorized', turn('INBOX STATUS'))
+        self.assertIn('Once Evolution has linked', turn('DONE'))
+        import onboarding
+        with patch('channels.whatsapp_phone', return_value='+1 555 555 0100') as lookup:
+            with self.assertRaises(ValueError):
+                onboarding.bind_inbox(self.store, business, 'shared-phone')
+            lookup.assert_not_called()
+            onboarding.bind_inbox(self.store, business, '100001')
+            lookup.assert_called_once_with('100001')
+        self.assertEqual(self.store.business(business)['phone_id'], '100001')
+        self.assertIn('inbox is linked', turn('INBOX STATUS'))
+        turn('DONE')
+        self.assertIn('Reply 1', turn('CONTINUE'))
+        turn('2')
+        turn('Umrah package from Chicago')
+        self.assertIn('Nova is active', turn('ACTIVATE'))
+        self.assertIn('automatic messaging permission', turn('Follow up after four hours'))
+        self.assertEqual(self.store.business(business)['config']['rules']['send_message'], 'auto')
         self.assertEqual(self.store.business(business)['config']['onboarding']['stage'], 'active')
         self.assertTrue(billing.subscription_active(self.store, business))
 

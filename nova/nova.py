@@ -19,6 +19,9 @@ def main():
     add = commands.add_parser('business')
     for field in ['id', 'name', 'owner', 'phone_id']:
         add.add_argument(field)
+    inbox = commands.add_parser('bind-inbox', help='Link a Meta-authorized customer inbox to a business')
+    inbox.add_argument('business')
+    inbox.add_argument('phone_id')
     ingest = commands.add_parser('import')
     ingest.add_argument('business')
     ingest.add_argument('file')
@@ -56,6 +59,10 @@ def main():
         business['config']['onboarding']['stage'] = 'welcome'
         onboarding.save(store, business)
         print('Business created. Onboarding starts with the owner’s first message.\n' + greeting)
+    elif args.command == 'bind-inbox':
+        from onboarding import bind_inbox
+        bind_inbox(store, args.business, args.phone_id)
+        print('Customer inbox linked. Verify delivery with an opted-in test inquiry.')
     elif args.command == 'import':
         path = Path(args.file)
         store.ingest(args.business, path.name, path.read_text(encoding='utf-8-sig'), args.customer_safe)

@@ -27,6 +27,7 @@ class ReadinessTests(unittest.TestCase):
 
     def test_config_without_worker_or_launch_verification_is_closed(self):
         os.environ.update({key: 'configured' for key in readiness.REQUIRED})
+        os.environ.update(NOVA_AI_PROVIDER='ollama', NOVA_AI_MODEL='llama3.2:3b')
         os.environ['NOVA_STRIPE_SECRET_KEY'] = 'sk_live_test_fixture'
         os.environ['NOVA_ACCEPT_SIGNUPS'] = 'true'
         self.assertFalse(readiness.status(self.store)['checkout_ready'])
@@ -36,6 +37,7 @@ class ReadinessTests(unittest.TestCase):
 
     def test_ready_worker_expiry_closes_checkout(self):
         os.environ.update({key: 'configured' for key in readiness.REQUIRED})
+        os.environ.update(NOVA_AI_PROVIDER='ollama', NOVA_AI_MODEL='llama3.2:3b')
         os.environ['NOVA_STRIPE_SECRET_KEY'] = 'sk_live_test_fixture'
         os.environ['NOVA_ACCEPT_SIGNUPS'] = 'true'
         readiness.heartbeat(self.store)

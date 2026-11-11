@@ -259,7 +259,7 @@ def webhook(store, raw, signature):
                 store.add_business(business, 'New business', signup['phone'], 'nova-owner:' + signup['id'])
                 store.db.execute('UPDATE signups SET business=? WHERE id=?', (business, signup['id']))
                 store.db.execute('UPDATE businesses SET config=? WHERE id=?', (json.dumps({
-                    'onboarding': {'stage': 'profile', 'detailed': True}, 'operator_phone_id': operator}), business))
+                    'onboarding': {'stage': 'profile', 'require_inbox': True}, 'operator_phone_id': operator}), business))
                 store.enqueue(business, 'delivery', {'template': 'welcome', 'channel': 'whatsapp',
                     'to': signup['phone'], 'text': 'Hi, I’m Nova by Evolution. What does your business sell, and who are your customers? You can send a voice note.'},
                     key='nova-welcome:' + signup['id'])

@@ -36,6 +36,20 @@ def twilio_signature(url, fields, signature, secret):
     return bool(secret) and hmac.compare_digest(expected, signature or '')
 
 
+def whatsapp_phone(phone_id):
+    """Verify that the configured Meta token can read this phone asset."""
+    import re
+    version = os.environ.get('META_GRAPH_VERSION', '')
+    token = os.environ.get('WHATSAPP_ACCESS_TOKEN', '')
+    if not re.fullmatch(r'[0-9]{5,32}', phone_id) or not re.fullmatch(r'v[0-9]+\.[0-9]+', version) or not token:
+        raise ValueError('A Meta phone ID, Graph version and access token are required.')
+    url = f'https://graph.facebook.com/{version}/{phone_id}?fields=id,display_phone_number'
+    result = json.loads(request(url, headers={'Authorization': 'Bearer ' + token}))
+    if result.get('id') != phone_id or not result.get('display_phone_number'):
+        raise ValueError('Meta did not confirm access to the requested phone.')
+    return result['display_phone_number']
+
+
 def whatsapp_send(phone_id, recipient, text, report_template=False):
     version = os.environ['META_GRAPH_VERSION']
     payload = {'messaging_product': 'whatsapp', 'to': recipient, 'type': 'text', 'text': {'body': text}}

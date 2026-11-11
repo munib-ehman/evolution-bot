@@ -1,5 +1,8 @@
 """Owner setup happens in the message thread. Every activation has an explicit review."""
 import json
+import os
+import re
+import sqlite3
 import time
 
 
@@ -7,9 +10,36 @@ def save(store, business):
     store.db.execute('UPDATE businesses SET config=? WHERE id=?', (json.dumps(business['config']), business['id']))
 
 
+def inbox_bound(business):
+    return bool(re.fullmatch(r'[0-9]{5,32}', business['phone_id']))
+
+
+def bind_inbox(store, business_id, phone_id):
+    """Bind a customer inbox after the operator has obtained the owner's Meta grant."""
+    from channels import whatsapp_phone
+
+    business = store.business(business_id)
+    operator = business['config'].get('operator_phone_id') or os.environ.get('NOVA_WHATSAPP_PHONE_ID')
+    if phone_id == operator or store.db.execute(
+        "SELECT 1 FROM businesses WHERE json_extract(config,'$.operator_phone_id')=?", (phone_id,)
+    ).fetchone():
+        raise ValueError('Use the customer-facing inbox, separate from the Nova owner chat.')
+    if inbox_bound(business) and business['phone_id'] != phone_id:
+        raise ValueError('This business already has an inbox. Reconcile pending work before changing it.')
+    display = whatsapp_phone(phone_id)
+    try:
+        bound = store.db.execute('UPDATE businesses SET phone_id=? WHERE id=? AND phone_id=?',
+                                 (phone_id, business_id, business['phone_id']))
+        if not bound.rowcount:
+            raise ValueError('The inbox changed during verification. Check the current connection and retry.')
+    except sqlite3.IntegrityError:
+        raise ValueError('This inbox is already assigned to a business.') from None
+    return display
+
+
 def start(store, business):
     previous = business['config'].get('onboarding', {})
-    business['config']['onboarding'] = {'stage': 'profile', **({'detailed': True} if previous.get('detailed') else {})}
+    business['config']['onboarding'] = {'stage': 'profile', **{key: True for key in ('detailed', 'require_inbox') if previous.get(key)}}
     save(store, business)
     return 'Hi, I’m Nova by Evolution. What does your business sell, and who are your customers? You can send a voice note.'
 
@@ -60,12 +90,25 @@ def handle(store, business, text, planner):
         if normalized != 'done':
             store.ingest(business['id'], 'Setup information ' + str(time.time_ns()), text)
             return 'Saved privately. You can send more information or files. Say DONE when ready.'
+        if flow.get('require_inbox'):
+            if not store.db.execute('SELECT 1 FROM documents WHERE business=? AND customer_safe=1', (business['id'],)).fetchone():
+                return 'Share one current package or FAQ for customer use first. Reply SHARE followed by its file name, then DONE.'
+            flow['stage'] = 'access'
+            save(store, business)
+            return 'Next, authorize Nova for your WhatsApp Business inbox through Meta. Reply INBOX STATUS to check the connection, then DONE. For optional Google Calendar access, say CONNECT CALENDAR.'
         flow['stage'] = 'permissions'
         reply = ('I can run supported work automatically and report back. Reply CONTINUE for this mode. Or reply 1 to ask before every action, or 2 for automatic replies and scheduling, '
                  'while asking before quotes, bookings and other changes. You can change these rules later.')
+    elif stage == 'access':
+        if normalized != 'done' or not inbox_bound(business):
+            return 'Once Evolution has linked the inbox you authorized in Meta, reply DONE. You can check with INBOX STATUS.'
+        flow['stage'] = 'permissions'
+        reply = 'Choose how I handle your inbox. Reply 1 to review every action, or 2 for automatic replies and follow-ups. Quotes and bookings still go to your team.'
     elif stage == 'permissions':
         if normalized not in {'1', '2', '3', 'continue'}:
             return 'Reply CONTINUE for automatic work, 1 to review every action, or 2 for automatic replies and scheduling only.'
+        if flow.get('require_inbox') and normalized not in {'1', '2'}:
+            return 'Reply 1 to review every action, or 2 for automatic replies and follow-ups.'
         automatic = normalized in {'3', 'continue'}
         business['config']['execution_mode'] = 'automatic' if automatic else 'review'
         business['config']['rules'] = {} if automatic else {'send_message': 'auto' if normalized == '2' else 'approve',
@@ -86,6 +129,8 @@ def handle(store, business, text, planner):
         else:
             flow['stage'] = 'active'
             reply = 'Nova is active. Message me your work, ask for a report, or say PAUSE anytime. Quotes and bookings follow your approval rules.'
+            if flow.get('require_inbox'):
+                reply += ' To start follow-ups, say “Follow up after four hours.”'
             if flow.get('detailed'):
                 from workflows import recommendations_text
                 reply += '\n\n' + recommendations_text(business)

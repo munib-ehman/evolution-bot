@@ -267,6 +267,9 @@ def command(store, business, text):
         name = text.strip()[6:].strip()
         cursor = store.db.execute('UPDATE documents SET customer_safe=1 WHERE business=? AND name=?', (business['id'], name))
         return f'Customers can now receive information from {name}.' if cursor.rowcount else 'I could not find that file. Use the exact name from the import confirmation.'
+    if normalized == 'inbox status':
+        return ('Your WhatsApp Business inbox is linked.' if onboarding.inbox_bound(business)
+                else 'Your customer inbox is awaiting an authorized Meta connection. Your chat with Nova is separate.')
     if normalized in {'connect calendar', 'connect google calendar'}:
         from connections import connection_link, setup
         setup(store)
