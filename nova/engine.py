@@ -233,6 +233,9 @@ def command(store, business, text):
         routine_reply = routines.handle(store, business, text)
         if routine_reply is not None:
             return routine_reply
+    followup_reply = workflows.followup_setup(store, business, text)
+    if followup_reply is not None:
+        return followup_reply
     if normalized in {'work automatically', 'no approvals', 'automatic mode'}:
         business['config']['execution_mode'] = 'automatic'
         business['config']['rules'] = {tool: 'auto' for tool in TOOLS}

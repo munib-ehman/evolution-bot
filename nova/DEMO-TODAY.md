@@ -8,6 +8,8 @@ Open http://127.0.0.1:4192/ on the running Mac. The model is real, local Ollama;
 4. Click Test an inbound lead, then Send. Continue the test lead's conversation. Nova replies automatically in this simulated channel and records the lead; it does not send WhatsApp messages.
 5. Click Write an SEO article, edit the topic if needed, then Send. Download the resulting draft.
 
+After sharing customer-safe package information, type or say “Follow up after four hours.” Nova saves the timing for new inquiries. Ask “Follow-up status” to see the setting, or say “Follow up after eight hours” to update it. This local preview demonstrates setup. Live delivery uses the connected messaging provider and the business's existing send permissions.
+
 Use Send voice note to upload a recording under 5 MB and 3 minutes. Transcription and reasoning run locally.
 
 Click Run SEO daily and Send to start recurring work, with the first result produced immediately by the background worker. LIST TASKS shows the saved jobs; STOP TASK followed by its ID stops one.

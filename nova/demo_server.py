@@ -69,6 +69,11 @@ def run_job(mode, text, audio=None):
                               'done', json.dumps({'reply': result['reply'], 'simulation': True, 'delivery': 'local_demo_only'}), time.time(), time.time()))
             message(store, 'nova', result['reply'] + '\n\nReplied in this local simulation. No WhatsApp message was sent.')
         else:
+            from workflows import followup_setup
+            followup_reply = followup_setup(store, business, text)
+            if followup_reply is not None:
+                message(store, 'nova', followup_reply + '\n\nLocal preview. No WhatsApp messages are sent here.')
+                return
             routine_reply = routines.handle(store, business, text, channel='local')
             if routine_reply is not None:
                 message(store, 'nova', routine_reply)

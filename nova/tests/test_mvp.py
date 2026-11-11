@@ -67,15 +67,29 @@ class MVPTests(unittest.TestCase):
         self.assertEqual(result, 'Workflow draft cancelled.')
         self.assertNotIn('workflow_draft', self.store.business('travel')['config'])
 
+    def test_owner_voice_sets_followup_timing_without_changing_send_permissions(self):
+        self.assertIn('Send your current packages', self.owner('Follow up after four hours')['reply'])
+        self.store.ingest('travel', 'packages.txt', 'Dubai package rates require confirmation', True)
+        event = self.store.enqueue('travel', 'owner', {'audio': 'voice-note', 'channel': 'local'})
+        with patch('engine.transcribe', return_value='Please follow up on quiet inquiries after four hours.'):
+            work_once(self.store, lambda *_: self.fail('Setup should not call the planner'))
+        result = json.loads(self.store.db.execute('SELECT result FROM events WHERE id=?', (event,)).fetchone()[0])
+        self.assertIn('requires your approval', result['reply'])
+        self.assertIn('1 to 22', self.owner('Follow up after 24 hours')['reply'])
+        self.assertIn('4 hours', self.owner('Follow-up status')['reply'])
+        self.owner('Follow up after 8 hours')
+        self.assertIn('8 hours', self.owner('Follow-up status')['reply'])
+        config = self.store.business('travel')['config']
+        self.assertNotIn('send_message', config.get('rules', {}))
+
     def test_followup_is_one_future_event_and_reply_cancels_it(self):
-        business = self.store.business('travel')
-        business['config']['workflows'] = {'followups': {'active': True, 'followup_hours': 4}}
-        onboarding.save(self.store, business)
+        self.store.ingest('travel', 'packages.txt', 'Dubai package rates require confirmation', True)
+        self.owner('Follow up after 4 hours')
         self.store.enqueue('travel', 'customer', {'text': 'Dubai?', 'from': '15555550303', 'channel': 'whatsapp'}, 'inbound1')
         planner = lambda *_, **kwargs: {'reply': 'What dates?', 'actions': []}
         work_once(self.store, planner)
         followup = self.store.db.execute("SELECT * FROM events WHERE id='followup:inbound1'").fetchone()
-        self.assertGreater(followup['due'], time.time())
+        self.assertAlmostEqual(followup['due'], time.time() + 4 * 3600, delta=5)
         self.store.db.execute("UPDATE events SET state='done' WHERE kind='delivery'")
         self.store.enqueue('travel', 'customer', {'text': 'Next week', 'from': '15555550303', 'channel': 'whatsapp'}, 'inbound2')
         self.store.db.execute("UPDATE events SET state='done' WHERE id='inbound2'")

@@ -1,5 +1,6 @@
 """Reviewed workflow recipes, opportunity estimates and activation."""
 import json
+import re
 import time
 
 
@@ -39,6 +40,41 @@ def recommendations_text(business):
         lines.append(f"{row['id']}: {row['name']} ({estimate}). {row['outcome']}")
     lines.append('Reply BUILD inquiries, BUILD followups or BUILD quotes. I’ll prepare a workflow for review before activation.')
     return '\n\n'.join(lines)
+
+
+def followup_setup(store, business, text):
+    normalized = text.strip().lower().rstrip('.!')
+    config = business['config']
+    followup = config.get('workflows', {}).get('followups', {})
+    if normalized == 'follow-up status':
+        if not followup.get('active'):
+            return 'Follow-ups are off. Say “Follow up after 4 hours” to set them up.'
+        prefix = 'Work is paused. ' if config.get('paused') else ''
+        return prefix + f"Follow-up delay for new inquiries: {followup['followup_hours']} hours."
+    timing = re.fullmatch(r'(?:please )?follow up(?: on (?:quiet|unanswered) inquiries)? after (\d{1,3}|one|two|three|four|five|six|eight|twelve) hours?', normalized)
+    if timing is None:
+        return None
+    words = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'eight': 8, 'twelve': 12}
+    delay = timing[1]
+    hours = int(delay) if delay.isdecimal() else words[delay]
+    if not 1 <= hours <= 22:
+        return 'Choose 1 to 22 hours so the follow-up stays inside the supported WhatsApp reply window.'
+    if config.get('onboarding', {}).get('stage', 'active') != 'active':
+        return 'Finish your business setup first so I know what to tell customers.'
+    shared = store.db.execute('SELECT 1 FROM documents WHERE business=? AND customer_safe=1 LIMIT 1', (business['id'],)).fetchone()
+    if not shared:
+        return 'Send your current packages or service details, then reply SHARE followed by the file name.'
+    config.setdefault('workflows', {})['followups'] = {
+        'active': True, 'activated': followup.get('activated', time.time()), 'followup_hours': hours,
+    }
+    save(store, business)
+    unit = 'hour' if hours == 1 else 'hours'
+    prefix = 'Work is paused. ' if config.get('paused') else ''
+    mode = config.get('rules', {}).get('send_message', 'auto' if config.get('execution_mode') == 'automatic' else 'approve')
+    behavior = {'auto': 'Replies use your automatic messaging permission.',
+                'approve': 'Sending still requires your approval.',
+                'deny': 'Your messaging rule blocks sending.'}
+    return prefix + f"New inquiries get one follow-up after {hours} {unit} if the customer hasn’t replied. " + behavior[mode]
 
 
 def handle(store, business, text, planner):
