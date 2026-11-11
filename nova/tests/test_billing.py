@@ -156,6 +156,16 @@ class BillingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.checkout()
 
+    def test_storefront_checkout_returns_to_public_domain(self):
+        with patch.object(billing, '_api', wraps=billing._api) as provider:
+            url = billing.create_checkout(self.store, '923001234567', True,
+                                          storefront='https://www.runevolution.io')
+        self.assertEqual(url, self.session['url'])
+        fields = next(call.args[1] for call in provider.call_args_list
+                      if call.args[0] == 'checkout/sessions')
+        self.assertEqual(fields['success_url'], 'https://www.runevolution.io/signup/complete')
+        self.assertEqual(fields['cancel_url'], 'https://www.runevolution.io/signup/cancel')
+
     def test_official_stripe_checkout_fragment_is_preserved(self):
         self.session['url'] = 'https://checkout.stripe.com/c/pay/cs_test_sample#fidkdWxOYHwnPyd1blpxYHZxWjA0'
         self.assertEqual(self.checkout(), self.session['url'])

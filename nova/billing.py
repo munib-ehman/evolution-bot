@@ -82,7 +82,7 @@ def _checkout_url(url):
     return url
 
 
-def create_checkout(store, phone, consent):
+def create_checkout(store, phone, consent, *, storefront=None):
     """Return official hosted URL; consent must be True, phone international digits."""
     if consent is not True or not isinstance(phone, str) or not phone.isascii() or not phone.isdecimal() or not 7 <= len(phone) <= 16:
         raise ValueError('Explicit consent and international phone digits required')
@@ -92,12 +92,12 @@ def create_checkout(store, phone, consent):
     if not lock or lock['token'] != token:
         raise ValueError('Checkout is already opening for this number. Please wait.')
     try:
-        return _create_checkout(store, phone)
+        return _create_checkout(store, phone, storefront)
     finally:
         store.db.execute('DELETE FROM checkout_locks WHERE phone=? AND token=?', (phone, token))
 
 
-def _create_checkout(store, phone):
+def _create_checkout(store, phone, storefront):
     existing = store.db.execute("SELECT id FROM businesses WHERE owner=? AND json_extract(config,'$.subscription_active')=1", (phone,)).fetchone()
     if existing:
         raise ValueError('This number already has Nova. Continue in your WhatsApp conversation.')
@@ -130,8 +130,8 @@ def _create_checkout(store, phone):
         'mode': 'subscription', 'line_items[0][price]': price_id, 'line_items[0][quantity]': 1,
         'client_reference_id': signup, 'metadata[signup_id]': signup,
         'subscription_data[metadata][signup_id]': signup,
-        'success_url': os.environ['NOVA_STRIPE_SUCCESS_URL'],
-        'cancel_url': os.environ['NOVA_STRIPE_CANCEL_URL'],
+        'success_url': storefront + '/signup/complete' if storefront else os.environ['NOVA_STRIPE_SUCCESS_URL'],
+        'cancel_url': storefront + '/signup/cancel' if storefront else os.environ['NOVA_STRIPE_CANCEL_URL'],
     }, 'nova-checkout:' + signup)
     url = _checkout_url(session.get('url'))
     store.db.execute('UPDATE signups SET session_id=? WHERE id=?', (_id(session), signup))

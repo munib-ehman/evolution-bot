@@ -80,7 +80,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/signup/checkout' and self.command == 'POST':
             origin = self.headers.get('Origin', '')
             expected = os.environ.get('NOVA_PUBLIC_URL', '').rstrip('/')
-            if not expected or origin != expected:
+            storefront = 'https://www.runevolution.io'
+            if origin not in {expected, storefront} or not origin:
                 return self.respond(403, {'error': 'Open the signup page to begin checkout'})
             from readiness import status
             if not status(store)['checkout_ready']:
@@ -91,7 +92,10 @@ class Handler(BaseHTTPRequestHandler):
             phone = payload.get('phone')
             if isinstance(phone, str):
                 phone = phone.replace(' ', '').replace('-', '').replace('(', '').replace(')', '').removeprefix('+')
-            result = create_checkout(store, phone, payload.get('consent'))
+            if origin == storefront:
+                result = create_checkout(store, phone, payload.get('consent'), storefront=storefront)
+            else:
+                result = create_checkout(store, phone, payload.get('consent'))
             return self.respond(200, {'url': result})
         if url.path == '/webhooks/stripe' and self.command == 'POST':
             from billing import setup, webhook
