@@ -1,6 +1,40 @@
 {
   "cleanUrls": true,
-  "rewrites": [{ "source": "/owner-analytics", "destination": "/" }],
+  "rewrites": [
+    {
+      "source": "/owner-analytics",
+      "destination": "/"
+    },
+    {
+      "source": "/buy",
+      "destination": "https://nova-evolution-v4.vercel.app/signup"
+    },
+    {
+      "source": "/signup",
+      "destination": "https://nova-evolution-v4.vercel.app/signup"
+    },
+    {
+      "source": "/signup/checkout",
+      "destination": "https://nova-evolution-v4.vercel.app/signup/checkout"
+    },
+    {
+      "source": "/signup/complete",
+      "destination": "https://nova-evolution-v4.vercel.app/signup/complete"
+    },
+    {
+      "source": "/signup/cancel",
+      "destination": "https://nova-evolution-v4.vercel.app/signup/cancel"
+    },
+    {
+      "source": "/public/status",
+      "destination": "https://nova-evolution-v4.vercel.app/public/status"
+    }
+  ],
   "buildCommand": "node tools/build-version.mjs --committed",
-  "git": { "deploymentEnabled": { "main": true, "versions/v3-agent-network": false } }
+  "git": {
+    "deploymentEnabled": {
+      "main": true,
+      "versions/v3-agent-network": false
+    }
+  }
 }
