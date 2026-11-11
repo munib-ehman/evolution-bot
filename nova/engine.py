@@ -319,6 +319,9 @@ def work_once(store, planner=plan):
         store.db.execute('UPDATE events SET body=? WHERE id=?', (json.dumps(body), event['id']))
     try:
         if event['kind'] == 'delivery':
+            if body.get('pilot_welcome') and business['config'].get('pilot', {}).get('expires', 0) <= time.time():
+                store.finish(event['id'], 'billing_hold', {'note': 'Pilot access has expired.'})
+                return True
             recent = store.db.execute("SELECT 1 FROM events WHERE business=? AND kind IN ('owner','import') AND json_extract(body,'$.channel')='whatsapp' AND created>? LIMIT 1",
                                       (business['id'], time.time() - 23 * 3600)).fetchone()
             template = bool(body.get('report') and os.environ.get('WHATSAPP_REPORT_TEMPLATE'))

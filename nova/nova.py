@@ -35,8 +35,10 @@ def main():
     state = commands.add_parser('state')
     state.add_argument('business')
     pilot = commands.add_parser('pilot', help='Create an expiring invitation without collecting payment')
-    for field in ['id', 'name', 'owner', 'phone_id']:
+    for field in ['id', 'name', 'owner']:
         pilot.add_argument(field)
+    pilot.add_argument('phone_id', nargs='?')
+    pilot.add_argument('--whatsapp-welcome', action='store_true', help='Queue a welcome for an owner who opted in')
     pilot.add_argument('--days', type=int, default=7)
     pilot.add_argument('--token-limit', type=int, default=100000)
     doctor = commands.add_parser('doctor', help='Show readiness without exposing credentials')
@@ -50,7 +52,8 @@ def main():
     store = Store(filename)
     if args.command == 'pilot':
         from pilots import create
-        print(json.dumps(create(store, args.id, args.name, args.owner, args.phone_id, args.days, args.token_limit)))
+        print(json.dumps(create(store, args.id, args.name, args.owner, args.phone_id, args.days, args.token_limit,
+                                whatsapp_welcome=args.whatsapp_welcome)))
     elif args.command == 'business':
         store.add_business(args.id, args.name, args.owner, args.phone_id)
         import onboarding
