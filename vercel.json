@@ -1,40 +1,18 @@
 {
-  "cleanUrls": true,
-  "rewrites": [
-    {
-      "source": "/owner-analytics",
-      "destination": "/"
-    },
-    {
-      "source": "/buy",
-      "destination": "https://nova-evolution-v4.vercel.app/signup"
-    },
-    {
-      "source": "/signup",
-      "destination": "https://nova-evolution-v4.vercel.app/signup"
-    },
-    {
-      "source": "/signup/checkout",
-      "destination": "https://nova-evolution-v4.vercel.app/signup/checkout"
-    },
-    {
-      "source": "/signup/complete",
-      "destination": "https://nova-evolution-v4.vercel.app/signup/complete"
-    },
-    {
-      "source": "/signup/cancel",
-      "destination": "https://nova-evolution-v4.vercel.app/signup/cancel"
-    },
-    {
-      "source": "/public/status",
-      "destination": "https://nova-evolution-v4.vercel.app/public/status"
-    }
+  "framework": null,
+  "installCommand": "true",
+  "buildCommand": "true",
+  "outputDirectory": "storefront",
+  "routes": [
+    { "src": "^/$", "dest": "/index.html" },
+    { "src": "^/checkout/?$", "dest": "/checkout.html" },
+    { "src": "^/(buy|signup)/?$", "status": 308, "headers": { "Location": "/checkout" } },
+    { "src": "^/(nova\\.css|checkout\\.js|favicon\\.svg|robots\\.txt)$", "dest": "/$1" },
+    { "src": "^/public/status$", "dest": "https://nova-evolution-v4.vercel.app/public/status", "methods": ["GET", "HEAD"] },
+    { "src": "^/signup/checkout$", "dest": "https://nova-evolution-v4.vercel.app/signup/checkout", "methods": ["POST"] },
+    { "src": "^/signup/(complete|cancel)$", "dest": "/checkout.html" },
+    { "src": "^/(blog|guides)(/.*)?$", "status": 410 },
+    { "src": "^/.*$", "status": 404 }
   ],
-  "buildCommand": "node tools/build-version.mjs --committed",
-  "git": {
-    "deploymentEnabled": {
-      "main": true,
-      "versions/v3-agent-network": false
-    }
-  }
+  "git": { "deploymentEnabled": { "main": true, "versions/v3-agent-network": false, "versions/v4-nova": false } }
 }

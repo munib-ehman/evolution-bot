@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Checkout | Nova by Evolution</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/nova.css">
+  <script src="/checkout.js" defer></script>
+</head>
+<body>
+  <header><a class="brand" href="/"><img src="/favicon.svg" width="32" height="32" alt=""><span>Nova <small>by Evolution</small></span></a></header>
+  <main class="checkout">
+    <h1>Get Nova</h1>
+    <p class="plan">$200/month</p>
+    <p>Setup starts in WhatsApp after payment.</p>
+    <form id="checkout">
+      <label for="phone">Your WhatsApp number</label>
+      <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="+1 555 555 0101" maxlength="24" required>
+      <label class="consent"><input id="consent" name="consent" type="checkbox" required> I agree to receive Nova’s WhatsApp service messages at this number.</label>
+      <button class="button" type="submit" disabled>Continue to payment</button>
+      <p id="payment-status" class="price" role="status">Checking payment availability…</p>
+    </form>
+  </main>
+</body>
+</html>
